@@ -4,6 +4,11 @@
 % packages
 \usepackage{amsmath} % for mathematical symbols and environments
 \usepackage{amsfonts} % for additional math fonts
+\usepackage{amssymb} % for additional math symbols
+\usepackage{hyperref} % for hyperlinks
+
+\usepackage{tikz} % for graphics
+\usetikzlibrary{arrows,shapes}
 
 % title and author
 \title{Numeric to Symbolic to Parametric space of solutions of Polynomial Systems of Equations}
@@ -19,31 +24,61 @@
     This paper presents a working pipeline for solving polynomial systems of equations, starting from numerical solutions using Newton-Raphson method, transitioning to symbolic solutions through PSLQ, and finally exploring the space of solutions. 
 \end{abstract}
 
-\section{Introduction}
+\section*{Introduction}
 % introduction of the importance and history of polynomial systems of equations
 
 % classic methods for solving polynomial systems of equations
 
-\section{Mathematical Background}
+\section*{Mathematical Background}
 Let $\mathbb{K}[\mathbf{x}]$ denote the polynomial ring in variables $\mathbf{x} = (x_1, \ldots, x_n)$ over a field $\mathbb{K}$, typically $\mathbb{R}$ or $\mathbb{C}$. A polynomial system is defined by a map $F: \mathbb{K}^n \to \mathbb{K}^m$ with components $f_1, \ldots, f_m \in \mathbb{K}[\mathbf{x}]$. The locus of simultaneous solutions constitutes the \textit{affine variety} $V(F) = \{ \mathbf{a} \in \mathbb{K}^n \mid F(\mathbf{a}) = \mathbf{0} \}$.
 
 
-\section{Identification of elegant solutions}
+\section*{Identification of elegant solutions}
 there are a few ways to interpret the meaning of the solution to a polynomial system of equations.
 \begin{list}{-}{}
     \item \textbf{numerical solutions:} specific numerical values for the variables that satisfy all equations in the system (with very high precision).
     \item \textbf{symbolic solutions:} specific symbolic expressions of constants that satisfy all equations in the system.
     \item \textbf{lowest norm solution:} a solution numerical or symbolic, that minimizes some norm, such as the Zero norm.
     \item \textbf{parametric expression of a variety:} a set of symbolic expressions that provide a parametric representation of the set of all possible solutions to the system, also known as the variety. it's not always possible to express the variety in a parametric form such as in the case of elliptic curves.
-    \item \textbf{numerical point cloud sampling of the variety:} a large set of numerical solutions that sample the variety, which can be used to understand its structure and properties.
+    \item \textbf{point cloud sampling of the variety:} a large set of numerical or symbolic solutions that sample the variety, which can be used to understand its structure and properties.
 \end{list}
-
-% nice possible graphic: a diagram showing the relationships and transitions between different types of solutions (numerical, symbolic, parametric, etc.), this flowchart could very nicely illustrate the whole story of the paper.
 
 something of note, if one has one solution to any system of equations, one can derive a neighborhood of solutions around that point by going in the direction that is in the solution space of the Jacobian. a more in depth treatment of this idea is provided in the appendix.
 
+\section*{Moving between types of solutions}
+one can note that it is fairly straightforward to find certain types of solutions such as numerical solutions via Newton-Raphson, but sometimes it is more desirable to have symbolic solutions or parametric expressions of the variety. in the diagram below, we illustrate the different types of solutions and the methods we will use to move between them.
 
-\section{Linear elimination}
+\begin{tikzpicture}
+    % Define nodes
+    \node[draw, rectangle] at (0, -2.5) (numerical) {Numerical Solution};
+    \node[draw, rectangle] at (5, -2.5) (symbolic) {Symbolic Solution};
+    \node[draw, rectangle] at (0, -5) (numerical point cloud) {Numerical Point Cloud};
+    \node[draw, rectangle] at (7, -5) (symbolic point cloud) {Symbolic Point Cloud};
+    \node[draw, rectangle] at (7, -7.5) (parametric) {Parametric Expression of Variety};
+
+    % Draw arrows
+    \draw[->] (numerical) -- (symbolic) node[midway, above] {(1)};
+    \draw[->] (symbolic) -- (numerical) node[midway, above] {(4)};
+    \draw[->] (numerical) -- (numerical point cloud) node[midway, left] {(2)};
+    \draw[->] (symbolic) -- (symbolic point cloud) node[midway, right] {(2)};
+    \draw[->] (numerical point cloud) -- (numerical) node[midway, right] {(5)};
+    \draw[->] (symbolic point cloud) -- (symbolic) node[midway, left] {(5)};
+    \draw[->] (numerical point cloud) -- (symbolic point cloud) node[midway, below] {(1)};
+    \draw[->] (symbolic point cloud) -- (numerical point cloud) node[midway, above] {(4)};
+    \draw[->] (symbolic point cloud) -- (parametric) node[midway, right] {(3)};
+    \draw[->] (parametric) -- (symbolic point cloud) node[midway, left] {(5)};
+\end{tikzpicture}
+
+\begin{enumerate}
+    \item \textbf{PSLQ:}
+    \item \textbf{Going penpendicular to Jacobian null space:}
+    \item \textbf{Symbolic regression:} 
+    \item \textbf{Evaluating symbolic expressions:}
+    \item \textbf{Sampling points:}
+\end{enumerate}
+
+
+\section*{Linear elimination}
 
 even in the case of very large non linear polynomial systems of equations, it is possible to eliminate variables in a linear fashion in the following way:
 \textbf{input:} polynomial system of equations $P = \{p_1, p_2, \ldots, p_k\} \subseteq \mathbb{K}[x_1, x_2, \ldots, x_m]$.
@@ -65,17 +100,17 @@ even in the case of very large non linear polynomial systems of equations, it is
 
 in the example below, we demonstrate that for systems of low degree polynomials, this method can significantly reduce the number of variables and equations in the system, without increasing the degree of any polynomial in the system.
 
-\section{Numerical solutions via Newton-Raphson}
+\section*{Numerical solutions via Newton-Raphson}
 
-\section{Symbolic solutions via iterations of PSLQ and Newton-Raphson}
+\section*{Symbolic solutions via iterations of PSLQ and Newton-Raphson}
 
-\section{exploration of space of solutions}
-\subsection{Numerical exploration of space of solutions}
+\section*{exploration of space of solutions}
+\subsection*{Numerical exploration of space of solutions}
 
-\subsection{Sybolic exploration of space of solutions}
+\subsection*{Sybolic exploration of space of solutions}
 
-\section{Appendix}
-\subsection{Derivation of neighborhood of solutions via Jacobian null space}
+\section*{Appendix}
+\subsection*{Derivation of neighborhood of solutions via Jacobian null space}
 \textbf{theorem:} let $F = \{f_1, f_2, \ldots, f_n\}$ be a system of smooth functions in variables $x = (x_1, x_2, \ldots, x_m)$. let $J$ be the Jacobian matrix of $F$ with respect to $x$, $x_0$ be a point such that $F(x_0) = 0$, and $v \in N(J(x_0))$ be a vector in the null space of $J$ at point $x_0$. 
 then $\frac{d}{dt}F(x_0 + tv)|_{t=0} = 0$.
 
