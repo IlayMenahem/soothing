@@ -26,20 +26,25 @@
 
 \section*{Introduction}
 % introduction of the importance and history of polynomial systems of equations
+solving polynomial systems of equations is a fundamental problem in mathematics and computer science, with applications in various fields such as robotics, cryptography, optimization, and QFT. in QFT specifically, polynomial systems arise in the context of \textbf{--- need alon's paper ---}. 
 
 % classic methods for solving polynomial systems of equations
+classic methods for solving polynomial systems of equations include Groebner bases, resultants, and homotopy continuation. however, these methods can be computationally expensive and may not scale well with the size of the system.
+
+% overview of the proposed pipeline
+In this paper, we propose a pipeline that leverages numerical methods to find initial solutions, then refines these solutions into symbolic forms, and finally explores a space of solutions. This approach aims to combine the efficiency of numerical methods, and some insights we may have at how the symbolic solutions may look like, to provide a comprehensive understanding of the solution space of polynomial systems.
 
 \section*{Mathematical Background}
 Let $\mathbb{K}[\mathbf{x}]$ denote the polynomial ring in variables $\mathbf{x} = (x_1, \ldots, x_n)$ over a field $\mathbb{K}$, typically $\mathbb{R}$ or $\mathbb{C}$. A polynomial system is defined by a map $F: \mathbb{K}^n \to \mathbb{K}^m$ with components $f_1, \ldots, f_m \in \mathbb{K}[\mathbf{x}]$. The locus of simultaneous solutions constitutes the \textit{affine variety} $V(F) = \{ \mathbf{a} \in \mathbb{K}^n \mid F(\mathbf{a}) = \mathbf{0} \}$.
 
 
-\section*{Identification of elegant solutions}
+\section*{What is a solution?}
 there are a few ways to interpret the meaning of the solution to a polynomial system of equations.
 \begin{list}{-}{}
     \item \textbf{numerical solutions:} specific numerical values for the variables that satisfy all equations in the system (with very high precision).
     \item \textbf{symbolic solutions:} specific symbolic expressions of constants that satisfy all equations in the system.
     \item \textbf{lowest norm solution:} a solution numerical or symbolic, that minimizes some norm, such as the Zero norm.
-    \item \textbf{parametric expression of a variety:} a set of symbolic expressions that provide a parametric representation of the set of all possible solutions to the system, also known as the variety. it's not always possible to express the variety in a parametric form such as in the case of elliptic curves.
+    \item \textbf{parametric expression of a variety:} a set of symbolic or numerical approximated expressions, that provide a parametric representation of the set of all possible solutions to the system. the set of system solutions is also known as the variety, and it's not always possible to express the variety in a parametric form such as in the case of $y^3 - x^2 = 0$ over $\mathbb{R}$.
     \item \textbf{point cloud sampling of the variety:} a large set of numerical or symbolic solutions that sample the variety, which can be used to understand its structure and properties.
 \end{list}
 
@@ -48,33 +53,43 @@ something of note, if one has one solution to any system of equations, one can d
 \section*{Moving between types of solutions}
 one can note that it is fairly straightforward to find certain types of solutions such as numerical solutions via Newton-Raphson, but sometimes it is more desirable to have symbolic solutions or parametric expressions of the variety. in the diagram below, we illustrate the different types of solutions and the methods we will use to move between them.
 
-\begin{tikzpicture}
-    % Define nodes
-    \node[draw, rectangle] at (0, -2.5) (numerical) {Numerical Solution};
-    \node[draw, rectangle] at (5, -2.5) (symbolic) {Symbolic Solution};
-    \node[draw, rectangle] at (0, -5) (numerical point cloud) {Numerical Point Cloud};
-    \node[draw, rectangle] at (7, -5) (symbolic point cloud) {Symbolic Point Cloud};
-    \node[draw, rectangle] at (7, -7.5) (parametric) {Parametric Expression of Variety};
+\begin{tikzpicture}[node distance=2cm]
+% spread out layout
+    \node (start) at (6,0) {Polynomial System of Equations};
+    \node (numerical) at (0,-3) {Numerical Solution};
+    \node (symbolic) at (8,-3) {Symbolic Solution};
+    \node (num_cloud) at (0,-7) {Numerical Point Cloud};
+    \node (sym_cloud) at (6,-7) {Symbolic Point Cloud};
+    \node (parametric) at (12,-7) {Space of Solutions};
+    \node (num_parametric) at (4,-10) {Numerical Parametric};
 
-    % Draw arrows
-    \draw[->] (numerical) -- (symbolic) node[midway, above] {(1)};
-    \draw[->] (symbolic) -- (numerical) node[midway, above] {(4)};
-    \draw[->] (numerical) -- (numerical point cloud) node[midway, left] {(2)};
-    \draw[->] (symbolic) -- (symbolic point cloud) node[midway, right] {(2)};
-    \draw[->] (numerical point cloud) -- (numerical) node[midway, right] {(5)};
-    \draw[->] (symbolic point cloud) -- (symbolic) node[midway, left] {(5)};
-    \draw[->] (numerical point cloud) -- (symbolic point cloud) node[midway, below] {(1)};
-    \draw[->] (symbolic point cloud) -- (numerical point cloud) node[midway, above] {(4)};
-    \draw[->] (symbolic point cloud) -- (parametric) node[midway, right] {(3)};
-    \draw[->] (parametric) -- (symbolic point cloud) node[midway, left] {(5)};
+    % Straight arrows (no bends)
+    \draw[->] (start) -- (numerical) node[midway, left] {(6, 7, 8)};
+    \draw[->] ([yshift=6pt]numerical.east) -- ([yshift=6pt]symbolic.west) node[midway, above] {(1)};
+    \draw[->] ([yshift=-6pt]symbolic.west) -- ([yshift=-6pt]numerical.east) node[midway, below] {(4)};
+    \draw[->] ([xshift=6pt]numerical.south) -- ([xshift=6pt]num_cloud.north) node[midway, left] {(2)};
+    \draw[->] ([yshift=6pt]symbolic.south) -- ([yshift=6pt]sym_cloud.north) node[midway, right] {(2)};
+    \draw[->] ([xshift=-6pt]num_cloud.north) -- ([xshift=-6pt]numerical.south) node[midway, right] {(5)};
+    \draw[->] ([yshift=-6pt]sym_cloud.north) -- ([yshift=-6pt]symbolic.south) node[midway, left] {(5)};
+    \draw[->] ([yshift=6pt]num_cloud.east) -- ([yshift=6pt]sym_cloud.west) node[midway, below] {(1)};
+    \draw[->] ([yshift=-6pt]sym_cloud.west) -- ([yshift=-6pt]num_cloud.east) node[midway, above] {(4)};
+    \draw[->] ([yshift=6pt]sym_cloud.east) -- ([yshift=6pt]parametric.west) node[midway, right] {(3)};
+    \draw[->] ([yshift=-6pt]parametric.west) -- ([yshift=-6pt]sym_cloud.east) node[midway, left] {(5)};
+    \draw[->] (symbolic) -- (parametric) node[midway, above right] {(2)};
+    \draw[->] (parametric) -- (num_parametric) node[midway, right] {(4)};
+    \draw[->] ([yshift=6pt]num_parametric.north) -- ([yshift=6pt]num_cloud.south) node[midway, below left] {(5)};
+    \draw[->] ([yshift=-6pt]num_cloud.south) -- ([yshift=-6pt]num_parametric.north) node[midway, above right] {(3)};
 \end{tikzpicture}
 
 \begin{enumerate}
-    \item \textbf{PSLQ:}
-    \item \textbf{Going penpendicular to Jacobian null space:}
-    \item \textbf{Symbolic regression:} 
-    \item \textbf{Evaluating symbolic expressions:}
-    \item \textbf{Sampling points:}
+    \item \textbf{PSLQ and numerical fitting:} in this method, we use the PSLQ algorithm to find integer relations in the numerical solutions, replace numerical results with symbolic expressions, refit the solution and repeat until we have replaced all numerical values with symbolic expressions.
+    \item \textbf{Going penpendicular to Jacobian null space:} given a solution to the polynomial system of equations, and if we will go in a direction that is perpendicular to the Jacobian null space at that point, we will remain in the solution space of the system. by taking small steps in such directions, we can sample more solutions to the system.
+    \item \textbf{Symbolic regression:} given a point cloud of solutions, we can use symbolic regression to find parametric expressions that fit the point cloud.
+    \item \textbf{Evaluating symbolic expressions:} given symbolic expressions, we can evaluate them to get numerical solutions.
+    \item \textbf{Sampling points:} given numerical or symbolic parametric expressions of the variety, we can sample points from them to get point clouds of solutions.
+    \item \textbf{SMT solvers:} SMT solvers can sometimes be used to find symbolic or numerical solutions to systems of equations.
+    \item \textbf{Newton-Raphson:} given a system of equations, we can use the Newton-Raphson method to find numerical solutions to the system.
+    \item \textbf{Homotopy continuation:} Homotopy continuation methods take a system of equations with known solutions and continuously deform it into the target system, tracking the solutions throughout the deformation process to find solutions to the original system.
 \end{enumerate}
 
 
