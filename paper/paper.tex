@@ -12,7 +12,7 @@
 
 % title and author
 \title{Numeric to Symbolic to Parametric space of solutions of Polynomial Systems of Equations}
-\author{Ilay Menahem}
+\author{Ilay Menahem, Michael Shalyt, Ido Kaminer}
 
 % article text
 \begin{document}
@@ -21,18 +21,42 @@
 
 % abstract
 \begin{abstract}
-    This paper presents a working pipeline for solving polynomial systems of equations, starting from numerical solutions using Newton-Raphson method, transitioning to symbolic solutions through PSLQ, and finally exploring the space of solutions. 
+    There is a problem shared among many fields of science of solving polynomial systems of equations.
+    The required solution is often a space of solutions, rather than a single solution.
+    Applications include QFT, robotics, cryptography, optimization, chemistry, electrical engineering, and more.
+    Existing approaches include both symbolic (e.g. Gröbner bases) and numeric (e.g. homotopy continuation) methods. While symbolic methods can provide exact representations of solution spaces, they often struggle with scalability and computational complexity for large systems. Numeric methods, on the other hand, can efficiently find approximate solutions but may miss the full structure of the solution space. 
+    % but there is still need for better \ldots
+
+    This paper presents a scalable pipeline for finding a space of solutions (of full dimension) to polynomial systems of equations.
+    We start from numerical solutions, transitioning to symbolic solutions, and finally parametrize the solution space via structured exploration.
+    We then also discuss other complementary methods and discuss what open questions still remain.
+    We demonstrate these methods on concrete examples from the field of QFT. 
 \end{abstract}
 
 \section*{Introduction}
 % introduction of the importance and history of polynomial systems of equations
-solving polynomial systems of equations is a fundamental problem in mathematics and computer science, with applications in various fields such as robotics, cryptography, optimization, and QFT. in QFT specifically, polynomial systems arise in the context of \textbf{--- need alon's paper ---}. 
+Solving polynomial systems of equations is a fundamental problem in mathematics and computer science, with applications in fields such as robotics, cryptography, optimization, QFT, chemistry, electrical engineering, economics and more. 
+In QFT, polynomial systems arise in the context of generilizing and unifying theories (e.g. quantum gravity). 
+In chemistry, for example, polynomial systems appear in the study and design of reaction chains.
+In robotics, for example, polynomial systems are used to model kinematics and motion planning.
+
+In most of these use cases, the required solution is often a space of solutions, rather than a single solution.
+Specifically, in QFT the proposed theory must follow gauge invariance, which leads to a space of solutions, and of these solutions one may want to find the one represents the simplest theory.
+In chemistry, reaction chains often have multiple valid pathways, leading to a solution space.
+In robotics, the solution space may represent all possible configurations of a robotic arm that satisfy certain constraints. one would want to work with the entire solution space to find optimal paths and configurations.
+This type of problem is universal across many fields of science and engineering. It calls for a comprehensive approach that can efficiently find and represent the solution space of polynomial systems.
 
 % classic methods for solving polynomial systems of equations
-classic methods for solving polynomial systems of equations include Groebner bases, resultants, and homotopy continuation. however, these methods can be computationally expensive and may not scale well with the size of the system.
+Classic methods for solving polynomial systems of equations include Groebner bases [], resultants [], and homotopy continuation []. However, these methods can be computationally expensive and may not scale well with the size of the system. Other approaches, such as gradient [], SMT [], XXX [], are focused on finding specific solutions rather than exploring the entire solution space.
 
 % overview of the proposed pipeline
-In this paper, we propose a pipeline that leverages numerical methods to find initial solutions, then refines these solutions into symbolic forms, and finally explores a space of solutions. This approach aims to combine the efficiency of numerical methods, and some insights we may have at how the symbolic solutions may look like, to provide a comprehensive understanding of the solution space of polynomial systems.
+In this paper, classify/group/review/discuss specially made approaches for finding the general ... in efficient ways relevant for.
+We also demonstrate the methods on concrete examples from QFT.
+Among those methods, we propose a pipeline that leverages numerical methods to find initial solutions, then refines these solutions into symbolic forms, and finally explores a space of solutions. This approach aims to combine the efficiency of numerical methods, and some insights we may have at how the symbolic solutions may look like, to provide a comprehensive understanding of a solution space of polynomial systems.
+We also present and analyze a complementary examples from QFT, showcasing the effectiveness of our approach in practical scenarios.
+We finally outline the open questions and future directions [more concrete] in this field.
+
+
 
 \section*{Mathematical Background}
 Let $\mathbb{K}[\mathbf{x}]$ denote the polynomial ring in variables $\mathbf{x} = (x_1, \ldots, x_n)$ over a field $\mathbb{K}$, typically $\mathbb{R}$ or $\mathbb{C}$. A polynomial system is defined by a map $F: \mathbb{K}^n \to \mathbb{K}^m$ with components $f_1, \ldots, f_m \in \mathbb{K}[\mathbf{x}]$. The locus of simultaneous solutions constitutes the \textit{affine variety} $V(F) = \{ \mathbf{a} \in \mathbb{K}^n \mid F(\mathbf{a}) = \mathbf{0} \}$.
