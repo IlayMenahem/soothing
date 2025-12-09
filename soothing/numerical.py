@@ -1,4 +1,5 @@
-from jax import jit, jacobian
+from jax import jit, jacfwd
+import jax
 import jax.numpy as jnp
 from jaxtyping import Array
 import numpy as np
@@ -7,8 +8,10 @@ from typing import Callable
 
 def newton_raphson(system: Callable[[Array], Array],
                    initial_guess: Array,
-                   tol: float = 1e-6,
-                   max_iter: int = 100) -> tuple[Array, list[float], list[float]]:
+                   tol: float = 1e-6,   
+                   max_iter: int = 100, 
+                   retry: bool = False,
+                   key: Array = jax.random.key(0)) -> tuple[Array, list[float], list[float]]:
     """
     solve a system of equations using the Newton-Raphson method.
     we use shortest vectors in the Jacobian's null space to update our guess.
@@ -18,9 +21,11 @@ def newton_raphson(system: Callable[[Array], Array],
     - initial_guess: An Array of shape (n,) representing the initial guess for the solution.
     - tol: Tolerance for convergence.
     - max_iter: Maximum number of iterations.
+    - retry: Whether to retry with a different initial guess if convergence fails.
+    - key: A key for generating random numbers.
     """
     x = initial_guess
-    J_system = jit(jacobian(system))
+    J_system = jit(jacfwd(system))
 
     x_list = []
     error_norms = []
@@ -50,8 +55,13 @@ def newton_raphson(system: Callable[[Array], Array],
             or jnp.isnan(system_val).any()
             or jnp.isinf(system_val).any()
             ):
-            print("Numerical instability encountered. Stopping iteration.")
-            break
+            print("Numerical instability encountered.")
+
+            if not retry:
+                break
+
+            key, subkey = jax.random.split(key)
+            x = jax.random.uniform(subkey, (len(x),), dtype=jnp.float64)
 
         print(f"Step {step}: Error = {system_val}, dx = {dx_norms[-1]}")
 
@@ -60,7 +70,6 @@ def newton_raphson(system: Callable[[Array], Array],
 
     return x, error_norms, dx_norms
 
-   
 
 if __name__ == "__main__":
     def system_of_equations(x: Array)->Array:
