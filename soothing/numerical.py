@@ -3,7 +3,6 @@ from pprint import pprint
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from jax import jacfwd, jit
 from jaxtyping import Array
 
@@ -35,7 +34,7 @@ def newton_raphson(
     error_norms = []
     dx_norms = []
 
-    for step in range(max_iter):
+    for _ in range(max_iter):
         system_val = system(x)
         error = jnp.linalg.norm(system_val)
 
@@ -46,31 +45,13 @@ def newton_raphson(
         error_norms.append(error)
         dx_norms.append(jnp.linalg.norm(dx))
 
-        # Check convergence
-        if (
-            jnp.linalg.norm(system_val, ord=jnp.inf) < tol
-            or jnp.linalg.norm(dx, ord=jnp.inf) < tol
-        ):
-            break
+    error_arr = jnp.stack(error_norms)
+    dx_arr = jnp.stack(dx_norms)
+    x_arr = jnp.stack(x_list)
+    min_error_index = jnp.argmin(error_arr)
+    x = x_arr[min_error_index]
 
-        if (
-            jnp.isnan(x).any()
-            or jnp.isinf(x).any()
-            or jnp.isnan(system_val).any()
-            or jnp.isinf(system_val).any()
-        ):
-            print("Numerical instability encountered.")
-
-            if not retry:
-                break
-
-            key, subkey = jax.random.split(key)
-            x = jax.random.uniform(subkey, (len(x),), dtype=jnp.float64)
-
-    min_error_index = np.argmin(error_norms)
-    x = x_list[min_error_index]
-
-    return x, error_norms, dx_norms
+    return x, error_arr, dx_arr
 
 
 def _find_best_index_to_zero(
@@ -112,36 +93,56 @@ def _find_best_index_to_zero(
 
         return masked_system
 
-    non_zero_indices = jnp.where(~mask)[0]
-    if len(non_zero_indices) == 0:
-        return -1, jnp.inf, x
+    def _solve_for_index(idx_to_zero: int, key: Array) -> tuple[float, Array]:
+        """
+        Solves the system with the specified index zeroed out.
 
-    errors = []
-    maksed_solutions = []
+        Args:
+        - idx_to_zero: The index of the variable to zero.
+        - key: A key for generating random numbers.
 
-    for idx_to_zero in non_zero_indices:
+        Returns:
+        - A tuple containing:
+            - The error after zeroing that index and re-solving.
+            - The new solution.
+        """
         new_mask = mask.at[idx_to_zero].set(True)
         masked_sys = create_masked_system(new_mask)
 
-        key, subkey = jax.random.split(key)
         full_solution, _, _ = newton_raphson(
-            masked_sys, x, tol, nr_max_iter, key=subkey
+            masked_sys, x, tol, nr_max_iter, key=key
         )
 
         masked_solution = jnp.where(new_mask, 0.0, full_solution)
         error = jnp.linalg.norm(system(masked_solution))
+        return error, masked_solution
 
-        errors.append(error)
-        maksed_solutions.append(masked_solution)
-    
-    best_error_index = jnp.argmin(jnp.array(errors))
-    best_error = errors[best_error_index]
-    masked_solution = maksed_solutions[best_error_index]
+    non_zero_indices = jnp.where(~mask)[0]
+    if len(non_zero_indices) == 0:
+        return -1, jnp.inf, x
+
+    keys = jax.random.split(key, len(non_zero_indices))
+    errors, masked_solutions = jax.vmap(_solve_for_index)(non_zero_indices, keys)
+
+    finite_errors = jnp.isfinite(errors)
+    finite_solutions = jnp.all(jnp.isfinite(masked_solutions), axis=1)
+    valid_mask = finite_errors & finite_solutions
+
+    if not bool(jnp.any(valid_mask)):
+        return -1, jnp.inf, x
+
+    valid_errors = errors[valid_mask]
+    valid_solutions = masked_solutions[valid_mask]
+    valid_indices = non_zero_indices[valid_mask]
+
+    best_error_index = jnp.argmin(valid_errors)
+    best_error = valid_errors[best_error_index]
+    masked_solution = valid_solutions[best_error_index]
     
     if best_error > tol:
         return -1, jnp.inf, x
-    
-    return non_zero_indices[best_error_index], best_error, masked_solution
+
+    return valid_indices[best_error_index], best_error, masked_solution
 
 def solution_sparseification(
     solution: Array,
