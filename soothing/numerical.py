@@ -171,6 +171,8 @@ def solution_sparseification(
             x, mask, system, tol, key=key
         )
 
+        print(best_error, new_x)
+
         if idx_to_zero == -1 or best_error > tol:
             break
 
