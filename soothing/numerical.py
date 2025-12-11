@@ -1,17 +1,20 @@
-from jax import jit, jacfwd
-import jax
-import jax.numpy as jnp
-from jaxtyping import Array
-import numpy as np
-
 from typing import Callable
 
-def newton_raphson(system: Callable[[Array], Array],
-                   initial_guess: Array,
-                   tol: float = 1e-6,   
-                   max_iter: int = 100, 
-                   retry: bool = False,
-                   key: Array = jax.random.key(0)) -> tuple[Array, list[float], list[float]]:
+import jax
+import jax.numpy as jnp
+import numpy as np
+from jax import jacfwd, jit
+from jaxtyping import Array
+
+
+def newton_raphson(
+    system: Callable[[Array], Array],
+    initial_guess: Array,
+    tol: float = 1e-6,
+    max_iter: int = 100,
+    retry: bool = False,
+    key: Array = jax.random.key(0),
+) -> tuple[Array, list[float], list[float]]:
     """
     solve a system of equations using the Newton-Raphson method.
     we use shortest vectors in the Jacobian's null space to update our guess.
@@ -54,7 +57,7 @@ def newton_raphson(system: Callable[[Array], Array],
             or jnp.isinf(x).any()
             or jnp.isnan(system_val).any()
             or jnp.isinf(system_val).any()
-            ):
+        ):
             print("Numerical instability encountered.")
 
             if not retry:
@@ -63,21 +66,129 @@ def newton_raphson(system: Callable[[Array], Array],
             key, subkey = jax.random.split(key)
             x = jax.random.uniform(subkey, (len(x),), dtype=jnp.float64)
 
-        print(f"Step {step}: Error = {system_val}, dx = {dx_norms[-1]}")
-
     min_error_index = np.argmin(error_norms)
     x = x_list[min_error_index]
 
     return x, error_norms, dx_norms
 
 
+def _find_best_index_to_zero(
+    x: Array,
+    mask: Array,
+    system: Callable[[Array], Array],
+    tol: float,
+    nr_max_iter: int = 10,
+    key: Array = jax.random.key(1),
+) -> tuple[int, float, Array]:
+    """
+    Finds the index of the parameter that, when zeroed, has the smallest effect on the system error.
+
+    Args:
+    - x: The current solution.
+    - system: The system callable.
+    - tol: Tolerance for newton_raphson.
+    - nr_max_iter: Maximum number of iterations for newton_raphson.
+    - key: A key for generating random numbers.
+
+    Returns:
+    - A tuple containing:
+        - The index to zero.
+        - The error after zeroing that index and re-solving.
+        - The new solution.
+    """
+
+    def create_masked_system(mask: Array) -> Callable[[Array], Array]:
+        """
+        Creates a system function for a reduced number of variables.
+
+        Args:
+        - mask: A boolean Array indicating which variables are fixed to zero (True) and which are free (False).
+        """
+
+        def masked_system(x_full: Array) -> Array:
+            constrained_x = jnp.where(mask, 0.0, x_full)
+            return system(constrained_x)
+
+        return masked_system
+
+    non_zero_indices = jnp.where(~mask)[0]
+    if len(non_zero_indices) == 0:
+        return -1, jnp.inf, x
+
+    for idx_to_zero in non_zero_indices:
+        new_mask = mask.at[idx_to_zero].set(True)
+        masked_sys = create_masked_system(new_mask)
+
+        key, subkey = jax.random.split(key)
+        full_solution, _, _ = newton_raphson(
+            masked_sys, x, tol, nr_max_iter, key=subkey
+        )
+
+        # We need to evaluate the error with the masked variable set to zero
+        masked_solution = jnp.where(new_mask, 0.0, full_solution)
+        error = jnp.linalg.norm(system(masked_solution))
+
+        if error <= tol:
+            return idx_to_zero, error, masked_solution
+
+    return -1, jnp.inf, x
+
+
+def solution_sparseification(
+    solution: Array,
+    system: Callable[[Array], Array],
+    tol: float = 1e-6,
+    max_iter: int = 10,
+    key: Array = jax.random.key(1),
+) -> tuple[Array, float]:
+    """
+    Sparsify the solution by taking the parameter that zeroing it has the smallest effect on the system.
+
+    Args:
+    - solution: An Array of shape (n,) representing the solution to be sparsified.
+    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
+    - tol: Tolerance for considering a solution as valid.
+    - max_iter: Maximum number of iterations for sparsification.
+    - key: A key for generating random numbers.
+
+    Returns:
+    - An Array of shape (n,) representing the sparsified solution.
+    """
+    x = jnp.copy(solution)
+    mask = jnp.zeros_like(x, dtype=bool)
+
+    for _ in range(max_iter):
+        idx_to_zero, best_error, new_x = _find_best_index_to_zero(
+            x, mask, system, tol, key=key
+        )
+
+        if idx_to_zero == -1 or best_error > tol:
+            break
+
+        mask = mask.at[idx_to_zero].set(True)
+        x = new_x
+
+    x = jnp.where(mask, 0.0, x)
+    error = jnp.linalg.norm(system(x))
+
+    return x, error
+
+
 if __name__ == "__main__":
-    def system_of_equations(x: Array)->Array:
-        return jnp.array([
-            x[0]**2 + x[1]**2 - 1,
-            x[0]**3 - x[1]
-        ])
-    
-    initial_guess = jnp.array([0.5, 0.5])
-    solution, errors, deltas = newton_raphson(system_of_equations, initial_guess)
-    print("Solution:", solution)
+    def system_of_equations(x: Array) -> Array:
+        return jnp.array(
+            [
+                x[0] ** 2 + x[1] + x[2] ** 3 - x[1] * x[4] - 1,
+                9 * x[0] + x[1] ** 2 + x[3] - x[2] * x[3] - 6,
+            ]
+        )
+
+    solution, errors, _ = newton_raphson(system_of_equations, jnp.zeros(5), 1e-12)
+
+    print(solution)
+    print(errors)
+
+    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-12)
+
+    print(sparsified)
+    print(error)
