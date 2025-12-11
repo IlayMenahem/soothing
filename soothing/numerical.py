@@ -3,7 +3,7 @@ from pprint import pprint
 
 import jax
 import jax.numpy as jnp
-from jax import jacfwd, jit
+from jax import jacfwd, jit, lax, vmap
 from jaxtyping import Array
 
 
@@ -27,31 +27,61 @@ def newton_raphson(
     - retry: Whether to retry with a different initial guess if convergence fails.
     - key: A key for generating random numbers.
     """
-    x = initial_guess
     J_system = jit(jacfwd(system))
 
-    x_list = []
-    error_norms = []
-    dx_norms = []
+    def body_fn(carry):
+        i, x, best_x, best_err, err_arr, dx_arr, done, key = carry
 
-    for _ in range(max_iter):
         system_val = system(x)
         error = jnp.linalg.norm(system_val)
 
         dx = jnp.linalg.pinv(J_system(x)) @ system_val
-        x -= dx
+        dx_norm = jnp.linalg.norm(dx)
+        x_next = x - dx
 
-        x_list.append(x)
-        error_norms.append(error)
-        dx_norms.append(jnp.linalg.norm(dx))
+        err_arr = err_arr.at[i].set(error)
+        dx_arr = dx_arr.at[i].set(dx_norm)
 
-    error_arr = jnp.stack(error_norms)
-    dx_arr = jnp.stack(dx_norms)
-    x_arr = jnp.stack(x_list)
-    min_error_index = jnp.argmin(error_arr)
-    x = x_arr[min_error_index]
+        is_better = error < best_err
+        best_x = jnp.where(is_better, x_next, best_x)
+        best_err = jnp.where(is_better, error, best_err)
 
-    return x, error_arr, dx_arr
+        non_finite = (~jnp.isfinite(error)) | (~jnp.isfinite(dx_norm))
+        terminate = (error < tol) | non_finite
+
+        def retry_branch(args):
+            i, x_next, best_x, best_err, err_arr, dx_arr, _, key = args
+            key, subkey = jax.random.split(key)
+            new_x = jax.random.uniform(subkey, initial_guess.shape, dtype=initial_guess.dtype)
+            return i + 1, new_x, best_x, best_err, err_arr, dx_arr, False, key
+
+        def continue_branch(args):
+            i, x_next, best_x, best_err, err_arr, dx_arr, terminate, key = args
+            return i + 1, x_next, best_x, best_err, err_arr, dx_arr, terminate, key
+
+        return lax.cond(
+            retry & non_finite,
+            retry_branch,
+            continue_branch,
+            (i, x_next, best_x, best_err, err_arr, dx_arr, terminate, key),
+        )
+
+    def cond_fn(carry):
+        i, _, _, _, _, _, done, _ = carry
+        return (i < max_iter) & (~done)
+
+    err_init = jnp.full(max_iter, jnp.inf)
+    dx_init = jnp.full(max_iter, jnp.inf)
+
+    init_carry = (0, initial_guess, initial_guess, jnp.inf, err_init, dx_init, False, key)
+    i_final, x_final, best_x, best_err, err_arr, dx_arr, _, _ = lax.while_loop(
+        cond_fn, body_fn, init_carry
+    )
+
+    # Choose the best iterate observed (smallest error).
+    x_out = jnp.where(best_err < jnp.inf, best_x, x_final)
+
+    return x_out, err_arr, dx_arr
 
 
 def _find_best_index_to_zero(
@@ -122,7 +152,7 @@ def _find_best_index_to_zero(
         return -1, jnp.inf, x
 
     keys = jax.random.split(key, len(non_zero_indices))
-    errors, masked_solutions = jax.vmap(_solve_for_index)(non_zero_indices, keys)
+    errors, masked_solutions = vmap(_solve_for_index)(non_zero_indices, keys)
 
     finite_errors = jnp.isfinite(errors)
     finite_solutions = jnp.all(jnp.isfinite(masked_solutions), axis=1)
@@ -197,12 +227,12 @@ if __name__ == "__main__":
             ]
         )
 
-    solution, errors, _ = newton_raphson(system_of_equations, jnp.zeros(5), 1e-20)
+    solution, errors, _ = newton_raphson(system_of_equations, jnp.ones(5), 1e-20)
 
     pprint(solution)
     print([float(error) for error in errors],'\n')
 
-    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-20)
+    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-16)
 
     pprint(sparsified)
     pprint(error)
