@@ -1,4 +1,5 @@
 from typing import Callable
+from pprint import pprint
 
 import jax
 import jax.numpy as jnp
@@ -115,6 +116,9 @@ def _find_best_index_to_zero(
     if len(non_zero_indices) == 0:
         return -1, jnp.inf, x
 
+    errors = []
+    maksed_solutions = []
+
     for idx_to_zero in non_zero_indices:
         new_mask = mask.at[idx_to_zero].set(True)
         masked_sys = create_masked_system(new_mask)
@@ -124,15 +128,20 @@ def _find_best_index_to_zero(
             masked_sys, x, tol, nr_max_iter, key=subkey
         )
 
-        # We need to evaluate the error with the masked variable set to zero
         masked_solution = jnp.where(new_mask, 0.0, full_solution)
         error = jnp.linalg.norm(system(masked_solution))
 
-        if error <= tol:
-            return idx_to_zero, error, masked_solution
-
-    return -1, jnp.inf, x
-
+        errors.append(error)
+        maksed_solutions.append(masked_solution)
+    
+    best_error_index = jnp.argmin(jnp.array(errors))
+    best_error = errors[best_error_index]
+    masked_solution = maksed_solutions[best_error_index]
+    
+    if best_error > tol:
+        return -1, jnp.inf, x
+    
+    return non_zero_indices[best_error_index], best_error, masked_solution
 
 def solution_sparseification(
     solution: Array,
@@ -175,6 +184,8 @@ def solution_sparseification(
 
 
 if __name__ == "__main__":
+    jax.config.update("jax_enable_x64", True)
+
     def system_of_equations(x: Array) -> Array:
         return jnp.array(
             [
@@ -183,12 +194,12 @@ if __name__ == "__main__":
             ]
         )
 
-    solution, errors, _ = newton_raphson(system_of_equations, jnp.zeros(5), 1e-12)
+    solution, errors, _ = newton_raphson(system_of_equations, jnp.zeros(5), 1e-20)
 
-    print(solution)
-    print(errors)
+    pprint(solution)
+    print([float(error) for error in errors],'\n')
 
-    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-12)
+    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-20)
 
-    print(sparsified)
-    print(error)
+    pprint(sparsified)
+    pprint(error)
