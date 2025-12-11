@@ -14,6 +14,7 @@ def newton_raphson(
     max_iter: int = 100,
     retry: bool = False,
     key: Array = jax.random.key(0),
+    jacobian: Callable[[Array], Array] | None = None,
 ) -> tuple[Array, list[float], list[float]]:
     """
     solve a system of equations using the Newton-Raphson method.
@@ -26,8 +27,9 @@ def newton_raphson(
     - max_iter: Maximum number of iterations.
     - retry: Whether to retry with a different initial guess if convergence fails.
     - key: A key for generating random numbers.
+    - jacobian: Optional callable returning the system Jacobian; if provided it will be reused instead of recompiling.
     """
-    J_system = jit(jacfwd(system))
+    J_system = jacobian if jacobian is not None else jit(jacfwd(system))
 
     def body_fn(carry):
         i, x, best_x, best_err, err_arr, dx_arr, done, key = carry
@@ -91,6 +93,7 @@ def _find_best_index_to_zero(
     tol: float,
     nr_max_iter: int = 10,
     key: Array = jax.random.key(1),
+    jacobian: Callable[[Array], Array] | None = None,
 ) -> tuple[int, float, Array]:
     """
     Finds the index of the parameter that, when zeroed, has the smallest effect on the system error.
@@ -101,6 +104,7 @@ def _find_best_index_to_zero(
     - tol: Tolerance for newton_raphson.
     - nr_max_iter: Maximum number of iterations for newton_raphson.
     - key: A key for generating random numbers.
+    - jacobian: Optional Jacobian of the original system to reuse across candidate zeroings.
 
     Returns:
     - A tuple containing:
@@ -123,6 +127,8 @@ def _find_best_index_to_zero(
 
         return masked_system
 
+    base_jacobian = jacobian if jacobian is not None else jit(jacfwd(system))
+
     def _solve_for_index(idx_to_zero: int, key: Array) -> tuple[float, Array]:
         """
         Solves the system with the specified index zeroed out.
@@ -139,8 +145,12 @@ def _find_best_index_to_zero(
         new_mask = mask.at[idx_to_zero].set(True)
         masked_sys = create_masked_system(new_mask)
 
+        def masked_jacobian(x_full: Array) -> Array:
+            constrained_x = jnp.where(new_mask, 0.0, x_full)
+            return base_jacobian(constrained_x) * (~new_mask).astype(x_full.dtype)
+
         full_solution, _, _ = newton_raphson(
-            masked_sys, x, tol, nr_max_iter, key=key
+            masked_sys, x, tol, nr_max_iter, key=key, jacobian=masked_jacobian
         )
 
         masked_solution = jnp.where(new_mask, 0.0, full_solution)
@@ -180,6 +190,7 @@ def solution_sparseification(
     tol: float = 1e-6,
     max_iter: int = 10,
     key: Array = jax.random.key(1),
+    jacobian: Callable[[Array], Array] | None = None,
 ) -> tuple[Array, float]:
     """
     Sparsify the solution by taking the parameter that zeroing it has the smallest effect on the system.
@@ -190,6 +201,7 @@ def solution_sparseification(
     - tol: Tolerance for considering a solution as valid.
     - max_iter: Maximum number of iterations for sparsification.
     - key: A key for generating random numbers.
+    - jacobian: Optional Jacobian of the system to reuse across runs.
 
     Returns:
     - An Array of shape (n,) representing the sparsified solution.
@@ -199,7 +211,7 @@ def solution_sparseification(
 
     for _ in range(max_iter):
         idx_to_zero, best_error, new_x = _find_best_index_to_zero(
-            x, mask, system, tol, key=key
+            x, mask, system, tol, key=key, jacobian=jacobian
         )
 
         print(best_error, new_x)
@@ -227,7 +239,7 @@ if __name__ == "__main__":
             ]
         )
 
-    solution, errors, _ = newton_raphson(system_of_equations, jnp.ones(5), 1e-20)
+    solution, errors, _ = newton_raphson(system_of_equations, jnp.ones(5), 1e-16)
 
     pprint(solution)
     print([float(error) for error in errors],'\n')
