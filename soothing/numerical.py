@@ -113,20 +113,6 @@ def _find_best_index_to_zero(
         - The new solution.
     """
 
-    def create_masked_system(mask: Array) -> Callable[[Array], Array]:
-        """
-        Creates a system function for a reduced number of variables.
-
-        Args:
-        - mask: A boolean Array indicating which variables are fixed to zero (True) and which are free (False).
-        """
-
-        def masked_system(x_full: Array) -> Array:
-            constrained_x = jnp.where(mask, 0.0, x_full)
-            return system(constrained_x)
-
-        return masked_system
-
     base_jacobian = jacobian if jacobian is not None else jit(jacfwd(system))
 
     def _solve_for_index(idx_to_zero: int, key: Array) -> tuple[float, Array]:
@@ -142,18 +128,24 @@ def _find_best_index_to_zero(
             - The error after zeroing that index and re-solving.
             - The new solution.
         """
-        new_mask = mask.at[idx_to_zero].set(True)
-        masked_sys = create_masked_system(new_mask)
 
-        def masked_jacobian(x_full: Array) -> Array:
-            constrained_x = jnp.where(new_mask, 0.0, x_full)
-            return base_jacobian(constrained_x) * (~new_mask).astype(x_full.dtype)
+        def constrained_system(x_full: Array) -> Array:
+            x_masked = jnp.where(mask, 0.0, x_full)
+            residual = system(x_masked)
+            zero_constraint = jnp.array([x_masked[idx_to_zero]])
+            return jnp.concatenate([residual, zero_constraint], axis=0)
+
+        def constrained_jacobian(x_full: Array) -> Array:
+            x_masked = jnp.where(mask, 0.0, x_full)
+            base_J = base_jacobian(x_masked)
+            constraint_grad = jnp.zeros_like(x_full).at[idx_to_zero].set(1.0)
+            return jnp.concatenate([base_J, constraint_grad[jnp.newaxis, :]], axis=0)
 
         full_solution, _, _ = newton_raphson(
-            masked_sys, x, tol, nr_max_iter, key=key, jacobian=masked_jacobian
+            constrained_system, x, tol, nr_max_iter, key=key, jacobian=constrained_jacobian
         )
 
-        masked_solution = jnp.where(new_mask, 0.0, full_solution)
+        masked_solution = jnp.where(mask, 0.0, full_solution).at[idx_to_zero].set(0.0)
         error = jnp.linalg.norm(system(masked_solution))
         return error, masked_solution
 
@@ -180,7 +172,7 @@ def _find_best_index_to_zero(
     masked_solution = valid_solutions[best_error_index]
     
     if best_error > tol:
-        return -1, jnp.inf, x
+        return -1, best_error, x
 
     return valid_indices[best_error_index], best_error, masked_solution
 
@@ -188,7 +180,7 @@ def solution_sparseification(
     solution: Array,
     system: Callable[[Array], Array],
     tol: float = 1e-6,
-    max_iter: int = 10,
+    max_iter: int = 100,
     key: Array = jax.random.key(1),
     jacobian: Callable[[Array], Array] | None = None,
 ) -> tuple[Array, float]:
