@@ -54,7 +54,7 @@ def newton_raphson(
         def retry_branch(args):
             i, x_next, best_x, best_err, err_arr, dx_arr, _, key = args
             key, subkey = jax.random.split(key)
-            new_x = jax.random.uniform(subkey, initial_guess.shape, dtype=initial_guess.dtype)
+            new_x = jax.random.uniform(subkey, initial_guess.shape).astype(initial_guess.dtype)
             return i + 1, new_x, best_x, best_err, err_arr, dx_arr, False, key
 
         def continue_branch(args):
@@ -228,6 +228,27 @@ def solution_sparseification(
     return x, error
 
 
+def estimate_solution_dim(system: Callable[[Array], Array], solution: Array, jacobian: Callable[[Array], Array] | None = None) -> int:
+    """
+    Estimate the dimension of the solution space by computing the rank of the Jacobian at the solution.
+
+    Args:
+    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
+    - solution: An Array of shape (n,) representing the solution.
+    - jacobian: Optional Jacobian of the system to reuse.
+
+    Returns:
+    - An integer representing the estimated dimension of the solution space.
+    """
+    J_system = jacobian if jacobian is not None else jacfwd(system)
+    
+    J_at_solution = J_system(solution)
+    rank = jnp.linalg.matrix_rank(J_at_solution)
+    dim = solution.shape[0] - rank
+    
+    return dim
+
+
 if __name__ == "__main__":
     jax.config.update("jax_enable_x64", True)
 
@@ -243,6 +264,7 @@ if __name__ == "__main__":
 
     pprint(solution)
     print([float(error) for error in errors],'\n')
+    print("Estimated solution dimension:", estimate_solution_dim(system_of_equations, solution))
 
     sparsified, error = solution_sparseification(solution, system_of_equations, 1e-16)
 
