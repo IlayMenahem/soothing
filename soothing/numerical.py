@@ -86,6 +86,39 @@ def newton_raphson(
     return x_out, err_arr, dx_arr
 
 
+def multiattempt_newton_raphson(
+    system: Callable[[Array], Array],
+    initial_guesses: Array,
+    tol: float = 1e-6,
+    max_iter: int = 100,
+    jacobian: Callable[[Array], Array] | None = None,
+) -> tuple[Array, list[float], list[float]]:
+    """
+    Solve a system of equations using multiple attempts of the Newton-Raphson method.
+
+    Args:
+    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
+    - initial_guesses: An Array of shape (m, n) representing m initial guesses for the solution.
+    - tol: Tolerance for convergence.
+    - max_iter: Maximum number of iterations for each attempt.
+    - key: A key for generating random numbers.
+    - jacobian: Optional callable returning the system Jacobian; if provided it will be reused instead of recompiling.
+
+    Returns:
+    - The best solution found across all attempts, along with its error history and step sizes.
+    """
+    jacobian = jacobian if jacobian is not None else jit(jacfwd(system))
+
+    def single_attempt(x0: Array) -> tuple[Array, list[float], list[float]]:
+        return newton_raphson(system, x0, tol, max_iter, False, jacobian=jacobian)
+    
+    solutions, errors, dxs = vmap(single_attempt)(initial_guesses)
+    final_errors = jnp.array([jnp.min(err) for err in errors])
+    best_index = jnp.argmin(final_errors)
+
+    return solutions[best_index], errors[best_index], dxs[best_index]
+
+
 def _find_best_index_to_zero(
     x: Array,
     mask: Array,
