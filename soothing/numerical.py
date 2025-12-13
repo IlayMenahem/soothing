@@ -37,7 +37,7 @@ def newton_raphson(
         system_val = system(x)
         error = jnp.linalg.norm(system_val)
 
-        dx = jnp.linalg.pinv(J_system(x)) @ system_val
+        dx = jnp.linalg.pinv(J_system(x), rtol=1e-9) @ system_val
         dx_norm = jnp.linalg.norm(dx)
         x_next = x - dx
 
@@ -45,7 +45,7 @@ def newton_raphson(
         dx_arr = dx_arr.at[i].set(dx_norm)
 
         is_better = error < best_err
-        best_x = jnp.where(is_better, x_next, best_x)
+        best_x = jnp.where(is_better, x, best_x)
         best_err = jnp.where(is_better, error, best_err)
 
         non_finite = (~jnp.isfinite(error)) | (~jnp.isfinite(dx_norm))
@@ -81,7 +81,7 @@ def newton_raphson(
     )
 
     # Choose the best iterate observed (smallest error).
-    x_out = jnp.where(best_err < jnp.inf, best_x, x_final)
+    x_out = jnp.where(jnp.isfinite(best_err), best_x, x_final)
 
     return x_out, err_arr, dx_arr
 
@@ -171,6 +171,7 @@ def _find_best_index_to_zero(
         def constrained_jacobian(x_full: Array) -> Array:
             x_masked = jnp.where(mask, 0.0, x_full)
             base_J = base_jacobian(x_masked)
+            base_J = jnp.where(mask[jnp.newaxis, :], 0.0, base_J)
             constraint_grad = jnp.zeros_like(x_full).at[idx_to_zero].set(1.0)
             return jnp.concatenate([base_J, constraint_grad[jnp.newaxis, :]], axis=0)
 
