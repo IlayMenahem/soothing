@@ -1,5 +1,5 @@
-from typing import Callable
 from pprint import pprint
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -54,7 +54,9 @@ def newton_raphson(
         def retry_branch(args):
             i, x_next, best_x, best_err, err_arr, dx_arr, _, key = args
             key, subkey = jax.random.split(key)
-            new_x = jax.random.uniform(subkey, initial_guess.shape).astype(initial_guess.dtype)
+            new_x = jax.random.uniform(subkey, initial_guess.shape).astype(
+                initial_guess.dtype
+            )
             return i + 1, new_x, best_x, best_err, err_arr, dx_arr, False, key
 
         def continue_branch(args):
@@ -75,7 +77,16 @@ def newton_raphson(
     err_init = jnp.full(max_iter, jnp.inf)
     dx_init = jnp.full(max_iter, jnp.inf)
 
-    init_carry = (0, initial_guess, initial_guess, jnp.inf, err_init, dx_init, False, key)
+    init_carry = (
+        0,
+        initial_guess,
+        initial_guess,
+        jnp.inf,
+        err_init,
+        dx_init,
+        False,
+        key,
+    )
     i_final, x_final, best_x, best_err, err_arr, dx_arr, _, _ = lax.while_loop(
         cond_fn, body_fn, init_carry
     )
@@ -111,12 +122,83 @@ def multiattempt_newton_raphson(
 
     def single_attempt(x0: Array) -> tuple[Array, list[float], list[float]]:
         return newton_raphson(system, x0, tol, max_iter, False, jacobian=jacobian)
-    
+
     solutions, errors, dxs = vmap(single_attempt)(initial_guesses)
     final_errors = jnp.array([jnp.min(err) for err in errors])
     best_index = jnp.argmin(final_errors)
 
     return solutions[best_index], errors[best_index], dxs[best_index]
+
+
+def homotopy_continuation(
+    system: Callable[[Array], Array],
+    solution: Array,
+    target_system: Callable[[Array], Array],
+    tol: float = 1e-6,
+    max_iter: int = 100,
+    steps: int = 10,
+    homotopy_jacobian: Callable[[Array, float], Array] | None = None,
+) -> tuple[Array, float]:
+    """
+    Solve a target system of equations using homotopy continuation from a known solution of a source system.
+
+    Args:
+    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
+    - solution: An Array of shape (n,) representing the known solution to the source system.
+    - target_system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
+    - tol: Tolerance for convergence.
+    - max_iter: Maximum number of iterations for each step.
+    - steps: Number of homotopy steps.
+    - homotopy_jacobian: Optional Jacobian of the homotopy system to reuse across runs.
+
+    Returns:
+    - An Array of shape (n,) representing the solution to the target system.
+    - A float representing the final error.
+    """
+
+    @jit
+    def homotopy_system(x: Array, t: float) -> Array:
+        return (1 - t) * system(x) + t * target_system(x)
+
+    homotopy_jacobian = (
+        homotopy_jacobian
+        if homotopy_jacobian is not None
+        else jit(jacfwd(homotopy_system))
+    )
+
+    def euler_predictor(x: Array, t: float, dt: float) -> Array:
+        J = homotopy_jacobian(x, t)
+        f = homotopy_system(x, t)
+
+        dx_dt = -jnp.linalg.pinv(J) @ f
+        new_x = x + dx_dt * dt
+
+        return new_x
+
+    x = jnp.copy(solution)
+
+    for i in range(steps):
+        t = (i + 1) / steps
+
+        def system_at_t(x_inner: Array) -> Array:
+            return homotopy_system(x_inner, t)
+
+        def jacobian_at_t(x_inner: Array) -> Array:
+            return homotopy_jacobian(x_inner, t)
+
+        x = euler_predictor(x, t - 1 / steps, 1 / steps)
+
+        x, _, _ = newton_raphson(
+            system_at_t,
+            x,
+            tol,
+            max_iter,
+            jacobian=jacobian_at_t,
+        )
+
+    error = jnp.linalg.norm(target_system(x))
+
+    return x, error
 
 
 def _find_best_index_to_zero(
@@ -150,7 +232,7 @@ def _find_best_index_to_zero(
 
     def _solve_for_index(idx_to_zero: int, key: Array) -> tuple[float, Array]:
         """
-        Solves the system with the specified index zeroed out.
+        Solves the system with the goal of zeroing the variable at idx_to_zero, this will be done homotopy continuation by adding a constraint to the system of the form x[idx_to_zero] = t.
 
         Args:
         - idx_to_zero: The index of the variable to zero.
@@ -176,7 +258,12 @@ def _find_best_index_to_zero(
             return jnp.concatenate([base_J, constraint_grad[jnp.newaxis, :]], axis=0)
 
         full_solution, _, _ = newton_raphson(
-            constrained_system, x, tol, nr_max_iter, key=key, jacobian=constrained_jacobian
+            constrained_system,
+            x,
+            tol,
+            nr_max_iter,
+            key=key,
+            jacobian=constrained_jacobian,
         )
 
         masked_solution = jnp.where(mask, 0.0, full_solution).at[idx_to_zero].set(0.0)
@@ -204,11 +291,12 @@ def _find_best_index_to_zero(
     best_error_index = jnp.argmin(valid_errors)
     best_error = valid_errors[best_error_index]
     masked_solution = valid_solutions[best_error_index]
-    
+
     if best_error > tol:
         return -1, best_error, x
 
     return valid_indices[best_error_index], best_error, masked_solution
+
 
 def solution_sparseification(
     solution: Array,
@@ -254,7 +342,11 @@ def solution_sparseification(
     return x, error
 
 
-def estimate_solution_dim(system: Callable[[Array], Array], solution: Array, jacobian: Callable[[Array], Array] | None = None) -> int:
+def estimate_solution_dim(
+    system: Callable[[Array], Array],
+    solution: Array,
+    jacobian: Callable[[Array], Array] | None = None,
+) -> int:
     """
     Estimate the dimension of the solution space by computing the rank of the Jacobian at the solution.
 
@@ -267,12 +359,25 @@ def estimate_solution_dim(system: Callable[[Array], Array], solution: Array, jac
     - An integer representing the estimated dimension of the solution space.
     """
     J_system = jacobian if jacobian is not None else jacfwd(system)
-    
+
     J_at_solution = J_system(solution)
     rank = jnp.linalg.matrix_rank(J_at_solution)
     dim = solution.shape[0] - rank
-    
+
     return dim
+
+
+def solution_test(solution: Array, system: Callable[[Array], Array]) -> None:
+    """
+    Test whether the provided solution satisfies the system of equations, the test is a first order check, meaning the jacobian should be large relative to the residual.
+
+    Args:
+    - solution: An Array of shape (n,) representing the solution to be tested.
+    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
+    """
+    raise NotImplementedError(
+        "This function is a placeholder for future implementation."
+    )
 
 
 if __name__ == "__main__":
@@ -289,8 +394,11 @@ if __name__ == "__main__":
     solution, errors, _ = newton_raphson(system_of_equations, jnp.ones(5), 1e-16)
 
     pprint(solution)
-    print([float(error) for error in errors],'\n')
-    print("Estimated solution dimension:", estimate_solution_dim(system_of_equations, solution))
+    print([float(error) for error in errors], "\n")
+    print(
+        "Estimated solution dimension:",
+        estimate_solution_dim(system_of_equations, solution),
+    )
 
     sparsified, error = solution_sparseification(solution, system_of_equations, 1e-16)
 
