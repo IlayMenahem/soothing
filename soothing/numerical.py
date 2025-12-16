@@ -134,10 +134,10 @@ def homotopy_continuation(
     system: Callable[[Array], Array],
     solution: Array,
     target_system: Callable[[Array], Array],
-    tol: float = 1e-6,
+    tol: float = 1e-15,
     max_iter: int = 100,
     steps: int = 10,
-    homotopy_jacobian: Callable[[Array, float], Array] | None = None,
+    homotopy_jacobian: Callable[[Array, Array], Array] | None = None,
 ) -> tuple[Array, float]:
     """
     Solve a target system of equations using homotopy continuation from a known solution of a source system.
@@ -157,7 +157,7 @@ def homotopy_continuation(
     """
 
     @jit
-    def homotopy_system(x: Array, t: float) -> Array:
+    def homotopy_system(x: Array, t: Array) -> Array:
         return (1 - t) * system(x) + t * target_system(x)
 
     homotopy_jacobian = (
@@ -166,7 +166,8 @@ def homotopy_continuation(
         else jit(jacfwd(homotopy_system))
     )
 
-    def euler_predictor(x: Array, t: float, dt: float) -> Array:
+    @jit
+    def euler_predictor(x: Array, t: Array, dt: Array) -> Array:
         J = homotopy_jacobian(x, t)
         f = homotopy_system(x, t)
 
@@ -177,8 +178,10 @@ def homotopy_continuation(
 
     x = jnp.copy(solution)
 
-    for i in range(steps):
-        t = (i + 1) / steps
+    dt = jnp.array(1 / steps, dtype=x.dtype)
+
+    for i in range(1, steps + 1):
+        t = jnp.array(i / steps, dtype=x.dtype)
 
         def system_at_t(x_inner: Array) -> Array:
             return homotopy_system(x_inner, t)
@@ -186,7 +189,8 @@ def homotopy_continuation(
         def jacobian_at_t(x_inner: Array) -> Array:
             return homotopy_jacobian(x_inner, t)
 
-        x = euler_predictor(x, t - 1 / steps, 1 / steps)
+        t_prev = jnp.array((i - 1) / steps, dtype=x.dtype)
+        x = euler_predictor(x, t_prev, dt)
 
         x, _, _ = newton_raphson(
             system_at_t,
@@ -207,8 +211,6 @@ def _find_best_index_to_zero(
     system: Callable[[Array], Array],
     tol: float,
     nr_max_iter: int = 10,
-    key: Array = jax.random.key(1),
-    jacobian: Callable[[Array], Array] | None = None,
 ) -> tuple[int, float, Array]:
     """
     Finds the index of the parameter that, when zeroed, has the smallest effect on the system error.
@@ -228,9 +230,7 @@ def _find_best_index_to_zero(
         - The new solution.
     """
 
-    base_jacobian = jacobian if jacobian is not None else jit(jacfwd(system))
-
-    def _solve_for_index(idx_to_zero: int, key: Array) -> tuple[float, Array]:
+    def _solve_for_index(idx_to_zero: int) -> tuple[float, Array]:
         """
         Solves the system with the goal of zeroing the variable at idx_to_zero, this will be done homotopy continuation by adding a constraint to the system of the form x[idx_to_zero] = t.
 
@@ -244,38 +244,53 @@ def _find_best_index_to_zero(
             - The new solution.
         """
 
+        @jit
+        def initial_system(x: Array) -> Array:
+            x_masked = jnp.where(mask, 0.0, x)
+            residual = system(x_masked)
+            constraint = jnp.array([x_masked[idx_to_zero] - x[idx_to_zero]])
+            return jnp.concatenate([residual, constraint], axis=0)
+
+        @jit
         def constrained_system(x_full: Array) -> Array:
             x_masked = jnp.where(mask, 0.0, x_full)
             residual = system(x_masked)
             zero_constraint = jnp.array([x_masked[idx_to_zero]])
             return jnp.concatenate([residual, zero_constraint], axis=0)
 
-        def constrained_jacobian(x_full: Array) -> Array:
-            x_masked = jnp.where(mask, 0.0, x_full)
-            base_J = base_jacobian(x_masked)
-            base_J = jnp.where(mask[jnp.newaxis, :], 0.0, base_J)
-            constraint_grad = jnp.zeros_like(x_full).at[idx_to_zero].set(1.0)
-            return jnp.concatenate([base_J, constraint_grad[jnp.newaxis, :]], axis=0)
+        system_jacobian = jit(jacfwd(initial_system))
 
-        full_solution, _, _ = newton_raphson(
-            constrained_system,
+        @jit
+        def homotopy_jacobian(x: Array, t: Array) -> Array:
+            constraint_jacobian = (
+                jnp.zeros((1, x.shape[0]), dtype=x.dtype).at[0, idx_to_zero].set(1.0)
+            )
+            jacobian = jnp.concatenate(
+                [system_jacobian(x)[:-1, :], constraint_jacobian], axis=0
+            )
+
+            return jacobian
+
+        full_solution, _ = homotopy_continuation(
+            initial_system,
             x,
+            constrained_system,
             tol,
             nr_max_iter,
-            key=key,
-            jacobian=constrained_jacobian,
+            steps=50,
+            homotopy_jacobian=homotopy_jacobian,
         )
 
         masked_solution = jnp.where(mask, 0.0, full_solution).at[idx_to_zero].set(0.0)
         error = jnp.linalg.norm(system(masked_solution))
+
         return error, masked_solution
 
     non_zero_indices = jnp.where(~mask)[0]
     if len(non_zero_indices) == 0:
         return -1, jnp.inf, x
 
-    keys = jax.random.split(key, len(non_zero_indices))
-    errors, masked_solutions = vmap(_solve_for_index)(non_zero_indices, keys)
+    errors, masked_solutions = vmap(_solve_for_index)(non_zero_indices)
 
     finite_errors = jnp.isfinite(errors)
     finite_solutions = jnp.all(jnp.isfinite(masked_solutions), axis=1)
@@ -303,8 +318,6 @@ def solution_sparseification(
     system: Callable[[Array], Array],
     tol: float = 1e-6,
     max_iter: int = 100,
-    key: Array = jax.random.key(1),
-    jacobian: Callable[[Array], Array] | None = None,
 ) -> tuple[Array, float]:
     """
     Sparsify the solution by taking the parameter that zeroing it has the smallest effect on the system.
@@ -314,8 +327,6 @@ def solution_sparseification(
     - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
     - tol: Tolerance for considering a solution as valid.
     - max_iter: Maximum number of iterations for sparsification.
-    - key: A key for generating random numbers.
-    - jacobian: Optional Jacobian of the system to reuse across runs.
 
     Returns:
     - An Array of shape (n,) representing the sparsified solution.
@@ -324,9 +335,7 @@ def solution_sparseification(
     mask = jnp.zeros_like(x, dtype=bool)
 
     for _ in range(max_iter):
-        idx_to_zero, best_error, new_x = _find_best_index_to_zero(
-            x, mask, system, tol, key=key, jacobian=jacobian
-        )
+        idx_to_zero, best_error, new_x = _find_best_index_to_zero(x, mask, system, tol)
 
         print(best_error, new_x)
 
@@ -383,11 +392,12 @@ def solution_test(solution: Array, system: Callable[[Array], Array]) -> None:
 if __name__ == "__main__":
     jax.config.update("jax_enable_x64", True)
 
+    @jit
     def system_of_equations(x: Array) -> Array:
         return jnp.array(
             [
                 x[0] ** 2 + x[1] + x[2] ** 3 - x[1] * x[4] - 1,
-                9 * x[0] + x[1] ** 2 + x[3] - x[2] * x[3] - 6,
+                9 * x[0] + x[1] ** 2 + x[3] - x[2] * x[3] ** 4 - 5,
             ]
         )
 
@@ -400,7 +410,7 @@ if __name__ == "__main__":
         estimate_solution_dim(system_of_equations, solution),
     )
 
-    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-16)
+    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-15)
 
     pprint(sparsified)
     pprint(error)
