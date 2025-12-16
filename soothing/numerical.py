@@ -37,8 +37,8 @@ def newton_raphson(
     jacobian: Callable[[Array], Array] | None = None,
 ) -> tuple[Array, Array, Array]:
     """
-    solve a system of equations using the Newton-Raphson method.
-    we use shortest vectors in the Jacobian's null space to update our guess.
+    Solve a system of equations using the Newton-Raphson method.
+    Uses a Jacobian pseudo-inverse step, then adjusts within the Jacobian null space with L0-biased weights to prefer sparse directions.
 
     Args:
     - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
@@ -54,12 +54,53 @@ def newton_raphson(
     def body_fn(carry):
         i, x, best_x, best_err, err_arr, dx_arr, done, key = carry
 
+        J = J_system(x)
         system_val = system(x)
         error = jnp.linalg.norm(system_val)
 
-        dx = jnp.linalg.pinv(J_system(x), rtol=1e-9) @ system_val
-        dx_norm = jnp.linalg.norm(dx)
-        x_next = x - dx
+        dx_newton = jnp.linalg.pinv(J, rtol=1e-9) @ system_val
+        x_target = x - dx_newton
+
+        null = _nullspace(J)
+        null_dim = jnp.sum(jnp.linalg.norm(null, axis=0) > 0)
+
+        def _null_adjust(_) -> tuple[Array, Array]:
+            """
+            Adjust the Newton step within the null space to minimize the L0-like weighted error.
+
+            Args:
+            - _: Dummy argument for lax.cond compatibility.
+
+            Returns:
+            - step: The adjusted step to take.
+            - x_adj: The adjusted target point.
+            """
+            weights = 1.0 / (jnp.abs(x_target) + 1e-6)
+            weighted_null = null * weights[:, None]
+            rhs = -weights * x_target
+            gram = weighted_null.T @ weighted_null
+            coef = jnp.linalg.pinv(gram, rtol=1e-9) @ (weighted_null.T @ rhs)
+            x_adj_candidate = x_target + null @ coef
+            x_adj = lax.cond(
+                jnp.all(jnp.isfinite(x_adj_candidate)),
+                lambda _: x_adj_candidate,
+                lambda _: x_target,
+                operand=None,
+            )
+            step = x_adj - x
+            return step, x_adj
+
+        def _no_adjust(_):
+            step = -dx_newton
+            return step, x_target
+
+        step, x_next = lax.cond(
+            null_dim > 0,
+            _null_adjust,
+            _no_adjust,
+            operand=None,
+        )
+        dx_norm = jnp.linalg.norm(step)
 
         err_arr = err_arr.at[i].set(error)
         dx_arr = dx_arr.at[i].set(dx_norm)
@@ -123,7 +164,7 @@ def multiattempt_newton_raphson(
     tol: float = 1e-6,
     max_iter: int = 100,
     jacobian: Callable[[Array], Array] | None = None,
-) -> tuple[Array, list[float], list[float]]:
+) -> tuple[Array, Array, Array]:
     """
     Solve a system of equations using multiple attempts of the Newton-Raphson method.
 
@@ -136,11 +177,11 @@ def multiattempt_newton_raphson(
     - jacobian: Optional callable returning the system Jacobian; if provided it will be reused instead of recompiling.
 
     Returns:
-    - The best solution found across all attempts, along with its error history and step sizes.
+    - The best solution found across all attempts, along with its error and step sizes.
     """
     jacobian = jacobian if jacobian is not None else jit(jacfwd(system))
 
-    def single_attempt(x0: Array) -> tuple[Array, list[float], list[float]]:
+    def single_attempt(x0: Array) -> tuple[Array, Array, Array]:
         return newton_raphson(system, x0, tol, max_iter, False, jacobian=jacobian)
 
     solutions, errors, dxs = vmap(single_attempt)(initial_guesses)
@@ -225,23 +266,26 @@ def homotopy_continuation(
     return x, error
 
 
-def _find_best_index_to_zero(
+def _best_rationalization(
     x: Array,
     mask: Array,
     system: Callable[[Array], Array],
     tol: float,
     nr_max_iter: int = 10,
+    denominators: tuple[int, ...] = tuple(i for i in range(1, 12)),
+    reference: Array | None = None,
 ) -> tuple[int, float, Array]:
     """
     Finds the index of the parameter that, when zeroed, has the smallest effect on the system error.
 
     Args:
     - x: The current solution.
+    - mask: Boolean mask indicating which entries are already fixed.
     - system: The system callable.
     - tol: Tolerance for newton_raphson.
     - nr_max_iter: Maximum number of iterations for newton_raphson.
-    - key: A key for generating random numbers.
-    - jacobian: Optional Jacobian of the original system to reuse across candidate zeroings.
+    - denominators: Candidate denominators to use when snapping masked entries to small fractions.
+    - reference: Reference values used to choose nearby fractions for masked entries.
 
     Returns:
     - A tuple containing:
@@ -249,8 +293,22 @@ def _find_best_index_to_zero(
         - The error after zeroing that index and re-solving.
         - The new solution.
     """
+    reference = x if reference is None else reference
+    denominators_arr = jnp.array(denominators, dtype=x.dtype)
 
-    def _solve_for_index(idx_to_zero: int) -> tuple[float, Array]:
+    @jit
+    def _apply_mask_with_fractions(x_full: Array) -> Array:
+        candidate_grid = (
+            jnp.round(reference * denominators_arr[:, None]) / denominators_arr[:, None]
+        )
+        candidate_grid = jnp.vstack(
+            [jnp.zeros((1, reference.shape[0]), dtype=x.dtype), candidate_grid]
+        )
+        closest_idx = jnp.argmin(jnp.abs(candidate_grid - reference), axis=0)
+        snapped = candidate_grid[closest_idx, jnp.arange(reference.shape[0])]
+        return jnp.where(mask, snapped, x_full)
+
+    def _solve_for_index(idx_to_zero: Array) -> tuple[float, Array]:
         """
         Solves the system with the goal of zeroing the variable at idx_to_zero, this will be done homotopy continuation by adding a constraint to the system of the form x[idx_to_zero] = t.
 
@@ -266,14 +324,14 @@ def _find_best_index_to_zero(
 
         @jit
         def initial_system(x: Array) -> Array:
-            x_masked = jnp.where(mask, 0.0, x)
+            x_masked = _apply_mask_with_fractions(x)
             residual = system(x_masked)
             constraint = jnp.array([x_masked[idx_to_zero] - x[idx_to_zero]])
             return jnp.concatenate([residual, constraint], axis=0)
 
         @jit
         def constrained_system(x_full: Array) -> Array:
-            x_masked = jnp.where(mask, 0.0, x_full)
+            x_masked = _apply_mask_with_fractions(x_full)
             residual = system(x_masked)
             zero_constraint = jnp.array([x_masked[idx_to_zero]])
             return jnp.concatenate([residual, zero_constraint], axis=0)
@@ -301,7 +359,9 @@ def _find_best_index_to_zero(
             homotopy_jacobian=homotopy_jacobian,
         )
 
-        masked_solution = jnp.where(mask, 0.0, full_solution).at[idx_to_zero].set(0.0)
+        masked_solution = (
+            _apply_mask_with_fractions(full_solution).at[idx_to_zero].set(0.0)
+        )
         error = jnp.linalg.norm(system(masked_solution))
 
         return error, masked_solution
@@ -333,29 +393,66 @@ def _find_best_index_to_zero(
     return valid_indices[best_error_index], best_error, masked_solution
 
 
+def _candidate_fraction_values(value: Array, denominators: tuple[int, ...]) -> Array:
+    raw = jnp.array(
+        [0.0] + [jnp.round(value * d) / d for d in denominators], dtype=value.dtype
+    )
+    return jnp.unique(raw)
+
+
+def _snap_masked_entries_to_fractions(
+    x: Array,
+    mask: Array,
+    system: Callable[[Array], Array],
+    denominators: tuple[int, ...],
+    reference: Array,
+) -> Array:
+    snapped = jnp.copy(x)
+    for idx in range(x.shape[0]):
+        if not bool(mask[idx]):
+            continue
+
+        candidates = _candidate_fraction_values(reference[idx], denominators)
+        errors = jnp.array(
+            [
+                jnp.linalg.norm(system(snapped.at[idx].set(candidate)))
+                for candidate in candidates
+            ]
+        )
+        best_idx = int(jnp.argmin(errors))
+        snapped = snapped.at[idx].set(candidates[best_idx])
+
+    return snapped
+
+
 def solution_sparseification(
     solution: Array,
     system: Callable[[Array], Array],
     tol: float = 1e-6,
     max_iter: int = 100,
+    denominators: tuple[int, ...] = tuple(i for i in range(1, 12)),
 ) -> tuple[Array, float]:
     """
-    Sparsify the solution by taking the parameter that zeroing it has the smallest effect on the system.
+    Sparsify the solution by taking the parameter that zeroing it has the smallest effect on the system, then snap masked entries to small-denominator fractions.
 
     Args:
     - solution: An Array of shape (n,) representing the solution to be sparsified.
     - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
     - tol: Tolerance for considering a solution as valid.
     - max_iter: Maximum number of iterations for sparsification.
+    - denominators: Candidate denominators to use when snapping masked entries to simple fractions.
 
     Returns:
     - An Array of shape (n,) representing the sparsified solution.
     """
     x = jnp.copy(solution)
+    reference = jnp.copy(solution)
     mask = jnp.zeros_like(x, dtype=bool)
 
     for _ in range(max_iter):
-        idx_to_zero, best_error, new_x = _find_best_index_to_zero(x, mask, system, tol)
+        idx_to_zero, best_error, new_x = _best_rationalization(
+            x, mask, system, tol, denominators=denominators, reference=reference
+        )
 
         print(best_error, new_x)
 
@@ -365,7 +462,7 @@ def solution_sparseification(
         mask = mask.at[idx_to_zero].set(True)
         x = new_x
 
-    x = jnp.where(mask, 0.0, x)
+    x = _snap_masked_entries_to_fractions(x, mask, system, denominators, reference)
     error = jnp.linalg.norm(system(x))
 
     return x, error
