@@ -7,6 +7,26 @@ from jax import jacfwd, jit, lax, vmap
 from jaxtyping import Array
 
 
+@jit
+def _nullspace(J: Array, rtol: float = 1e-9) -> Array:
+    """
+    Compute an orthonormal basis for the null space of matrix J using SVD.
+
+    Args:
+    - J: An Array of shape (m, n).
+    - rtol: Relative tolerance for determining the rank.
+
+    Returns:
+    - An Array of shape (n, k) where k is the dimension of the null space.
+    """
+
+    u, s, vh = jnp.linalg.svd(J, full_matrices=True)
+    rank = jnp.linalg.matrix_rank(J, rtol)
+    null_space = vh[rank:].T
+
+    return null_space
+
+
 def newton_raphson(
     system: Callable[[Array], Array],
     initial_guess: Array,
@@ -15,7 +35,7 @@ def newton_raphson(
     retry: bool = False,
     key: Array = jax.random.key(0),
     jacobian: Callable[[Array], Array] | None = None,
-) -> tuple[Array, list[float], list[float]]:
+) -> tuple[Array, Array, Array]:
     """
     solve a system of equations using the Newton-Raphson method.
     we use shortest vectors in the Jacobian's null space to update our guess.
