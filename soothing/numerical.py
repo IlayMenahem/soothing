@@ -13,16 +13,16 @@ def _nullspace(J: Array, rtol: float = 1e-9) -> Array:
     Compute an orthonormal basis for the null space of matrix J using SVD.
 
     Args:
-    - J: An Array of shape (m, n).
-    - rtol: Relative tolerance for determining the rank.
+        J: An Array of shape (m, n).
+        rtol: Relative tolerance for determining the rank.
 
     Returns:
-    - An Array of shape (n, k) where k is the dimension of the null space.
+        An Array of shape (n, k) where k is the dimension of the null space.
     """
 
-    u, s, vh = jnp.linalg.svd(J, full_matrices=True)
+    _, _, vh = jnp.linalg.svd(J)
     rank = jnp.linalg.matrix_rank(J, rtol)
-    null_space = vh[rank:].T
+    null_space = vh.T * jnp.arange(vh.shape[0]) >= rank
 
     return null_space
 
@@ -33,25 +33,48 @@ def newton_raphson(
     tol: float = 1e-6,
     max_iter: int = 100,
     retry: bool = False,
-    key: Array = jax.random.key(0),
+    key: Array | None = None,
     jacobian: Callable[[Array], Array] | None = None,
 ) -> tuple[Array, Array, Array]:
     """
     Solve a system of equations using the Newton-Raphson method.
-    Uses a Jacobian pseudo-inverse step, then adjusts within the Jacobian null space with L0-biased weights to prefer sparse directions.
+
+    Uses a Jacobian pseudo-inverse step, then adjusts within the Jacobian null
+    space with L0-biased weights to prefer sparse directions.
 
     Args:
-    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
-    - initial_guess: An Array of shape (n,) representing the initial guess for the solution.
-    - tol: Tolerance for convergence.
-    - max_iter: Maximum number of iterations.
-    - retry: Whether to retry with a different initial guess if convergence fails.
-    - key: A key for generating random numbers.
-    - jacobian: Optional callable returning the system Jacobian; if provided it will be reused instead of recompiling.
+        system: A callable that takes an Array of shape (n,) and returns an
+            Array of shape (n,).
+        initial_guess: An Array of shape (n,) representing the initial guess
+            for the solution.
+        tol: Tolerance for convergence.
+        max_iter: Maximum number of iterations.
+        retry: Whether to retry with a different initial guess if convergence
+            fails.
+        key: Optional JAX PRNG key used when retrying with random seeds.
+        jacobian: Optional callable returning the system Jacobian; if provided
+            it will be reused instead of recompiling.
+
+    Returns:
+        A tuple containing:
+            - The best solution found (Array of shape (n,)).
+            - A history of F-norms per iteration (shape (max_iter,)).
+            - A history of step norms per iteration (shape (max_iter,)).
     """
+    if key is None:
+        key = jax.random.key(0)
     J_system = jacobian if jacobian is not None else jit(jacfwd(system))
 
-    def body_fn(carry):
+    def body_fn(carry: tuple) -> tuple:
+        """Execute one iteration of the Newton-Raphson loop.
+
+        Args:
+            carry: A tuple containing iteration state (i, x, best_x, best_err,
+                err_arr, dx_arr, done, key).
+
+        Returns:
+            Updated carry tuple for the next iteration.
+        """
         i, x, best_x, best_err, err_arr, dx_arr, done, key = carry
 
         J = J_system(x)
@@ -64,33 +87,45 @@ def newton_raphson(
         null = _nullspace(J)
         null_dim = jnp.sum(jnp.linalg.norm(null, axis=0) > 0)
 
-        def _null_adjust(_) -> tuple[Array, Array]:
+        def _null_adjust(_: None) -> tuple[Array, Array]:
             """
-            Adjust the Newton step within the null space to minimize the L0-like weighted error.
+            Adjust the Newton step within the null space to minimize L0-like error.
+
+            Minimizes weighted error to prefer sparse solutions.
 
             Args:
-            - _: Dummy argument for lax.cond compatibility.
+                _: Dummy argument for lax.cond compatibility.
 
             Returns:
-            - step: The adjusted step to take.
-            - x_adj: The adjusted target point.
+                A tuple containing:
+                    - step: The adjusted step to take.
+                    - x_adj: The adjusted target point.
             """
             weights = 1.0 / (jnp.abs(x_target) + 1e-6)
             weighted_null = null * weights[:, None]
-            rhs = -weights * x_target
-            gram = weighted_null.T @ weighted_null
-            coef = jnp.linalg.pinv(gram, rtol=1e-9) @ (weighted_null.T @ rhs)
-            x_adj_candidate = x_target + null @ coef
-            x_adj = lax.cond(
-                jnp.all(jnp.isfinite(x_adj_candidate)),
-                lambda _: x_adj_candidate,
-                lambda _: x_target,
-                operand=None,
-            )
-            step = x_adj - x
-            return step, x_adj
 
-        def _no_adjust(_):
+            # Solve weighted least squares: min || W * (x_target + null @ coef) ||
+            coef = jnp.linalg.lstsq(weighted_null, -weights * x_target, rcond=1e-9)[0]
+
+            x_adj_candidate = x_target + null @ coef
+            x_adj = jnp.where(
+                jnp.all(jnp.isfinite(x_adj_candidate)),
+                x_adj_candidate,
+                x_target,
+            )
+            return x_adj - x, x_adj
+
+        def _no_adjust(_: None) -> tuple[Array, Array]:
+            """Take the standard Newton step without null space adjustment.
+
+            Args:
+                _: Dummy argument for lax.cond compatibility.
+
+            Returns:
+                A tuple containing:
+                    - step: The Newton step.
+                    - x_target: The target point after Newton step.
+            """
             step = -dx_newton
             return step, x_target
 
@@ -112,7 +147,7 @@ def newton_raphson(
         non_finite = (~jnp.isfinite(error)) | (~jnp.isfinite(dx_norm))
         terminate = (error < tol) | non_finite
 
-        def retry_branch(args):
+        def retry_branch(args: tuple) -> tuple:
             i, x_next, best_x, best_err, err_arr, dx_arr, _, key = args
             key, subkey = jax.random.split(key)
             new_x = jax.random.uniform(subkey, initial_guess.shape).astype(
@@ -120,7 +155,7 @@ def newton_raphson(
             )
             return i + 1, new_x, best_x, best_err, err_arr, dx_arr, False, key
 
-        def continue_branch(args):
+        def continue_branch(args: tuple) -> tuple:
             i, x_next, best_x, best_err, err_arr, dx_arr, terminate, key = args
             return i + 1, x_next, best_x, best_err, err_arr, dx_arr, terminate, key
 
@@ -131,7 +166,7 @@ def newton_raphson(
             (i, x_next, best_x, best_err, err_arr, dx_arr, terminate, key),
         )
 
-    def cond_fn(carry):
+    def cond_fn(carry: tuple) -> Array:
         i, _, _, _, _, _, done, _ = carry
         return (i < max_iter) & (~done)
 
@@ -169,15 +204,22 @@ def multiattempt_newton_raphson(
     Solve a system of equations using multiple attempts of the Newton-Raphson method.
 
     Args:
-    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
-    - initial_guesses: An Array of shape (m, n) representing m initial guesses for the solution.
-    - tol: Tolerance for convergence.
-    - max_iter: Maximum number of iterations for each attempt.
-    - key: A key for generating random numbers.
-    - jacobian: Optional callable returning the system Jacobian; if provided it will be reused instead of recompiling.
+        system: A callable that takes an Array of shape (n,) and returns an
+            Array of shape (n,).
+        initial_guesses: An Array of shape (m, n) representing m initial
+            guesses for the solution.
+        tol: Tolerance for convergence.
+        max_iter: Maximum number of iterations for each attempt.
+        jacobian: Optional callable returning the system Jacobian; if provided
+            it will be reused instead of recompiling.
 
     Returns:
-    - The best solution found across all attempts, along with its error and step sizes.
+        A tuple containing:
+            - The best solution found across the provided initial guesses
+                (Array of shape (n,)).
+            - The error history associated with that attempt (shape (max_iter,)).
+            - The step norm history associated with that attempt
+                (shape (max_iter,)).
     """
     jacobian = jacobian if jacobian is not None else jit(jacfwd(system))
 
@@ -204,17 +246,23 @@ def homotopy_continuation(
     Solve a target system of equations using homotopy continuation from a known solution of a source system.
 
     Args:
-    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
-    - solution: An Array of shape (n,) representing the known solution to the source system.
-    - target_system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
-    - tol: Tolerance for convergence.
-    - max_iter: Maximum number of iterations for each step.
-    - steps: Number of homotopy steps.
-    - homotopy_jacobian: Optional Jacobian of the homotopy system to reuse across runs.
+        system: A callable that takes an Array of shape (n,) and returns an
+            Array of shape (n,).
+        solution: An Array of shape (n,) representing the known solution to
+            the source system.
+        target_system: A callable that takes an Array of shape (n,) and
+            returns an Array of shape (n,).
+        tol: Tolerance for convergence.
+        max_iter: Maximum number of iterations for each step.
+        steps: Number of homotopy steps.
+        homotopy_jacobian: Optional Jacobian of the homotopy system to reuse
+            across runs.
 
     Returns:
-    - An Array of shape (n,) representing the solution to the target system.
-    - A float representing the final error.
+        A tuple containing:
+            - An Array of shape (n,) representing the solution to the target
+                system.
+            - A float representing the final error.
     """
 
     @jit
@@ -227,8 +275,18 @@ def homotopy_continuation(
         else jit(jacfwd(homotopy_system))
     )
 
-    @jit
     def euler_predictor(x: Array, t: Array, dt: Array) -> Array:
+        """
+        Perform Euler predictor step for homotopy continuation.
+
+        Args:
+            x: Current solution point of shape (n,).
+            t: Current homotopy parameter.
+            dt: Step size in parameter space.
+
+        Returns:
+            Predicted point after Euler step (shape (n,)).
+        """
         J = homotopy_jacobian(x, t)
         f = homotopy_system(x, t)
 
@@ -274,30 +332,56 @@ def _best_rationalization(
     nr_max_iter: int = 10,
     denominators: tuple[int, ...] = tuple(i for i in range(1, 12)),
     reference: Array | None = None,
-) -> tuple[int, float, Array]:
+) -> tuple[int, float | Array, Array]:
     """
-    Finds the index of the parameter that, when zeroed, has the smallest effect on the system error.
+    Find the parameter that rationalizing it has the smallest effect on system error.
+
+    Identifies which variable to set to rationalize via by snapping to small-denominator
+    fractions, then re-solving the system using homotopy continuation. if the variable is already
+    very close to a simple fraction homotopy continuation won't be used on that variable.
+    we also prefer to snap to zero if possible.
 
     Args:
-    - x: The current solution.
-    - mask: Boolean mask indicating which entries are already fixed.
-    - system: The system callable.
-    - tol: Tolerance for newton_raphson.
-    - nr_max_iter: Maximum number of iterations for newton_raphson.
-    - denominators: Candidate denominators to use when snapping masked entries to small fractions.
-    - reference: Reference values used to choose nearby fractions for masked entries.
+        x: The current solution of shape (n,).
+        mask: Boolean mask of shape (n,) indicating which entries are already
+            fixed.
+        system: The system callable that takes an Array of shape (n,) and
+            returns an Array of shape (n,).
+        tol: Tolerance for newton_raphson convergence.
+        nr_max_iter: Maximum number of iterations for newton_raphson.
+        denominators: Candidate denominators to use when snapping masked
+            entries to small fractions.
+        reference: Reference values used to choose nearby fractions for masked
+            entries. Defaults to x if not provided.
 
     Returns:
-    - A tuple containing:
-        - The index to zero.
-        - The error after zeroing that index and re-solving.
-        - The new solution.
+        A tuple containing:
+            - The index selected for rationalization (int), or -1 if no valid candidate is found.
+            - The residual norm after snapping that variable to its chosen simple fraction (float).
+            - The updated solution (Array of shape (n,)) with masked entries snapped and the selected variable set to that fraction (zero preferred but not guaranteed).
     """
     reference = x if reference is None else reference
     denominators_arr = jnp.array(denominators, dtype=x.dtype)
 
-    @jit
+    def _nearest_fraction(value: Array) -> Array:
+        candidates = jnp.array(
+            [0.0] + [jnp.round(value * d) / d for d in denominators],
+            dtype=value.dtype,
+        )
+        deltas = jnp.abs(candidates - value)
+        best_idx = jnp.argmin(deltas)
+        return candidates[best_idx]
+
     def _apply_mask_with_fractions(x_full: Array) -> Array:
+        """
+        Snap masked entries to closest simple fractions.
+
+        Args:
+            x_full: Full solution vector of shape (n,).
+
+        Returns:
+            Solution with masked entries snapped to fractions (shape (n,)).
+        """
         candidate_grid = (
             jnp.round(reference * denominators_arr[:, None]) / denominators_arr[:, None]
         )
@@ -308,63 +392,137 @@ def _best_rationalization(
         snapped = candidate_grid[closest_idx, jnp.arange(reference.shape[0])]
         return jnp.where(mask, snapped, x_full)
 
-    def _solve_for_index(idx_to_zero: Array) -> tuple[float, Array]:
+    def _solve_for_index(idx_to_zero: Array) -> tuple[Array, Array]:
         """
-        Solves the system with the goal of zeroing the variable at idx_to_zero, this will be done homotopy continuation by adding a constraint to the system of the form x[idx_to_zero] = t.
+        Solve system while snapping the selected variable to a simple fraction.
+
+        Evaluates small-denominator candidates (preferring zero), and if not
+        already near a simple fraction, uses homotopy continuation from the
+        current value toward the chosen candidate.
 
         Args:
-        - idx_to_zero: The index of the variable to zero.
-        - key: A key for generating random numbers.
+            idx_to_zero: The index of the variable being rationalized.
 
         Returns:
-        - A tuple containing:
-            - The error after zeroing that index and re-solving.
-            - The new solution.
+            A tuple containing:
+                - The error after snapping that index and re-solving (float).
+                - The new solution (Array of shape (n,)).
         """
 
-        @jit
-        def initial_system(x: Array) -> Array:
-            x_masked = _apply_mask_with_fractions(x)
-            residual = system(x_masked)
-            constraint = jnp.array([x_masked[idx_to_zero] - x[idx_to_zero]])
-            return jnp.concatenate([residual, constraint], axis=0)
+        nearest_fraction = _nearest_fraction(reference[idx_to_zero])
+        x_masked_base = _apply_mask_with_fractions(x)
 
-        @jit
-        def constrained_system(x_full: Array) -> Array:
-            x_masked = _apply_mask_with_fractions(x_full)
-            residual = system(x_masked)
-            zero_constraint = jnp.array([x_masked[idx_to_zero]])
-            return jnp.concatenate([residual, zero_constraint], axis=0)
+        def _near_branch(_: None) -> tuple[Array, Array]:
+            snapped = x_masked_base.at[idx_to_zero].set(nearest_fraction)
+            error = jnp.linalg.norm(system(snapped))
+            return error, snapped
 
-        system_jacobian = jit(jacfwd(initial_system))
-
-        @jit
-        def homotopy_jacobian(x: Array, t: Array) -> Array:
-            constraint_jacobian = (
-                jnp.zeros((1, x.shape[0]), dtype=x.dtype).at[0, idx_to_zero].set(1.0)
-            )
-            jacobian = jnp.concatenate(
-                [system_jacobian(x)[:-1, :], constraint_jacobian], axis=0
+        def _far_branch(_: None) -> tuple[Array, Array]:
+            candidates = jnp.array(
+                [0.0]
+                + [jnp.round(reference[idx_to_zero] * d) / d for d in denominators],
+                dtype=x.dtype,
             )
 
-            return jacobian
+            def _eval_candidate(c: Array) -> Array:
+                return jnp.linalg.norm(system(x_masked_base.at[idx_to_zero].set(c)))
 
-        full_solution, _ = homotopy_continuation(
-            initial_system,
-            x,
-            constrained_system,
-            tol,
-            nr_max_iter,
-            steps=50,
-            homotopy_jacobian=homotopy_jacobian,
+            candidate_errors = vmap(_eval_candidate)(candidates)
+            error_bias = 1e-12
+            errors_with_bias = candidate_errors - error_bias * (candidates == 0)
+            best_idx = jnp.argmin(errors_with_bias)
+            best_error = candidate_errors[best_idx]
+            best_candidate = candidates[best_idx]
+
+            def _good_candidate(_: None) -> tuple[Array, Array]:
+                snapped = x_masked_base.at[idx_to_zero].set(best_candidate)
+                return best_error, snapped
+
+            def _homotopy_branch(_: None) -> tuple[Array, Array]:
+                def initial_system(x: Array) -> Array:
+                    """System with constraint that x[idx_to_zero] equals its current value.
+
+                    Args:
+                        x: Solution point of shape (n+1,) (includes constraint).
+
+                    Returns:
+                        System residual plus constraint (shape (n+1,)).
+                    """
+                    x_masked = _apply_mask_with_fractions(x)
+                    residual = system(x_masked)
+                    constraint = jnp.array([x_masked[idx_to_zero] - x[idx_to_zero]])
+                    return jnp.concatenate([residual, constraint], axis=0)
+
+                def constrained_system(x_full: Array) -> Array:
+                    """System with hard constraint that x[idx_to_zero] = best_candidate.
+
+                    Args:
+                        x_full: Solution point of shape (n+1,).
+
+                    Returns:
+                        System residual plus target constraint (shape (n+1,)).
+                    """
+                    x_masked = _apply_mask_with_fractions(x_full)
+                    residual = system(x_masked)
+                    target_constraint = jnp.array(
+                        [x_masked[idx_to_zero] - best_candidate]
+                    )
+                    return jnp.concatenate([residual, target_constraint], axis=0)
+
+                system_jacobian = jacfwd(initial_system)
+
+                def homotopy_jacobian(x: Array, t: Array) -> Array:
+                    """Jacobian of homotopy system interpolating constraints.
+
+                    Args:
+                        x: Solution point of shape (n+1,).
+                        t: Homotopy parameter in [0, 1].
+
+                    Returns:
+                        Jacobian matrix of shape (n+1, n+1).
+                    """
+                    constraint_jacobian = (
+                        jnp.zeros((1, x.shape[0]), dtype=x.dtype)
+                        .at[0, idx_to_zero]
+                        .set(1.0)
+                    )
+                    jacobian = jnp.concatenate(
+                        [system_jacobian(x)[:-1, :], constraint_jacobian], axis=0
+                    )
+
+                    return jacobian
+
+                full_solution, error = homotopy_continuation(
+                    initial_system,
+                    x,
+                    constrained_system,
+                    tol,
+                    nr_max_iter,
+                    homotopy_jacobian=homotopy_jacobian,
+                )
+
+                masked_solution = (
+                    _apply_mask_with_fractions(full_solution)
+                    .at[idx_to_zero]
+                    .set(best_candidate)
+                )
+                error = jnp.linalg.norm(system(masked_solution))
+
+                return error, masked_solution
+
+            return lax.cond(
+                best_error <= tol,
+                _good_candidate,
+                _homotopy_branch,
+                operand=None,
+            )
+
+        return lax.cond(
+            jnp.abs(nearest_fraction - reference[idx_to_zero]) <= tol,
+            _near_branch,
+            _far_branch,
+            operand=None,
         )
-
-        masked_solution = (
-            _apply_mask_with_fractions(full_solution).at[idx_to_zero].set(0.0)
-        )
-        error = jnp.linalg.norm(system(masked_solution))
-
-        return error, masked_solution
 
     non_zero_indices = jnp.where(~mask)[0]
     if len(non_zero_indices) == 0:
@@ -390,10 +548,22 @@ def _best_rationalization(
     if best_error > tol:
         return -1, best_error, x
 
-    return valid_indices[best_error_index], best_error, masked_solution
+    index = int(valid_indices[best_error_index])
+
+    return index, best_error, masked_solution
 
 
 def _candidate_fraction_values(value: Array, denominators: tuple[int, ...]) -> Array:
+    """
+    Generate candidate rational approximations for a value.
+
+    Args:
+        value: A scalar value to approximate.
+        denominators: Tuple of candidate denominators to consider.
+
+    Returns:
+        Sorted array of unique candidate fractions including 0.
+    """
     raw = jnp.array(
         [0.0] + [jnp.round(value * d) / d for d in denominators], dtype=value.dtype
     )
@@ -407,6 +577,23 @@ def _snap_masked_entries_to_fractions(
     denominators: tuple[int, ...],
     reference: Array,
 ) -> Array:
+    """
+    Snap masked entries to simple fractions that minimize system error.
+
+    For each masked entry, tries candidate fractions and selects the one
+    that minimizes the system residual norm.
+
+    Args:
+        x: Solution vector of shape (n,).
+        mask: Boolean mask of shape (n,) indicating which entries are masked.
+        system: System callable that takes Array of shape (n,) and returns
+            Array of shape (n,).
+        denominators: Tuple of candidate denominators for fractions.
+        reference: Reference values used to generate fraction candidates.
+
+    Returns:
+        Solution with masked entries snapped to fractions (shape (n,)).
+    """
     snapped = jnp.copy(x)
     for idx in range(x.shape[0]):
         if not bool(mask[idx]):
@@ -433,17 +620,25 @@ def solution_sparseification(
     denominators: tuple[int, ...] = tuple(i for i in range(1, 12)),
 ) -> tuple[Array, float]:
     """
-    Sparsify the solution by taking the parameter that zeroing it has the smallest effect on the system, then snap masked entries to small-denominator fractions.
+    Sparsify solution by zeroing variables and snapping to simple fractions.
+
+    Iteratively identifies the parameter that has the smallest effect on the
+    system error when zeroed, then snaps masked entries to small-denominator
+    fractions.
 
     Args:
-    - solution: An Array of shape (n,) representing the solution to be sparsified.
-    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
-    - tol: Tolerance for considering a solution as valid.
-    - max_iter: Maximum number of iterations for sparsification.
-    - denominators: Candidate denominators to use when snapping masked entries to simple fractions.
+        solution: Solution vector of shape (n,) to be sparsified.
+        system: Callable that takes Array of shape (n,) and returns Array of
+            shape (n,).
+        tol: Tolerance for considering a solution as valid.
+        max_iter: Maximum number of sparsification iterations.
+        denominators: Candidate denominators to use when snapping masked
+            entries to simple fractions.
 
     Returns:
-    - An Array of shape (n,) representing the sparsified solution.
+        A tuple containing:
+            - The sparsified solution (Array of shape (n,)).
+            - The residual norm after snapping (float).
     """
     x = jnp.copy(solution)
     reference = jnp.copy(solution)
@@ -474,15 +669,19 @@ def estimate_solution_dim(
     jacobian: Callable[[Array], Array] | None = None,
 ) -> int:
     """
-    Estimate the dimension of the solution space by computing the rank of the Jacobian at the solution.
+    Estimate the dimension of the solution space.
+
+    Computes the rank of the Jacobian at the solution and uses the
+    nullity formula: dim = n - rank.
 
     Args:
-    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
-    - solution: An Array of shape (n,) representing the solution.
-    - jacobian: Optional Jacobian of the system to reuse.
+        system: Callable that takes Array of shape (n,) and returns Array of
+            shape (n,).
+        solution: Solution point of shape (n,).
+        jacobian: Optional Jacobian of the system to reuse.
 
     Returns:
-    - An integer representing the estimated dimension of the solution space.
+        An integer representing the estimated dimension of the solution space.
     """
     J_system = jacobian if jacobian is not None else jacfwd(system)
 
@@ -495,11 +694,19 @@ def estimate_solution_dim(
 
 def solution_test(solution: Array, system: Callable[[Array], Array]) -> None:
     """
-    Test whether the provided solution satisfies the system of equations, the test is a first order check, meaning the jacobian should be large relative to the residual.
+    Test whether the provided solution satisfies the system of equations.
+
+    Performs a first-order check where the Jacobian should be large relative
+    to the residual for a good solution.
 
     Args:
-    - solution: An Array of shape (n,) representing the solution to be tested.
-    - system: A callable that takes an Array of shape (n,) and returns an Array of shape (n,).
+        solution: Solution vector of shape (n,) to be tested.
+        system: Callable that takes Array of shape (n,) and returns Array of
+            shape (n,).
+
+    Raises:
+        NotImplementedError: This function is a placeholder for future
+            implementation.
     """
     raise NotImplementedError(
         "This function is a placeholder for future implementation."
@@ -511,15 +718,25 @@ if __name__ == "__main__":
 
     @jit
     def system_of_equations(x: Array) -> Array:
+        """
+        Example system of equations for testing.
+
+        Args:
+            x: Input vector of shape (5,).
+
+        Returns:
+            System residual of shape (2,).
+        """
         return jnp.array(
             [
-                x[0] ** 2 + x[1] + x[2] ** 3 - x[1] * x[4] - 1,
+                x[0] ** 2 + x[1] + x[2] ** 3 - x[1] * x[4] - 3,
                 9 * x[0] + x[1] ** 2 + x[3] - x[2] * x[3] ** 4 - 5,
             ]
         )
 
     solution, errors, _ = newton_raphson(system_of_equations, jnp.ones(5), 1e-16)
 
+    print("Found solution with error:")
     pprint(solution)
     print([float(error) for error in errors], "\n")
     print(
@@ -527,7 +744,8 @@ if __name__ == "__main__":
         estimate_solution_dim(system_of_equations, solution),
     )
 
-    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-15)
+    print("\nSparsified solution:")
+    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-18)
 
     pprint(sparsified)
     pprint(error)
