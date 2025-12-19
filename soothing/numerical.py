@@ -32,8 +32,6 @@ def newton_raphson(
     initial_guess: Array,
     tol: float = 1e-6,
     max_iter: int = 100,
-    retry: bool = False,
-    key: Array | None = None,
     jacobian: Callable[[Array], Array] | None = None,
 ) -> tuple[Array, Array, Array]:
     """
@@ -49,9 +47,6 @@ def newton_raphson(
             for the solution.
         tol: Tolerance for convergence.
         max_iter: Maximum number of iterations.
-        retry: Whether to retry with a different initial guess if convergence
-            fails.
-        key: Optional JAX PRNG key used when retrying with random seeds.
         jacobian: Optional callable returning the system Jacobian; if provided
             it will be reused instead of recompiling.
 
@@ -61,8 +56,6 @@ def newton_raphson(
             - A history of F-norms per iteration (shape (max_iter,)).
             - A history of step norms per iteration (shape (max_iter,)).
     """
-    if key is None:
-        key = jax.random.key(0)
     J_system = jacobian if jacobian is not None else jit(jacfwd(system))
 
     def body_fn(carry: tuple) -> tuple:
@@ -70,12 +63,12 @@ def newton_raphson(
 
         Args:
             carry: A tuple containing iteration state (i, x, best_x, best_err,
-                err_arr, dx_arr, done, key).
+                err_arr, dx_arr, done).
 
         Returns:
             Updated carry tuple for the next iteration.
         """
-        i, x, best_x, best_err, err_arr, dx_arr, done, key = carry
+        i, x, best_x, best_err, err_arr, dx_arr, _ = carry
 
         J = J_system(x)
         system_val = system(x)
@@ -135,8 +128,8 @@ def newton_raphson(
             _no_adjust,
             operand=None,
         )
-        dx_norm = jnp.linalg.norm(step)
 
+        dx_norm = jnp.linalg.norm(step)
         err_arr = err_arr.at[i].set(error)
         dx_arr = dx_arr.at[i].set(dx_norm)
 
@@ -147,27 +140,10 @@ def newton_raphson(
         non_finite = (~jnp.isfinite(error)) | (~jnp.isfinite(dx_norm))
         terminate = (error < tol) | non_finite
 
-        def retry_branch(args: tuple) -> tuple:
-            i, x_next, best_x, best_err, err_arr, dx_arr, _, key = args
-            key, subkey = jax.random.split(key)
-            new_x = jax.random.uniform(subkey, initial_guess.shape).astype(
-                initial_guess.dtype
-            )
-            return i + 1, new_x, best_x, best_err, err_arr, dx_arr, False, key
-
-        def continue_branch(args: tuple) -> tuple:
-            i, x_next, best_x, best_err, err_arr, dx_arr, terminate, key = args
-            return i + 1, x_next, best_x, best_err, err_arr, dx_arr, terminate, key
-
-        return lax.cond(
-            retry & non_finite,
-            retry_branch,
-            continue_branch,
-            (i, x_next, best_x, best_err, err_arr, dx_arr, terminate, key),
-        )
+        return i + 1, x_next, best_x, best_err, err_arr, dx_arr, terminate
 
     def cond_fn(carry: tuple) -> Array:
-        i, _, _, _, _, _, done, _ = carry
+        i, _, _, _, _, _, done = carry
         return (i < max_iter) & (~done)
 
     err_init = jnp.full(max_iter, jnp.inf)
@@ -181,9 +157,8 @@ def newton_raphson(
         err_init,
         dx_init,
         False,
-        key,
     )
-    i_final, x_final, best_x, best_err, err_arr, dx_arr, _, _ = lax.while_loop(
+    _, x_final, best_x, best_err, err_arr, dx_arr, _ = lax.while_loop(
         cond_fn, body_fn, init_carry
     )
 
@@ -224,7 +199,7 @@ def multiattempt_newton_raphson(
     jacobian = jacobian if jacobian is not None else jit(jacfwd(system))
 
     def single_attempt(x0: Array) -> tuple[Array, Array, Array]:
-        return newton_raphson(system, x0, tol, max_iter, False, jacobian=jacobian)
+        return newton_raphson(system, x0, tol, max_iter, jacobian)
 
     solutions, errors, dxs = vmap(single_attempt)(initial_guesses)
     final_errors = jnp.array([jnp.min(err) for err in errors])
@@ -311,13 +286,7 @@ def homotopy_continuation(
         t_prev = jnp.array((i - 1) / steps, dtype=x.dtype)
         x = euler_predictor(x, t_prev, dt)
 
-        x, _, _ = newton_raphson(
-            system_at_t,
-            x,
-            tol,
-            max_iter,
-            jacobian=jacobian_at_t,
-        )
+        x, _, _ = newton_raphson(system_at_t, x, tol, max_iter, jacobian_at_t)
 
     error = jnp.linalg.norm(target_system(x))
 
