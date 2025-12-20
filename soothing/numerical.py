@@ -420,65 +420,6 @@ def _best_rationalization(
     return index, best_error, masked_solution
 
 
-def _candidate_fraction_values(value: Array, denominators: tuple[int, ...]) -> Array:
-    """
-    Generate candidate rational approximations for a value.
-
-    Args:
-        value: A scalar value to approximate.
-        denominators: Tuple of candidate denominators to consider.
-
-    Returns:
-        Sorted array of unique candidate fractions including 0.
-    """
-    raw = jnp.array(
-        [0.0] + [jnp.round(value * d) / d for d in denominators], dtype=value.dtype
-    )
-    return jnp.unique(raw)
-
-
-def _snap_masked_entries_to_fractions(
-    x: Array,
-    mask: Array,
-    system: Callable[[Array], Array],
-    denominators: tuple[int, ...],
-    reference: Array,
-) -> Array:
-    """
-    Snap masked entries to simple fractions that minimize system error.
-
-    For each masked entry, tries candidate fractions and selects the one
-    that minimizes the system residual norm.
-
-    Args:
-        x: Solution vector of shape (n,).
-        mask: Boolean mask of shape (n,) indicating which entries are masked.
-        system: System callable that takes Array of shape (n,) and returns
-            Array of shape (n,).
-        denominators: Tuple of candidate denominators for fractions.
-        reference: Reference values used to generate fraction candidates.
-
-    Returns:
-        Solution with masked entries snapped to fractions (shape (n,)).
-    """
-    snapped = jnp.copy(x)
-    for idx in range(x.shape[0]):
-        if not bool(mask[idx]):
-            continue
-
-        candidates = _candidate_fraction_values(reference[idx], denominators)
-        errors = jnp.array(
-            [
-                jnp.linalg.norm(system(snapped.at[idx].set(candidate)))
-                for candidate in candidates
-            ]
-        )
-        best_idx = int(jnp.argmin(errors))
-        snapped = snapped.at[idx].set(candidates[best_idx])
-
-    return snapped
-
-
 def solution_rationalization(
     solution: Array,
     system: Callable[[Array], Array],
@@ -507,6 +448,68 @@ def solution_rationalization(
             - The rationalized solution (Array of shape (n,)).
             - The residual norm after snapping (float).
     """
+
+    def _snap_masked_entries_to_fractions(
+        x: Array,
+        mask: Array,
+        system: Callable[[Array], Array],
+        denominators: tuple[int, ...],
+        reference: Array,
+    ) -> Array:
+        """
+        Snap masked entries to simple fractions that minimize system error.
+
+        For each masked entry, tries candidate fractions and selects the one
+        that minimizes the system residual norm.
+
+        Args:
+            x: Solution vector of shape (n,).
+            mask: Boolean mask of shape (n,) indicating which entries are masked.
+            system: System callable that takes Array of shape (n,) and returns
+                Array of shape (n,).
+            denominators: Tuple of candidate denominators for fractions.
+            reference: Reference values used to generate fraction candidates.
+
+        Returns:
+            Solution with masked entries snapped to fractions (shape (n,)).
+        """
+
+        def _candidate_fraction_values(
+            value: Array, denominators: tuple[int, ...]
+        ) -> Array:
+            """
+            Generate candidate rational approximations for a value.
+
+            Args:
+                value: A scalar value to approximate.
+                denominators: Tuple of candidate denominators to consider.
+
+            Returns:
+                Sorted array of unique candidate fractions including 0.
+            """
+            raw = jnp.array(
+                [0.0] + [jnp.round(value * d) / d for d in denominators],
+                dtype=value.dtype,
+            )
+            return jnp.unique(raw)
+
+        snapped = jnp.copy(x)
+        for idx in range(x.shape[0]):
+            if not bool(mask[idx]):
+                continue
+
+            candidates = _candidate_fraction_values(reference[idx], denominators)
+            errors = jnp.array(
+                [
+                    jnp.linalg.norm(system(snapped.at[idx].set(candidate)))
+                    for candidate in candidates
+                ]
+            )
+            best_idx = int(jnp.argmin(errors))
+            snapped = snapped.at[idx].set(candidates[best_idx])
+
+        return snapped
+
     x = jnp.copy(solution)
     reference = jnp.copy(solution)
     mask = jnp.zeros_like(x, dtype=bool)
