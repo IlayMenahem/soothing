@@ -3,11 +3,12 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-from jax import jacfwd, jit, lax, vmap
+from equinox import filter_jit
+from jax import jacfwd, lax, vmap
 from jaxtyping import Array
 
 
-@jit
+@filter_jit
 def _nullspace(J: Array, rtol: float = 1e-9) -> Array:
     """
     Compute an orthonormal basis for the null space of matrix J using SVD.
@@ -56,7 +57,7 @@ def newton_raphson(
             - A history of F-norms per iteration (shape (max_iter,)).
             - A history of step norms per iteration (shape (max_iter,)).
     """
-    J_system = jacobian if jacobian is not None else jit(jacfwd(system))
+    J_system = jacobian if jacobian is not None else filter_jit(jacfwd(system))
 
     def body_fn(carry: tuple) -> tuple:
         """Execute one iteration of the Newton-Raphson loop.
@@ -196,7 +197,7 @@ def multiattempt_newton_raphson(
             - The step norm history associated with that attempt
                 (shape (max_iter,)).
     """
-    jacobian = jacobian if jacobian is not None else jit(jacfwd(system))
+    jacobian = jacobian if jacobian is not None else filter_jit(jacfwd(system))
 
     def single_attempt(x0: Array) -> tuple[Array, Array, Array]:
         return newton_raphson(system, x0, tol, max_iter, jacobian)
@@ -240,14 +241,14 @@ def homotopy_continuation(
             - A float representing the final error.
     """
 
-    @jit
+    @filter_jit
     def homotopy_system(x: Array, t: Array) -> Array:
         return (1 - t) * system(x) + t * target_system(x)
 
     homotopy_jacobian = (
         homotopy_jacobian
         if homotopy_jacobian is not None
-        else jit(jacfwd(homotopy_system))
+        else filter_jit(jacfwd(homotopy_system))
     )
 
     def euler_predictor(x: Array, t: Array, dt: Array) -> Array:
@@ -581,7 +582,7 @@ def _snap_masked_entries_to_fractions(
     return snapped
 
 
-def solution_sparseification(
+def solution_rationalization(
     solution: Array,
     system: Callable[[Array], Array],
     tol: float = 1e-6,
@@ -589,24 +590,24 @@ def solution_sparseification(
     denominators: tuple[int, ...] = tuple(i for i in range(1, 12)),
 ) -> tuple[Array, float]:
     """
-    Sparsify solution by zeroing variables and snapping to simple fractions.
+    rationalize solution by rationalizing variables and snapping to simple fractions.
 
     Iteratively identifies the parameter that has the smallest effect on the
     system error when zeroed, then snaps masked entries to small-denominator
     fractions.
 
     Args:
-        solution: Solution vector of shape (n,) to be sparsified.
+        solution: Solution vector of shape (n,) to be rationalized.
         system: Callable that takes Array of shape (n,) and returns Array of
             shape (n,).
         tol: Tolerance for considering a solution as valid.
-        max_iter: Maximum number of sparsification iterations.
+        max_iter: Maximum number of rationalization iterations.
         denominators: Candidate denominators to use when snapping masked
             entries to simple fractions.
 
     Returns:
         A tuple containing:
-            - The sparsified solution (Array of shape (n,)).
+            - The rationalized solution (Array of shape (n,)).
             - The residual norm after snapping (float).
     """
     x = jnp.copy(solution)
@@ -629,6 +630,71 @@ def solution_sparseification(
     x = _snap_masked_entries_to_fractions(x, mask, system, denominators, reference)
     error = jnp.linalg.norm(system(x))
 
+    return x, error
+
+
+def simple_sparsification(
+    solution: Array,
+    system: Callable[[Array], Array],
+    tol: float = 1e-6,
+    max_iter: int = 100,
+    jacobian: Callable[[Array], Array] | None = None,
+) -> tuple[Array, float]:
+    """
+    do a simple sparsification of the solution by zeroing entries and making newton corrections.
+
+    Args:
+        solution: Solution vector of shape (n,) to be sparsified.
+        system: Callable that takes Array of shape (n,) and returns Array of
+            shape (n,).
+        tol: Tolerance for considering a solution as valid.
+        max_iter: Maximum number of sparsification iterations.
+        jacobian: Optional Jacobian of the system to reuse.
+
+    Returns:
+        A tuple containing:
+            - The sparsified solution (Array of shape (n,)).
+            - The residual norm after sparsification (float).
+    """
+    x = jnp.copy(solution)
+    mask = jnp.zeros_like(x, dtype=bool)
+    jacobian = jacobian if jacobian is not None else filter_jit(jacfwd(system))
+
+    for _ in range(min(len(x), max_iter)):
+
+        def _zero_index(idx: Array) -> tuple[Array, Array]:
+            """
+            Attempt to also zero the entry at idx and correct via Newton-Raphson.
+
+            Args:
+                idx: Index to zero.
+
+            Returns:
+                - Tuple containing:
+                    - The error after attempting to zero that index (float).
+                    - The new solution (Array of shape (n,)).
+            """
+            x_candidate = x.at[idx].set(0.0)
+            error = jnp.linalg.norm(system(x_candidate))
+
+            return error, x_candidate
+
+        idx_candidates = jnp.where(~mask)[0]
+
+        errors, candidate_solutions = vmap(_zero_index)(idx_candidates)
+        best_idx = jnp.argmin(errors)
+        best_error = errors[best_idx]
+        new_x = candidate_solutions[best_idx]
+
+        print(best_error, new_x)
+
+        if best_error > tol:
+            break
+
+        mask = mask.at[idx_candidates[best_idx]].set(True)
+        x = new_x
+
+    error = jnp.linalg.norm(system(x))
     return x, error
 
 
@@ -684,8 +750,15 @@ def solution_test(solution: Array, system: Callable[[Array], Array]) -> None:
 
 if __name__ == "__main__":
     jax.config.update("jax_enable_x64", True)
+    jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
+    jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+    jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+    jax.config.update(
+        "jax_persistent_cache_enable_xla_caches",
+        "xla_gpu_per_fusion_autotune_cache_dir",
+    )
 
-    @jit
+    @filter_jit
     def system_of_equations(x: Array) -> Array:
         """
         Example system of equations for testing.
@@ -714,7 +787,7 @@ if __name__ == "__main__":
     )
 
     print("\nSparsified solution:")
-    sparsified, error = solution_sparseification(solution, system_of_equations, 1e-18)
+    sparsified, error = simple_sparsification(solution, system_of_equations, 1e-18)
 
     pprint(sparsified)
     pprint(error)
