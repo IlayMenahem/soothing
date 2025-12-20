@@ -140,3 +140,24 @@ def estimate_solution_dim(
     dim = solution.shape[0] - rank
 
     return dim
+
+
+def solution_test(solution: Array, system: Callable[[Array], Array]) -> None:
+    """
+    Test whether the provided solution satisfies the system of equations.
+
+    Performs a first-order check where the Jacobian should be large relative
+    to the residual for a good solution.
+
+    Args:
+        solution: Solution vector of shape (n,) to be tested.
+        system: Callable that takes Array of shape (n,) and returns Array of
+            shape (n,).
+
+    Raises:
+        NotImplementedError: This function is a placeholder for future
+            implementation.
+    """
+    raise NotImplementedError(
+        "This function is a placeholder for future implementation."
+    )
