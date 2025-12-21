@@ -6,6 +6,8 @@
 \usepackage{amsfonts} % for additional math fonts
 \usepackage{amssymb} % for additional math symbols
 \usepackage{hyperref} % for hyperlinks
+\usepackage{geometry}
+\usepackage{bookmark}
 
 \usepackage{tikz} % for graphics
 \usetikzlibrary{arrows,shapes}
@@ -23,7 +25,7 @@
 \begin{abstract}
     There is a problem shared among many fields of science of solving polynomial systems of equations.
     The required solution is often a space of solutions, rather than a single solution.
-    Applications include QFT, robotics, cryptography, optimization, chemistry, electrical engineering, and more.
+    Applications include QFT, robotics, cryptography, optimization, chemistry, electrical engineering, and more. [we need other examples... best is to have concrete examples from history. If not then maybe say generally that in many areas of science and engineering a parametric solution can surprise us and help where our creativity is limited].
 
     This paper presents a scalable pipeline for finding a space of solutions (of full dimension) to polynomial systems of equations.
     We start from numerical solutions, transitioning to symbolic solutions, and finally parametrize the solution space via structured exploration.
@@ -32,8 +34,7 @@
 \end{abstract}
 
 \section*{Introduction}
-% introduction of the importance and history of polynomial systems of equations
-Solving polynomial systems of equations is a fundamental problem in mathematics and computer science, with applications in fields such as robotics, cryptography, optimization, QFT, chemistry, electrical engineering, economics and more. 
+Solving polynomial systems of equations is a fundamental problem in mathematics and computer science, with applications in fields such as robotics, cryptography, optimization, QFT, chemistry, electrical engineering, economics and more.
 In QFT, polynomial systems arise in the context of generilizing and unifying theories (e.g. quantum gravity). 
 In chemistry, for example, polynomial systems appear in the study and design of reaction chains.
 In robotics, for example, polynomial systems are used to model kinematics and motion planning.
@@ -45,7 +46,7 @@ In robotics, the solution space may represent all possible configurations of a r
 This type of problem is universal across many fields of science and engineering. It calls for a comprehensive approach that can efficiently find and represent the solution space of polynomial systems.
 
 % classic methods for solving polynomial systems of equations
-Classic methods for solving polynomial systems of equations include Groebner bases [], resultants [], and homotopy continuation []. However, these methods can be computationally expensive and may not scale well with the size of the system. Other approaches, such as gradient [], SMT [], XXX [], are focused on finding specific solutions rather than exploring the entire solution space.
+Classic methods for solving polynomial systems of equations include Groebner bases [], resultants [], and homotopy continuation []. However, these methods can be computationally expensive and may not scale well with the size of the system. Other approaches, such as gradient [], and SMT solvers [] are focused on finding specific solutions rather than exploring the entire solution space.
 
 % overview of the proposed pipeline
 In this paper, classify/group/review/discuss specially made approaches for finding the general ... in efficient ways relevant for.
@@ -55,22 +56,28 @@ We also present and analyze a complementary examples from QFT, showcasing the ef
 We finally outline the open questions and future directions [more concrete] in this field.
 
 
-
 \section*{Mathematical Background}
 Let $\mathbb{K}[\mathbf{x}]$ denote the polynomial ring in variables $\mathbf{x} = (x_1, \ldots, x_n)$ over a field $\mathbb{K}$, typically $\mathbb{R}$ or $\mathbb{C}$. A polynomial system is defined by a map $F: \mathbb{K}^n \to \mathbb{K}^m$ with components $f_1, \ldots, f_m \in \mathbb{K}[\mathbf{x}]$. The locus of simultaneous solutions constitutes the \textit{affine variety} $V(F) = \{ \mathbf{a} \in \mathbb{K}^n \mid F(\mathbf{a}) = \mathbf{0} \}$.
 
+\noindent given a smooth system of equations $F\in C_\infty$ (possibly polynomial) with a solution point $p$, one can find the dimension of the solution space around that point using its Jacobian at that point $J_F(p)$. the following theorem formalizes this idea.
+
+\noindent\textbf{Theorem:} 
+Let $F: U \subseteq \mathbb{K}^m \to \mathbb{K}^n$ be a smooth map defined on an open set $U$, with components $F = (f_1, \ldots, f_n)$. Let $p \in U$ be a point such that $F(p) = \mathbf{0}$. If the Jacobian matrix $J_F(p)$ has rank $r$, then there exists a neighborhood $V$ of $p$ such that the solution set $F^{-1}(\mathbf{0}) \cap V$ is a smooth manifold of dimension $m - r$.
+
+\noindent\textbf{Proof:}
+--- need to fill in ---
+
 
 \section*{What is a solution?}
-there are a few ways to interpret the meaning of the solution to a polynomial system of equations.
+there are a few ways to interpret the meaning of the solution to a system of equations.
 \begin{list}{-}{}
     \item \textbf{numerical solutions:} specific numerical values for the variables that satisfy all equations in the system (with very high precision).
-    \item \textbf{symbolic solutions:} specific symbolic expressions of constants that satisfy all equations in the system.
-    \item \textbf{lowest norm solution:} a solution numerical or symbolic, that minimizes some norm, such as the Zero norm.
-    \item \textbf{parametric expression of a variety:} a set of symbolic or numerical approximated expressions, that provide a parametric representation of the set of all possible solutions to the system. the set of system solutions is also known as the variety, and it's not always possible to express the variety in a parametric form such as in the case of $y^3 - x^2 = 0$ over $\mathbb{R}$.
+    \item \textbf{symbolic solutions:} symbolic expressions of constants that satisfy all equations in the system.
+    \item \textbf{lowest norm solution:} a solution numerical or symbolic, that minimizes some norm. for example, $L_0$ norm minimization leads to the sparsest solution, while $L_2$ norm minimization leads to the solution with the smallest Euclidean length.
+    \item \textbf{parametric expression of a variety:} a set of symbolic or numerical approximated expressions, that provide a parametric representation of the set of all possible solutions to the system. the set of system solutions is also known as the variety. there are various ways to represent the variety parametrically, such as rational, polynomial, or trigonometric parametrizations. yet there are some varieties that cannot be parametrized such as elliptic curves.
     \item \textbf{point cloud sampling of the variety:} a large set of numerical or symbolic solutions that sample the variety, which can be used to understand its structure and properties.
 \end{list}
 
-something of note, if one has one solution to any system of equations, one can derive a neighborhood of solutions around that point by going in the direction that is in the solution space of the Jacobian. a more in depth treatment of this idea is provided in the appendix.
 
 \section*{Moving between types of solutions}
 one can note that it is fairly straightforward to find certain types of solutions such as numerical solutions via Newton-Raphson, but sometimes it is more desirable to have symbolic solutions or parametric expressions of the variety. in the diagram below, we illustrate the different types of solutions and the methods we will use to move between them.
@@ -117,10 +124,10 @@ one can note that it is fairly straightforward to find certain types of solution
 
 \section*{Linear elimination}
 
-even in the case of very large non linear polynomial systems of equations, it is possible to eliminate variables in a linear fashion in the following way:
-\textbf{input:} polynomial system of equations $P = \{p_1, p_2, \ldots, p_k\} \subseteq \mathbb{K}[x_1, x_2, \ldots, x_m]$.
-\textbf{output:} a polynomial system of equations $Q = \{q_1, q_2, \ldots, q_k\}$, which is equivalent to $P$, and each $q_i$ is a not linear in any variable $x_j$ for $j \in \{1, 2, \ldots, m\}$.
-\textbf{algorithm:}
+even in the case of very large non linear polynomial systems of equations, it is possible to eliminate variables in a linear fashion, which can significantly reduce the size of the system and the number of variables.
+\\\textbf{input:} polynomial system of equations $P = \{p_1, p_2, \ldots, p_k\} \subseteq \mathbb{K}[x_1, x_2, \ldots, x_m]$.
+\\\textbf{output:} a polynomial system of equations $Q = \{q_1, q_2, \ldots, q_k\}$, which is equivalent to $P$, and each $q_i$ is a not linear in any variable $x_j$ for $j \in \{1, 2, \ldots, m\}$.
+\\\textbf{algorithm:}
 \begin{enumerate}
     \item Let $L = \{(x_j, p_i) | p_i \text{ is linear in } x_j\}$ be the list of all variables and polynomials that are linear in those variables.
     \item Let $V = \{x_1, x_2, \ldots, x_m\}$ be the set of all variables.
@@ -137,35 +144,43 @@ even in the case of very large non linear polynomial systems of equations, it is
 
 in the example below, we demonstrate that for systems of low degree polynomials, this method can significantly reduce the number of variables and equations in the system, without increasing the degree of any polynomial in the system.
 
+--- add the example ---
+
 \section*{Numerical solutions via Newton-Raphson}
+to apply the Newton-Raphson method to an underdetermined system of equations we can use the following update step\cite{BenIsrael1966ANM}: \[x_{n+1} = x_n - J^+(x_n) F(x_n)\] where $J^+$ is the Moore-Penrose pseudoinverse of the Jacobian matrix $J$ of $F$ at point $x_n$.
+
+% minimizing the $L_1$ norm to improve solution sparsity and stability of Newton-Raphson
+it is well known that minimizing the $L_1$ norm of the solution can lead to sparser solutions [], and can also improve the stability of the Newton-Raphson method []. % write more about methods for sparsity and stability
 
 \section*{Symbolic solutions via iterations of PSLQ and Newton-Raphson}
+if we have a numerical solution in neighborhood of solutions of dimension $k$, one of the simplest ways to convert it to a parametric solution would to covert some of the entries of the numerical solution to symbolic fractions of close values. the following theorem formalizes this idea.
+\\\textbf{theorem:} let there be a $k$ dimensional manifold (can be a solution space of a polynomial system of equations) embedded in an $n$ dimensional space. there is a point in the manifold, such that $k$ of the $n$ coordinates are rational.
+\\\textbf{proof:} 
+
 
 \section*{exploration of space of solutions}
+here we present a theorem regarding given one solution how can we derive a neighborhood of solutions to any system of equations via the Jacobian null space at that point.
+\\\textbf{theorem:} let $F = \{f_1, f_2, \ldots, f_n\}$ be a system of smooth functions in variables $x = (x_1, x_2, \ldots, x_m)$. let $J$ be the Jacobian matrix of $F$ with respect to $x$, $x_0$ be a point such that $F(x_0) = 0$, and $v \in N(J(x_0))$ be a vector in the null space of $J$ at point $x_0$. 
+then $\frac{d}{dt}F(x_0 + tv)|_{t=0} = 0$.
+\\\textbf{proof:} By the multivariable chain rule, the derivative of the composition $F(x_0 + tv)$ with respect to $t$ is given by:
+\[\frac{d}{dt}F(x_0 + tv) = J(x_0 + tv) \cdot \frac{d}{dt}(x_0 + tv) = J(x_0 + tv) \cdot v\] 
+Evaluating this expression at $t=0$: \[\frac{d}{dt}F(x_0 + tv)\bigg|_{t=0} = J(x_0) \cdot v\]
+Since $v$ is in the null space of $J(x_0)$, we have $J(x_0)v = 0$. Thus: \[ \frac{d}{dt}F(x_0 + tv)\bigg|_{t=0} = 0 \]
+
+a use of this theorem to extract a parametric solution from a symbolic one is in the appendix.
+
 \subsection*{Numerical exploration of space of solutions}
 
-\subsection*{Sybolic exploration of space of solutions}
+\subsection*{Symbolic exploration of space of solutions}
+
+\section*{Finding the whole space of solutions}
+After parametrizing a set of solutions, one may want to ensure that the entire solution space has been found. For that one can Rabinowitsch Trick to add an additional constraint to the system of equations that excludes the already found solutions, and then attempt to find new solutions to the modified system. If no new solutions are found, it can suggest that the entire solution space has been explored.
+
+% A simple example of applying this method is provided in the appendix.
 
 \section*{Appendix}
 \subsection*{Derivation of neighborhood of solutions via Jacobian null space}
-\textbf{theorem:} let $F = \{f_1, f_2, \ldots, f_n\}$ be a system of smooth functions in variables $x = (x_1, x_2, \ldots, x_m)$. let $J$ be the Jacobian matrix of $F$ with respect to $x$, $x_0$ be a point such that $F(x_0) = 0$, and $v \in N(J(x_0))$ be a vector in the null space of $J$ at point $x_0$. 
-then $\frac{d}{dt}F(x_0 + tv)|_{t=0} = 0$.
-
-\textbf{proof:} 
-By the multivariable chain rule, the derivative of the composition $F(x_0 + tv)$ with respect to $t$ is given by:
-\[
-\frac{d}{dt}F(x_0 + tv) = J(x_0 + tv) \cdot \frac{d}{dt}(x_0 + tv) = J(x_0 + tv) \cdot v
-\]
-Evaluating this expression at $t=0$:
-\[
-\frac{d}{dt}F(x_0 + tv)\bigg|_{t=0} = J(x_0) \cdot v
-\]
-Since $v$ is in the null space of $J(x_0)$, we have $J(x_0)v = 0$. Thus:
-\[
-\frac{d}{dt}F(x_0 + tv)\bigg|_{t=0} = 0
-\]
-
-now to an example system of polynomial equations:
+system of polynomial equations:
 \begin{align*}
 f_1 &= x^2 + y^2 + z^2 - 1 = 0 \\
 f_2 &= x + y + z - 1 = 0
@@ -238,6 +253,7 @@ y(t) &= \frac{1}{3} - \frac{1}{3}\cos(\sqrt{3}t) - \frac{1}{\sqrt{3}}\sin(\sqrt{
 z(t) &= \frac{1}{3} - \frac{1}{3}\cos(\sqrt{3}t) + \frac{1}{\sqrt{3}}\sin(\sqrt{3}t)
 \end{align*}
 
-
+\bibliographystyle{plain}
+\bibliography{references}
 
 \end{document}
