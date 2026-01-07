@@ -2,10 +2,10 @@
 \documentclass[12pt]{article}
 
 % packages
-\usepackage{amsmath} % for mathematical symbols and environments
-\usepackage{amsfonts} % for additional math fonts
-\usepackage{amssymb} % for additional math symbols
-\usepackage{hyperref} % for hyperlinks
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{hyperref}
 \usepackage{geometry}
 \usepackage{bookmark}
 
@@ -59,13 +59,7 @@ We finally outline the open questions and future directions [more concrete] in t
 \section*{Mathematical Background}
 Let $\mathbb{K}[\mathbf{x}]$ denote the polynomial ring in variables $\mathbf{x} = (x_1, \ldots, x_n)$ over a field $\mathbb{K}$, typically $\mathbb{R}$ or $\mathbb{C}$. A polynomial system is defined by a map $F: \mathbb{K}^n \to \mathbb{K}^m$ with components $f_1, \ldots, f_m \in \mathbb{K}[\mathbf{x}]$. The locus of simultaneous solutions constitutes the \textit{affine variety} $V(F) = \{ \mathbf{a} \in \mathbb{K}^n \mid F(\mathbf{a}) = \mathbf{0} \}$.
 
-\noindent given a smooth system of equations $F\in C_\infty$ (possibly polynomial) with a solution point $p$, one can find the dimension of the solution space around that point using its Jacobian at that point $J_F(p)$. the following theorem formalizes this idea.
-
-\noindent\textbf{Theorem:} 
-Let $F: U \subseteq \mathbb{K}^m \to \mathbb{K}^n$ be a smooth map defined on an open set $U$, with components $F = (f_1, \ldots, f_n)$. Let $p \in U$ be a point such that $F(p) = \mathbf{0}$. If the Jacobian matrix $J_F(p)$ has rank $r$, then there exists a neighborhood $V$ of $p$ such that the solution set $F^{-1}(\mathbf{0}) \cap V$ is a smooth manifold of dimension $m - r$.
-
-\noindent\textbf{Proof:}
---- need to fill in ---
+\noindent given a  continuously differentiable system of equations $F\in C_1$ (possibly polynomial) with a solution point $p$, the dimension of the solution space in the neighborhood of $p$ is $n - rank(J_F(p))$ where $J$ is the Jacobian matrix of $F$ at point $p$ \cite{gatilov2014using}.
 
 
 \section*{What is a solution?}
@@ -125,26 +119,42 @@ one can note that it is fairly straightforward to find certain types of solution
 \section*{Linear elimination}
 
 even in the case of very large non linear polynomial systems of equations, it is possible to eliminate variables in a linear fashion, which can significantly reduce the size of the system and the number of variables.
-\\\textbf{input:} polynomial system of equations $P = \{p_1, p_2, \ldots, p_k\} \subseteq \mathbb{K}[x_1, x_2, \ldots, x_m]$.
-\\\textbf{output:} a polynomial system of equations $Q = \{q_1, q_2, \ldots, q_k\}$, which is equivalent to $P$, and each $q_i$ is a not linear in any variable $x_j$ for $j \in \{1, 2, \ldots, m\}$.
-\\\textbf{algorithm:}
-\begin{enumerate}
-    \item Let $L = \{(x_j, p_i) | p_i \text{ is linear in } x_j\}$ be the list of all variables and polynomials that are linear in those variables.
-    \item Let $V = \{x_1, x_2, \ldots, x_m\}$ be the set of all variables.
-    \item Let $Q = P$ be the output polynomial system of equations.
-    \item While $L$ is not empty:
-    \begin{enumerate}
-        \item Select a variable-polynomial pair $(x_j, p_i)$ from $L$.
-        \item Remove $(x_j, p_i)$ from $L$, $x_j$ from $V$, and $p_i$ from $Q$.
-        \item Solve $p_i$ for $x_j$: $x_j = f(\hat{x})$.
-        \item For each polynomial $p_k$ in $Q$ substitute $x_j$ with $f(\hat{x})$.
-        \item Update $L$ to reflect the changes in $Q$.
-    \end{enumerate}
-\end{enumerate}
 
-in the example below, we demonstrate that for systems of low degree polynomials, this method can significantly reduce the number of variables and equations in the system, without increasing the degree of any polynomial in the system.
+\begin{algorithm}[H]
+\caption{Linear elimination by substitution}
+\label{alg:linear-elimination}
+\begin{algorithmic}[1]
+\Require Polynomial system $P=\{p_1,\dots,p_k\}\subseteq \mathbb{K}[x_1,\dots,x_m]$
+\Ensure Reduced system $Q$ where no $q\in Q$ is linear in any remaining variable; and a substitution map $\Sigma$ to recover eliminated variables
+\State $Q \gets P$
+\State $V \gets \{x_1,\dots,x_m\}$
+\State $\Sigma \gets \emptyset$
+\State $L \gets \{(x,p)\mid x\in V,\ p\in Q,\ p \text{ is linear in } x\}$
+\State interreduce $Q$ \Comment{optional step to simplify the system}
+\State make all the polynomials in $Q$ monic \Comment{optional step to simplify the system}
+\While{$L \neq \emptyset$}
+    \State Select any pair $(x,p)\in L$
+    \State $L \gets L\setminus\{(x,p)\}$
+    \State $Q \gets Q\setminus\{p\}$ \Comment{use $p$ to eliminate $x$}
+    \State Solve $p=0$ for $x$ to obtain $x \gets f(\hat{x})$ \Comment{$\hat{x}=V\setminus\{x\}$}
+    \State $\Sigma \gets \Sigma \cup \{x \mapsto f(\hat{x})\}$
+    \ForAll{$q \in Q$}
+        \State $q \gets q[x \leftarrow f(\hat{x})]$
+    \EndFor
+    \State $V \gets V\setminus\{x\}$
+    \State $L \gets \{(x',p')\mid x'\in V,\ p'\in Q,\ p' \text{ is linear in } x'\}$
+    \State interreduce $Q$ \Comment{optional step to simplify the system}
+\EndWhile
+\State \Return $(Q,\Sigma)$
+\end{algorithmic}
+\end{algorithm}
 
---- add the example ---
+the polynomial order we will use to interreduce, and make polynomials monic, should maximize the number of monomials with that are linear in one of any of the variables. thus we should use the grevlex order. we have the freedom to choose which linear variable to eliminate at each step. good heuristics to choose which variable to eliminate include:
+\begin{list}{-}{}
+    \item \textbf{Lowest degree in the other equations:} eliminate the variable that appears with the lowest degree in the other equations first.
+    \item \textbf{Lowest degree after substitution:} eliminate the variable that will lead to the lowest degree in the other equations after substitution.
+    \item \textbf{Greatest or least number of occurrences:} eliminate the variable that appears in the greatest or least number of equations first.
+\end{list}
 
 \section*{Numerical solutions via Newton-Raphson}
 to apply the Newton-Raphson method to an underdetermined system of equations we can use the following update step\cite{BenIsrael1966ANM}: \[x_{n+1} = x_n - J^+(x_n) F(x_n)\] where $J^+$ is the Moore-Penrose pseudoinverse of the Jacobian matrix $J$ of $F$ at point $x_n$.
@@ -152,10 +162,50 @@ to apply the Newton-Raphson method to an underdetermined system of equations we 
 % minimizing the $L_1$ norm to improve solution sparsity and stability of Newton-Raphson
 it is well known that minimizing the $L_1$ norm of the solution can lead to sparser solutions [], and can also improve the stability of the Newton-Raphson method []. % write more about methods for sparsity and stability
 
-\section*{Symbolic solutions via iterations of PSLQ and Newton-Raphson}
+\section*{Symbolic solutions via rational approximation and homepoty continuation}
 if we have a numerical solution in neighborhood of solutions of dimension $k$, one of the simplest ways to convert it to a parametric solution would to covert some of the entries of the numerical solution to symbolic fractions of close values. the following theorem formalizes this idea.
 \\\textbf{theorem:} let there be a $k$ dimensional manifold (can be a solution space of a polynomial system of equations) embedded in an $n$ dimensional space. there is a point in the manifold, such that $k$ of the $n$ coordinates are rational.
 \\\textbf{proof:} 
+
+\section*{Parametric solutions via linear elimination and rationalization}
+there are two main reasons that linear elimination would stop finding variables to eliminate without finishing: 
+
+\begin{list}{-}{}
+    \item Substituting the parametric expression of the variable leads to a very high degree polynomial, which is non linear in all variables.
+    \item there is an equation that would be linear in a variable, if we will zero some other variable.
+\end{list}
+
+\begin{algorithm}[H]
+\caption{Parametric solution via linear elimination and rationalization}
+\begin{algorithmic}[1]
+\Require Polynomial system $P=\{p_1,\dots,p_k\}\subseteq \mathbb{K}[x_1,\dots,x_m]$
+\Ensure Parametric solution $Q$ with some variables expressed symbolically in terms of free variables
+    \State $Q \gets P$
+    \State $V \gets \{x_1,\dots,x_m\}$
+    \While{true}
+        \State $(Q,\Sigma) \gets$ LinearElimination$(Q)$ \Comment{Algorithm \ref{alg:linear-elimination}}
+        \State find which variables can be zeroed \Comment{use Newton-Raphson, and use Homotopy continuation to try to zero variables in the solution}
+        \State find which variables can be rationalized \Comment{same as zeroing but instead of zeroing, find the closest low demnoator rational number}
+        \If{variables can be zeroed}
+            \State choose variable to zero $z \in V$
+            \State record in $\Sigma$ that $z \mapsto 0$
+        \ElsIf{variables can be rationalized}
+            \State choose variable to rationalize $z \in V$
+            \State record in $\Sigma$ that $z \mapsto \text{rational\_approx}(z)$
+        \Else
+            \State \textbf{break}
+        \EndIf
+        \State $Q \gets Q[z \leftarrow \Sigma(z)]$
+        \State $V \gets V\setminus \{z\}$
+    \EndWhile
+    \State \Return $(Q,\Sigma)$
+\end{algorithmic}
+\end{algorithm}
+
+to choose which variable to zero or rationalize, one can use heuristics such as:
+\begin{list}{-}{}
+    \item \textbf{Most linear variables after substitution:} choose the variable that will lead to the most equations being linear in some variable after substitution.
+\end{list}
 
 
 \section*{exploration of space of solutions}
@@ -167,7 +217,7 @@ then $\frac{d}{dt}F(x_0 + tv)|_{t=0} = 0$.
 Evaluating this expression at $t=0$: \[\frac{d}{dt}F(x_0 + tv)\bigg|_{t=0} = J(x_0) \cdot v\]
 Since $v$ is in the null space of $J(x_0)$, we have $J(x_0)v = 0$. Thus: \[ \frac{d}{dt}F(x_0 + tv)\bigg|_{t=0} = 0 \]
 
-a use of this theorem to extract a parametric solution from a symbolic one is in the appendix.
+a use of this theorem to extract a parametric solution from a symbolic one is in the appendix. 
 
 \subsection*{Numerical exploration of space of solutions}
 
@@ -252,6 +302,48 @@ x(t) &= \frac{1}{3} + \frac{2}{3}\cos(\sqrt{3}t) \\
 y(t) &= \frac{1}{3} - \frac{1}{3}\cos(\sqrt{3}t) - \frac{1}{\sqrt{3}}\sin(\sqrt{3}t) \\
 z(t) &= \frac{1}{3} - \frac{1}{3}\cos(\sqrt{3}t) + \frac{1}{\sqrt{3}}\sin(\sqrt{3}t)
 \end{align*}
+
+\subsection*{Expanding to the whole space of solutions}
+
+\begin{align*}
+    0 = x_0^2 + x_1 + x_2^3 - x_1 * x_4 - 3\\
+    0 = 9 * x_0 + x_1^2 + x_3 - x_2 * x_3^4 - 5
+\end{align*}
+
+we first note that due to the second equation
+\[ x_0 = \frac{5 - x_1^2 - x_3 + x_2 * x_3^4}{9} \]
+
+due to the first equation
+\[ x_4 = \frac{x_0^2 + x_1 + x_2^3 - 3}{x_1} = \frac{\left(\frac{5 - x_1^2 - x_3 + x_2 * x_3^4}{9}\right)^2 + x_1 + x_2^3 - 3}{x_1} \]
+
+we will take the solution point where $x_1 = \sqrt{5}, x_2 = 0, x_3 = 0$ which leads to $x_0 = 0$ and $x_4 = -2$.
+
+the Jacobian matrix at this point is:
+\[ J = \begin{pmatrix}
+2x_0 & 1 - x_4 & 3x_2^2 & 0 & -x_1 \\
+9 & 2x_1 & -x_3^4 & 1 - 4x_2x_3^3 & 0
+\end{pmatrix} = \begin{pmatrix}
+0 & 3 & 0 & 0 & -\sqrt{5} \\
+9 & 2\sqrt{5} & 0 & 1 & 0
+\end{pmatrix} \]
+
+% This idea needs to be checked, i am unsure that it is a simple process.
+The rank of this matrix is 2, so the dimension of the solution space around this point is $5 - 2 = 3$. so we found a 3 dimensional space of solutions around this point.
+
+now we ask what if $x_1 = 0$? the new system is:
+\begin{align*}
+    0 = x_0^2 + x_2^3 - 3\\
+    0 = 9 * x_0 + x_3 - x_2 * x_3^4 - 5
+\end{align*}
+
+from the second equation we get:
+\[ x_0 = \frac{5 - x_3 + x_2 * x_3^4}{9} \]
+
+the first equation becomes:
+\[ 0 = \left(\frac{5 - x_3 + x_2 * x_3^4}{9}\right)^2 + x_2^3 - 3 \]
+\[ 0 = (5 - x_3 + x_2 * x_3^4)^2 + 81x_2^3 - 243 \]
+\[ 0 = x_2^2 * x_3^8 - 2x_2 * x_3^5 + x_3^2 + 81x_2^3 - 10x_2 * x_3^4 + 10x_3 - 218 \]
+this equation is a polynomial of degree 3 in $x_2$, and thus there is a close form solution for $x_2$ in terms of $x_3$. using that fact we found the whole space of solutions in this case.
 
 \bibliographystyle{plain}
 \bibliography{references}
