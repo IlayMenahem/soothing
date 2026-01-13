@@ -5,8 +5,6 @@ from equinox import filter_jit
 from jax import jacfwd
 from jaxtyping import Array
 
-from .numerical import newton_raphson
-
 
 @filter_jit
 def nullspace(J: Array, rtol: float = 1e-9) -> Array:
@@ -59,6 +57,7 @@ def homotopy_continuation(
                 system.
             - A float representing the final error.
     """
+    from .numerical import newton_raphson
 
     @filter_jit
     def homotopy_system(x: Array, t: Array) -> Array:
@@ -142,22 +141,27 @@ def estimate_solution_dim(
     return dim
 
 
-def solution_test(solution: Array, system: Callable[[Array], Array]) -> None:
+def solution_test(
+    solution: Array,
+    system: Callable[[Array], Array],
+    jacobian: Callable[[Array], Array] | None = None,
+):
     """
     Test whether the provided solution satisfies the system of equations.
 
-    Performs a first-order check where the Jacobian should be large relative
-    to the residual for a good solution.
+    Performs a residual check, and error analysis using condition numbers and sensitivity metrics.
 
     Args:
         solution: Solution vector of shape (n,) to be tested.
-        system: Callable that takes Array of shape (n,) and returns Array of
-            shape (n,).
-
-    Raises:
-        NotImplementedError: This function is a placeholder for future
-            implementation.
+        system: Callable that takes Array of shape (n,) and returns Array of shape (n,).
+        jacobian: Optional Jacobian of the system to reuse.
     """
-    raise NotImplementedError(
-        "This function is a placeholder for future implementation."
-    )
+    residual = system(solution)
+    residual_norm = jnp.linalg.norm(residual, ord=jnp.inf)
+    print(f"Residual norm: {residual_norm:.3e}")
+
+    J_system = jacfwd(system) if jacobian is None else jacobian
+    J_at_solution = J_system(solution)
+
+    _, s, _ = jnp.linalg.svd(J_at_solution)
+    print(f"Singular values of Jacobian at solution: {s}")

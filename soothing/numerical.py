@@ -7,8 +7,7 @@ from equinox import filter_jit
 from jax import jacfwd, lax, vmap
 from jaxtyping import Array
 
-from .symbolic import simple_sparsification
-from .utils import estimate_solution_dim, nullspace
+from soothing.utils import nullspace
 
 
 def newton_raphson(
@@ -193,6 +192,9 @@ def multiattempt_newton_raphson(
 
 
 if __name__ == "__main__":
+    from soothing.symbolic import solution_rationalization
+    from soothing.utils import estimate_solution_dim, solution_test
+
     jax.config.update("jax_enable_x64", True)
     jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
     jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
@@ -230,8 +232,11 @@ if __name__ == "__main__":
         estimate_solution_dim(system_of_equations, solution),
     )
 
-    print("\nSparsified solution:")
-    sparsified, error = simple_sparsification(solution, system_of_equations, 1e-18)
+    solution_test(solution, system_of_equations)
 
-    pprint(sparsified)
+    print("\nRationalized solution:")
+    rationalized, error = solution_rationalization(solution, system_of_equations, 1e-14)
+
+    pprint(rationalized)
     pprint(error)
+    solution_test(rationalized, system_of_equations)
