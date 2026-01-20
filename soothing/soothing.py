@@ -1,138 +1,167 @@
 from sympy import Symbol, Poly, symbols, solve, Expr, Integer
 import jax.numpy as jnp
+from jaxtyping import Array
 
 from soothing.numerical import newton_raphson
-from soothing.symbolic import simple_sparsification, try_zero_variables
+from soothing.symbolic import try_zero_variables
 from soothing.utils import sympy_to_jax_system
 
 
 def _get_degree(poly: Poly, var: Symbol) -> int:
-    """Get the degree of a variable in a polynomial, handling missing generators.
+    """
+    Get the degree of a variable in a polynomial, handling missing generators.
     
     Args:
-        poly: The polynomial.
-        var: The variable to get the degree of.
+        poly (Poly): The polynomial.
+        var (Symbol): The variable to get the degree of.
         
     Returns:
-        The degree of var in poly, or 0 if var is not a generator.
+        int: The degree of var in poly, or 0 if var is not a generator.
     """
     if var not in poly.gens:
         return 0
-    return int(poly.degree(var))  # type: ignore[arg-type]
+        
+    degree = int(poly.degree(var))  # type: ignore[arg-type]
+    
+    return degree
 
 
 def _is_linear_in_var(poly: Poly, var: Symbol) -> bool:
-    """Check if a polynomial is linear in a given variable.
+    """
+    Check if a polynomial is linear in a given variable.
     
     A polynomial is linear in var if the degree of var is exactly 1.
     
     Args:
-        poly: The polynomial to check.
-        var: The variable to check linearity for.
+        poly (Poly): The polynomial to check.
+        var (Symbol): The variable to check linearity for.
         
     Returns:
-        True if poly is linear in var, False otherwise.
+        bool: True if poly is linear in var, False otherwise.
     """
-    return _get_degree(poly, var) == 1
+    is_linear: bool = _get_degree(poly, var) == 1
+    
+    return is_linear
 
 
 def _find_linear_pairs(polynomials: list[Poly], variables: set[Symbol]) -> list[tuple[Symbol, Poly]]:
-    """Find all (variable, polynomial) pairs where the polynomial is linear in the variable.
+    """
+    Find all (variable, polynomial) pairs where the polynomial is linear in the variable.
     
     Args:
-        polynomials: List of polynomials to search.
-        variables: Set of variables to consider.
+        polynomials (list[Poly]): List of polynomials to search.
+        variables (set[Symbol]): Set of variables to consider.
         
     Returns:
-        List of (variable, polynomial) pairs where polynomial is linear in variable.
+        list[tuple[Symbol, Poly]]: List of (variable, polynomial) pairs where polynomial is linear in variable.
     """
-    pairs = []
+    pairs: list[tuple[Symbol, Poly]] = []
+    
     for poly in polynomials:
         for var in variables:
             if var in poly.free_symbols and _is_linear_in_var(poly, var):
                 pairs.append((var, poly))
+    
     return pairs
 
 
 def _solve_linear_for_var(poly: Poly, var: Symbol) -> Expr:
-    """Solve a polynomial that is linear in var for var.
+    """
+    Solve a polynomial that is linear in var for var.
     
     Given poly = a*var + b = 0 (where a, b may depend on other variables),
     returns var = -b/a.
     
     Args:
-        poly: Polynomial linear in var.
-        var: Variable to solve for.
+        poly (Poly): Polynomial linear in var.
+        var (Symbol): Variable to solve for.
         
     Returns:
-        Expression for var in terms of other variables.
+        Expr: Expression for var in terms of other variables.
     """
-    expr = poly.as_expr()
-    solutions = solve(expr, var)
+    expr: Expr = poly.as_expr()
+    solutions: list[Expr] = solve(expr, var)
+    
     if not solutions:
         raise ValueError(f"Could not solve {poly} for {var}")
+    
     return solutions[0]
 
 
 def _count_occurrences(var: Symbol, polynomials: list[Poly]) -> int:
-    """Count how many polynomials contain the given variable.
+    """
+    Count how many polynomials contain the given variable.
     
     Args:
-        var: Variable to count occurrences of.
-        polynomials: List of polynomials to search.
+        var (Symbol): Variable to count occurrences of.
+        polynomials (list[Poly]): List of polynomials to search.
         
     Returns:
-        Number of polynomials containing var.
+        int: Number of polynomials containing var.
     """
-    return sum(1 for p in polynomials if var in p.free_symbols)
+    count: int = sum(1 for p in polynomials if var in p.free_symbols)
+    
+    return count
 
 
 def _total_degree_in_others(var: Symbol, poly: Poly, polynomials: list[Poly]) -> int:
-    """Calculate total degree of var across all other polynomials.
+    """
+    Calculate total degree of var across all other polynomials.
     
     Args:
-        var: Variable to check.
-        poly: The polynomial used for elimination (excluded from count).
-        polynomials: All polynomials.
+        var (Symbol): Variable to check.
+        poly (Poly): The polynomial used for elimination (excluded from count).
+        polynomials (list[Poly]): All polynomials.
         
     Returns:
-        Sum of degrees of var in all polynomials except poly.
+        int: Sum of degrees of var in all polynomials except poly.
     """
-    return sum(_get_degree(p, var) for p in polynomials if p != poly)
+    total_degree: int = sum(_get_degree(p, var) for p in polynomials if p != poly)
+    
+    return total_degree
 
 
-def _select_best_pair(
-    pairs: list[tuple[Symbol, Poly]], 
-    polynomials: list[Poly]
-) -> tuple[Symbol, Poly]:
-    """Select the best (variable, polynomial) pair for elimination.
+def _select_best_pair(pairs: list[tuple[Symbol, Poly]], polynomials: list[Poly]) -> tuple[Symbol, Poly]:
+    """
+    Select the best (variable, polynomial) pair for elimination.
     
     Heuristic: Choose the variable with lowest total degree in other equations.
     This tends to minimize expression growth after substitution.
     
     Args:
-        pairs: List of candidate (variable, polynomial) pairs.
-        polynomials: All polynomials in the system.
+        pairs (list[tuple[Symbol, Poly]]): List of candidate (variable, polynomial) pairs.
+        polynomials (list[Poly]): All polynomials in the system.
         
     Returns:
-        The best (variable, polynomial) pair to use for elimination.
+        tuple[Symbol, Poly]: The best (variable, polynomial) pair to use for elimination.
     """
     if not pairs:
         raise ValueError("No pairs to select from")
     
-    # Score each pair: lower is better
-    # Primary: lowest total degree in other equations
-    # Secondary: fewest occurrences (to minimize substitution work)
     def score(pair: tuple[Symbol, Poly]) -> tuple[int, int]:
+        """
+        Score a pair first by the total degree in other equations and then by the number of occurrences.
+        
+        Args:
+            pair (tuple[Symbol, Poly]): The pair to score.
+            
+        Returns:
+            tuple[int, int]: The score of the pair.
+        """
         var, poly = pair
         degree_score = _total_degree_in_others(var, poly, polynomials)
         occurrence_score = _count_occurrences(var, polynomials)
-        return (degree_score, occurrence_score)
+        
+        score: tuple[int, int] = (degree_score, occurrence_score)
+        
+        return score
     
-    return min(pairs, key=score)
+    best_pair: tuple[Symbol, Poly] = min(pairs, key=score)
+    
+    return best_pair
 
 
-def linear_elimination(polynomial_system: list[Poly], variables: set[Symbol]) -> tuple[list[Poly], dict]:
+def linear_elimination(polynomial_system: list[Poly], variables: set[Symbol]) -> tuple[list[Poly], dict[Symbol, Expr]]:
     r"""
     Linear elimination by substitution.
     
@@ -153,54 +182,68 @@ def linear_elimination(polynomial_system: list[Poly], variables: set[Symbol]) ->
     Returns:
     - Tuple of (reduced_system (list[Poly]), substitution_map (dict))
     """
-    Q = list(polynomial_system)
-    V = set(variables)
-    sigma = {}  # substitution map: var -> expression
+    def substitute_var(q: Poly, var: Symbol, expr: Expr, all_gens_tuple: tuple[Symbol, ...]) -> Poly:
+        """
+        Substitute var -> expr in a polynomial.
+        
+        Args:
+            q (Poly): The polynomial to substitute in.
+            var (Symbol): The variable to substitute.
+            expr (Expr): The expression to substitute var with.
+            all_gens_tuple (tuple[Symbol, ...]): The generators of the polynomials.
+            
+        Returns:
+            Poly: The polynomial with var substituted with expr.
+        """
+        new_expr: Expr = q.as_expr().subs(var, expr)
+        if new_expr != 0 and all_gens_tuple:
+            return Poly(new_expr, *all_gens_tuple)
+        elif new_expr != 0:
+            return q
+        return q
+
+    def collect_gens(polynomials: list[Poly]) -> tuple[Symbol, ...]:
+        """
+        Collect all generators from a list of polynomials.
+        
+        Args:
+            polynomials (list[Poly]): The polynomials to collect generators from.
+            
+        Returns:
+            tuple[Symbol, ...]: The generators of the polynomials.
+        """
+        gens: set[Symbol] = set[Symbol]()
+        
+        for p in polynomials:
+            gens.update(set[Symbol](p.gens))  # type: ignore[arg-type]
+        
+        gens.discard(var)
+
+        return tuple(sorted(gens, key=str))
+
+    Q = list[Poly](polynomial_system)
+    V = set[Symbol](variables)
+    substitution_map: dict[Symbol, Expr] = {}
     
     while True:
-        # Find all (var, poly) pairs where poly is linear in var
-        linear_pairs = _find_linear_pairs(Q, V)
+        linear_pairs: list[tuple[Symbol, Poly]] = _find_linear_pairs(Q, V)
         
         if not linear_pairs:
             break
         
-        # Select the best pair using heuristics
         var, poly = _select_best_pair(linear_pairs, Q)
         
-        # Solve for var: poly = 0 => var = f(other_vars)
-        expr = _solve_linear_for_var(poly, var)
-        
-        # Record the substitution
-        sigma[var] = expr
-        
-        # Remove the equation used for elimination
+        expr: Expr = _solve_linear_for_var(poly, var)
+        substitution_map[var] = expr
         Q = [q for q in Q if q != poly]
         
-        # Collect all generators from remaining polynomials (excluding the eliminated var)
-        all_gens: set[Symbol] = set()
-        for q in Q:
-            all_gens.update(q.gens)
-        all_gens.discard(var)
-        all_gens_tuple = tuple(sorted(all_gens, key=str))
+        all_gens_tuple: tuple[Symbol, ...] = collect_gens(Q)
         
-        # Substitute var -> expr in all remaining equations
-        new_Q = []
-        for q in Q:
-            new_expr = q.as_expr().subs(var, expr)
-            if new_expr != 0 and all_gens_tuple:
-                new_Q.append(Poly(new_expr, *all_gens_tuple))
-            elif new_expr != 0:
-                # If no generators left, keep as constant check
-                pass  # This would mean system is inconsistent or fully solved
-        Q = new_Q
-        
-        # Remove zero polynomials that may result from substitution
+        Q = [substitute_var(q, var, expr, all_gens_tuple) for q in Q]
         Q = [q for q in Q if not q.is_zero]
-        
-        # Remove var from the variable set
         V.discard(var)
     
-    return Q, sigma
+    return Q, substitution_map
 
 
 def _count_linear_pairs_after_zeroing(
@@ -208,18 +251,19 @@ def _count_linear_pairs_after_zeroing(
     variables: set[Symbol], 
     var_to_zero: Symbol
 ) -> int:
-    """Count how many linear pairs would exist if var_to_zero were set to 0.
+    """
+    Count how many linear pairs would exist if var_to_zero were set to 0.
     
     This is used as a heuristic to select which variable to zero:
     we prefer zeroing variables that create more linear elimination opportunities.
     
     Args:
-        polynomials: Current polynomial system.
-        variables: Set of remaining variables.
-        var_to_zero: Variable to hypothetically set to 0.
+    - polynomials (list[Poly]): Current polynomial system.
+    - variables (set[Symbol]): Set of remaining variables.
+    - var_to_zero (Symbol): Variable to hypothetically set to 0.
         
     Returns:
-        Number of (var, poly) linear pairs that would exist after zeroing.
+    - int: Number of (var, poly) linear pairs that would exist after zeroing.
     """
     # Substitute var_to_zero = 0 in all polynomials
     hypothetical_polys = []
@@ -233,47 +277,50 @@ def _count_linear_pairs_after_zeroing(
     
     remaining_vars = variables - {var_to_zero}
     pairs = _find_linear_pairs(hypothetical_polys, remaining_vars)
+    
     return len(pairs)
 
 
 def _select_best_to_zero(
-    zeroable: list[tuple[int, jnp.ndarray, float]],
+    zeroable: list[tuple[int, Array, float]],
     polynomials: list[Poly],
     var_list: list[Symbol],
     variables: set[Symbol],
-) -> tuple[int, Symbol, jnp.ndarray]:
-    """Select the best variable to zero based on heuristics.
+) -> tuple[int, Symbol, Array]:
+    """
+    Select the best variable to zero based on heuristics.
     
     Heuristic: Choose the variable that creates the most linear pairs
     after zeroing, to maximize opportunities for further linear elimination.
     
     Args:
-        zeroable: List of (idx, new_solution, error) from try_zero_variables.
-        polynomials: Current polynomial system.
-        var_list: Ordered list of variables (maps indices to symbols).
-        variables: Set of remaining variables.
+    - zeroable (list[tuple[int, Array, float]]): List of (idx, new_solution, error) from try_zero_variables.
+    - polynomials (list[Poly]): Current polynomial system.
+    - var_list (list[Symbol]): Ordered list of variables (maps indices to symbols).
+    - variables (set[Symbol]): Set of remaining variables.
         
     Returns:
-        Tuple of (index, symbol, new_solution) for the best variable to zero.
+    - tuple[int, Symbol, Array]: Tuple of (index, symbol, new_solution) for the best variable to zero.
     """
     if not zeroable:
         raise ValueError("No zeroable variables")
     
-    best: tuple[int, Symbol, jnp.ndarray, float] | None = None
+    best: tuple[int, Symbol, Array, float] | None = None
     best_score = -1
     
     for idx, new_solution, error in zeroable:
         var = var_list[idx]
         score = _count_linear_pairs_after_zeroing(polynomials, variables, var)
         
-        # Prefer more linear pairs; break ties by lower error
         if score > best_score or (score == best_score and (best is None or error < best[3])):
             best = (idx, var, new_solution, error)
             best_score = score
+
+    if best is None:
+        raise ValueError("No best variable to zero")
     
-    # This assertion is always true since zeroable is non-empty
-    assert best is not None
-    return best[0], best[1], best[2]
+    idx, var, new_solution, error = best
+    return idx, var, new_solution
 
 
 def soothing(
@@ -310,21 +357,20 @@ def soothing(
     - Tuple of (parametric_solution (list[Poly]), substitution_map (dict))
     """
     # Step 1: Initial linear elimination
-    Q, sigma = linear_elimination(polynomial_system, variables)
-    V = variables - set(sigma.keys())
+    Q, substitution_map = linear_elimination(polynomial_system, variables)
+    V = variables - set(substitution_map.keys())
     
     if verbose:
         print(f"After initial linear elimination:")
-        print(f"  Eliminated {len(sigma)} variables: {list(sigma.keys())}")
+        print(f"  Eliminated {len(substitution_map)} variables: {list(substitution_map.keys())}")
         print(f"  Remaining equations: {len(Q)}")
         print(f"  Remaining variables: {V}")
     
-    # If no equations remain or no variables remain, we're done
     if not Q or not V:
-        return Q, sigma
+        return Q, substitution_map
     
     # Create ordered variable list for index mapping
-    var_list = sorted(list(V), key=lambda x: str(x))
+    var_list = sorted(list[Symbol](V), key=lambda x: str(x))
     
     for iteration in range(max_iterations):
         if verbose:
@@ -368,7 +414,7 @@ def soothing(
             print(f"  Zeroing variable: {var_to_zero}")
         
         # Record the zeroing in substitution map
-        sigma[var_to_zero] = Integer(0)
+        substitution_map[var_to_zero] = Integer(0)
         
         # Substitute z=0 in all polynomials
         Q = [Poly(q.as_expr().subs(var_to_zero, 0), *[g for g in q.gens if g != var_to_zero]) 
@@ -393,7 +439,7 @@ def soothing(
         if new_sigma:
             if verbose:
                 print(f"  Linear elimination found {len(new_sigma)} more eliminations: {list(new_sigma.keys())}")
-            sigma.update(new_sigma)
+            substitution_map.update(new_sigma)
             V = V - set(new_sigma.keys())
             var_list = [v for v in var_list if v not in new_sigma]
         
@@ -402,21 +448,25 @@ def soothing(
                 print("  System fully solved after linear elimination.")
             break
     
-    return Q, sigma
+    return Q, substitution_map
 
 
-def linear_simplification(system: list[Poly], variables: set[Symbol]) -> tuple[list[Poly], dict]:
-    """
-    Simplify a system using elimination of variables in a linear fashion.
-
-    This is an alias for linear_elimination.
+if __name__ == "__main__":
+    import jax
+    from sympy import Poly, symbols
+    from soothing.soothing import soothing
     
-    Args:
-    - system (list[Poly]): List of polynomials $P = {p_1, ..., p_k}$
-    - variables (set[Symbol]): Set of variables $V = {x_1, ..., x_m}$
-    
+    jax.config.update("jax_enable_x64", True)
 
-    Returns:
-    - Tuple of (simplified_system (list[Poly]), substitution_map (dict))
-    """
-    return linear_elimination(system, variables)
+    x0, x1, x2, x3, x4 = symbols("x0, x1, x2, x3, x4")
+    system: list[Poly] = [
+        Poly(x0**2 + x1 + x2**3 - x1 * x4 - 3),
+        Poly(9 * x0 + x1**2 + x3 - x2 * x3**4 - 5)
+    ]
+
+    # solve using soothing
+    solution, substitution_map = soothing(system, {x0, x1, x2, x3, x4})
+    print("Solution:", solution)
+    print("\nSubstitution map:")
+    for key, value in substitution_map.items():
+        print(f"{key} -> {value}")
