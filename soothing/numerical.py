@@ -192,7 +192,7 @@ def multiattempt_newton_raphson(
 
 
 if __name__ == "__main__":
-    from soothing.symbolic import solution_rationalization
+    from soothing.symbolic import simple_sparsification
     from soothing.utils import estimate_solution_dim, solution_test
 
     jax.config.update("jax_enable_x64", True)
@@ -235,8 +235,8 @@ if __name__ == "__main__":
     solution_test(solution, system_of_equations)
 
     print("\nRationalized solution:")
-    rationalized, error = solution_rationalization(solution, system_of_equations, 1e-14)
+    sparsified, error = simple_sparsification(solution, system_of_equations, 1e-14)
 
-    pprint(rationalized)
+    pprint(sparsified)
     pprint(error)
-    solution_test(rationalized, system_of_equations)
+    solution_test(sparsified, system_of_equations)

@@ -4,6 +4,45 @@ import jax.numpy as jnp
 from equinox import filter_jit
 from jax import jacfwd
 from jaxtyping import Array
+from sympy import Poly, Symbol, lambdify
+
+
+def sympy_to_jax_system(
+    polys: list[Poly], 
+    variables: list[Symbol]
+) -> Callable[[Array], Array]:
+    """Convert SymPy polynomials to a JAX-compatible system function.
+    
+    Uses sympy.lambdify with the 'jax' module to create JAX-compatible functions.
+    
+    Args:
+        polys: List of SymPy Poly objects representing the system of equations.
+        variables: List of Symbol objects specifying the variable ordering.
+            The order determines how the input array maps to variables.
+            
+    Returns:
+        A callable that takes a JAX array of shape (n,) where n = len(variables)
+        and returns a JAX array of shape (m,) where m = len(polys).
+    """
+    exprs = [p.as_expr() for p in polys]
+    funcs = [lambdify(variables, expr, modules=['jax']) for expr in exprs]
+    
+    def system(x: Array) -> Array:
+        """Evaluate the polynomial system at point x.
+        
+        Args:
+            x: JAX array of shape (n,) with variable values.
+            
+        Returns:
+            JAX array of shape (m,) with polynomial evaluations.
+        """
+
+        args = [x[i] for i in range(len(variables))]
+        results = [f(*args) for f in funcs]
+        
+        return jnp.array(results)
+    
+    return system
 
 
 @filter_jit
