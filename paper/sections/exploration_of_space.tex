@@ -1,0 +1,14 @@
+\section*{exploration of space of solutions}
+here we present a theorem regarding given one solution how can we derive a neighborhood of solutions to any system of equations via the Jacobian null space at that point.
+\\\textbf{theorem:} let $F = \{f_1, f_2, \ldots, f_n\}$ be a system of smooth functions in variables $x = (x_1, x_2, \ldots, x_m)$. let $J$ be the Jacobian matrix of $F$ with respect to $x$, $x_0$ be a point such that $F(x_0) = 0$, and $v \in N(J(x_0))$ be a vector in the null space of $J$ at point $x_0$. 
+then $\frac{d}{dt}F(x_0 + tv)|_{t=0} = 0$.
+\\\textbf{proof:} By the multivariable chain rule, the derivative of the composition $F(x_0 + tv)$ with respect to $t$ is given by:
+\[\frac{d}{dt}F(x_0 + tv) = J(x_0 + tv) \cdot \frac{d}{dt}(x_0 + tv) = J(x_0 + tv) \cdot v\] 
+Evaluating this expression at $t=0$: \[\frac{d}{dt}F(x_0 + tv)\bigg|_{t=0} = J(x_0) \cdot v\]
+Since $v$ is in the null space of $J(x_0)$, we have $J(x_0)v = 0$. Thus: \[ \frac{d}{dt}F(x_0 + tv)\bigg|_{t=0} = 0 \]
+
+a use of this theorem to extract a parametric solution from a symbolic one is in the appendix. 
+
+\subsection*{Numerical exploration of space of solutions}
+
+\subsection*{Symbolic exploration of space of solutions}

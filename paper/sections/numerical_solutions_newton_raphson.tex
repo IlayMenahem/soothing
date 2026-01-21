@@ -1,0 +1,5 @@
+\section*{Numerical solutions via Newton-Raphson}
+to apply the Newton-Raphson method to an underdetermined system of equations we can use the following update step\cite{BenIsrael1966ANM}: \[x_{n+1} = x_n - J^+(x_n) F(x_n)\] where $J^+$ is the Moore-Penrose pseudoinverse of the Jacobian matrix $J$ of $F$ at point $x_n$.
+
+% minimizing the $L_1$ norm to improve solution sparsity and stability of Newton-Raphson
+it is well known that minimizing the $L_1$ norm of the solution can lead to sparser solutions [], and can also improve the stability of the Newton-Raphson method []. % write more about methods for sparsity and stability
