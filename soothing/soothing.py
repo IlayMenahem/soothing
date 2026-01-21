@@ -1,4 +1,5 @@
-from sympy import Symbol, Poly, symbols, solve, Expr, Integer
+from sympy import Symbol, Poly, symbols, solve, Expr, Integer, fraction, together
+from sympy.polys.polytools import reduced
 import jax.numpy as jnp
 from jaxtyping import Array
 
@@ -104,6 +105,128 @@ def _count_occurrences(var: Symbol, polynomials: list[Poly]) -> int:
     return count
 
 
+def _collect_gens(polynomials: list[Poly], variables: set[Symbol]) -> tuple[Symbol, ...]:
+    """
+    Collect all generators from the polynomials and variable set.
+    
+    Args:
+        polynomials (list[Poly]): The polynomials to collect generators from.
+        variables (set[Symbol]): Set of variables considered in the system.
+        
+    Returns:
+        tuple[Symbol, ...]: The generators sorted by name.
+    """
+    gens: set[Symbol] = set(variables)
+    
+    for p in polynomials:
+        gens.update(set[Symbol](p.gens))  # type: ignore[arg-type]
+    
+    return tuple(sorted(gens, key=str))
+
+
+def _clear_denominators(polynomials: list[Poly], variables: set[Symbol]) -> list[Poly]:
+    """
+    Clear denominators in a polynomial system by multiplying each equation
+    by its denominator and keeping the numerator.
+    
+    Args:
+        polynomials (list[Poly]): Polynomial system.
+        variables (set[Symbol]): Variables remaining in the system.
+        
+    Returns:
+        list[Poly]: Polynomials with denominators cleared.
+    """
+    if not polynomials:
+        return []
+    
+    gens = _collect_gens(polynomials, variables)
+    cleared: list[Poly] = []
+    
+    for p in polynomials:
+        expr = p.as_expr()
+        num, den = fraction(together(expr))
+        if den != 1:
+            expr = num
+        
+        if expr == 0:
+            continue
+        
+        if gens:
+            cleared.append(Poly(expr, *gens))
+        else:
+            cleared.append(Poly(expr))
+    
+    return cleared
+
+
+def _interreduce_polynomials(polynomials: list[Poly], variables: set[Symbol]) -> list[Poly]:
+    """
+    Interreduce a polynomial system using polynomial reduction (grevlex order).
+    
+    Args:
+        polynomials (list[Poly]): Polynomial system.
+        variables (set[Symbol]): Variables remaining in the system.
+        
+    Returns:
+        list[Poly]: Interreduced polynomial system.
+    """
+    if not polynomials:
+        return []
+    
+    gens = _collect_gens(polynomials, variables)
+    if not gens:
+        return polynomials
+    
+    reduced_polys: list[Poly] = []
+    
+    for idx, poly in enumerate(polynomials):
+        others = [p.as_expr() for j, p in enumerate(polynomials) if j != idx]
+        if others:
+            _, reduced_expr = reduced(poly.as_expr(), others, *gens, order="grevlex")
+        else:
+            reduced_expr = poly.as_expr()
+        
+        if reduced_expr != 0:
+            reduced_polys.append(Poly(reduced_expr, *gens))
+    
+    return reduced_polys
+
+
+def _simplify_system(polynomials: list[Poly], variables: set[Symbol]) -> list[Poly]:
+    """
+    Simplify a polynomial system by clearing denominators, interreducing,
+    and making polynomials monic.
+    
+    Args:
+        polynomials (list[Poly]): Polynomial system.
+        variables (set[Symbol]): Variables remaining in the system.
+        
+    Returns:
+        list[Poly]: Simplified polynomial system.
+    """
+    if not polynomials:
+        return []
+    
+    cleared = _clear_denominators(polynomials, variables)
+    if not cleared:
+        return []
+    
+    interreduced = _interreduce_polynomials(cleared, variables)
+    if not interreduced:
+        return []
+    
+    monic_polys: list[Poly] = []
+    for p in interreduced:
+        if p.is_zero:
+            continue
+        if p.total_degree() > 0:
+            monic_polys.append(p.monic())
+        else:
+            monic_polys.append(p)
+    
+    return monic_polys
+
+
 def _total_degree_in_others(var: Symbol, poly: Poly, polynomials: list[Poly]) -> int:
     """
     Calculate total degree of var across all other polynomials.
@@ -161,7 +284,11 @@ def _select_best_pair(pairs: list[tuple[Symbol, Poly]], polynomials: list[Poly])
     return best_pair
 
 
-def linear_elimination(polynomial_system: list[Poly], variables: set[Symbol]) -> tuple[list[Poly], dict[Symbol, Expr]]:
+def linear_elimination(
+    polynomial_system: list[Poly], 
+    variables: set[Symbol],
+    simplify: bool = True,
+) -> tuple[list[Poly], dict[Symbol, Expr]]:
     r"""
     Linear elimination by substitution.
     
@@ -178,6 +305,8 @@ def linear_elimination(polynomial_system: list[Poly], variables: set[Symbol]) ->
     Args:
     - polynomial_system (list[Poly]): List of polynomials $P = {p_1, ..., p_k}$
     - variables (set[Symbol]): Set of variables $V = {x_1, ..., x_m}$
+    - simplify (bool): If True, apply optional simplification steps
+      (clear denominators, interreduce, make monic).
     
     Returns:
     - Tuple of (reduced_system (list[Poly]), substitution_map (dict))
@@ -202,28 +331,12 @@ def linear_elimination(polynomial_system: list[Poly], variables: set[Symbol]) ->
             return q
         return q
 
-    def collect_gens(polynomials: list[Poly]) -> tuple[Symbol, ...]:
-        """
-        Collect all generators from a list of polynomials.
-        
-        Args:
-            polynomials (list[Poly]): The polynomials to collect generators from.
-            
-        Returns:
-            tuple[Symbol, ...]: The generators of the polynomials.
-        """
-        gens: set[Symbol] = set[Symbol]()
-        
-        for p in polynomials:
-            gens.update(set[Symbol](p.gens))  # type: ignore[arg-type]
-        
-        gens.discard(var)
-
-        return tuple(sorted(gens, key=str))
-
     Q = list[Poly](polynomial_system)
     V = set[Symbol](variables)
     substitution_map: dict[Symbol, Expr] = {}
+    
+    if simplify:
+        Q = _simplify_system(Q, V)
     
     while True:
         linear_pairs: list[tuple[Symbol, Poly]] = _find_linear_pairs(Q, V)
@@ -237,11 +350,14 @@ def linear_elimination(polynomial_system: list[Poly], variables: set[Symbol]) ->
         substitution_map[var] = expr
         Q = [q for q in Q if q != poly]
         
-        all_gens_tuple: tuple[Symbol, ...] = collect_gens(Q)
+        all_gens_tuple: tuple[Symbol, ...] = _collect_gens(Q, V)
         
         Q = [substitute_var(q, var, expr, all_gens_tuple) for q in Q]
         Q = [q for q in Q if not q.is_zero]
         V.discard(var)
+        
+        if simplify:
+            Q = _simplify_system(Q, V)
     
     return Q, substitution_map
 
@@ -329,6 +445,7 @@ def soothing(
     tol: float = 1e-10,
     max_iterations: int = 100,
     verbose: bool = True,
+    simplify: bool = True,
 ) -> tuple[list[Poly], dict]:
     r"""
     Parametric solution via linear elimination and variable zeroing.
@@ -352,12 +469,14 @@ def soothing(
     - tol (float): Tolerance for considering a zeroing successful
     - max_iterations (int): Maximum number of zeroing iterations
     - verbose (bool): If True, print progress information
+    - simplify (bool): If True, apply optional simplification steps
+      (clear denominators, interreduce, make monic).
     
     Returns:
     - Tuple of (parametric_solution (list[Poly]), substitution_map (dict))
     """
     # Step 1: Initial linear elimination
-    Q, substitution_map = linear_elimination(polynomial_system, variables)
+    Q, substitution_map = linear_elimination(polynomial_system, variables, simplify=simplify)
     V = variables - set(substitution_map.keys())
     
     if verbose:
@@ -433,8 +552,11 @@ def soothing(
                 print("  System fully solved or no variables remain.")
             break
         
+        if simplify:
+            Q = _simplify_system(Q, V)
+        
         # Re-run linear elimination on the simplified system
-        Q, new_sigma = linear_elimination(Q, V)
+        Q, new_sigma = linear_elimination(Q, V, simplify=simplify)
         
         if new_sigma:
             if verbose:
