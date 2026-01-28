@@ -116,12 +116,12 @@ def _collect_gens(polynomials: list[Poly], variables: set[Symbol]) -> tuple[Symb
     Returns:
         tuple[Symbol, ...]: The generators sorted by name.
     """
-    gens: set[Symbol] = set(variables)
+    gens: set[Symbol] = set[Symbol](variables)
     
     for p in polynomials:
         gens.update(set[Symbol](p.gens))  # type: ignore[arg-type]
     
-    return tuple(sorted(gens, key=str))
+    return tuple[Symbol, ...](sorted(gens, key=str))
 
 
 def _clear_denominators(polynomials: list[Poly], variables: set[Symbol]) -> list[Poly]:
@@ -179,8 +179,8 @@ def _interreduce_polynomials(polynomials: list[Poly], variables: set[Symbol]) ->
     
     reduced_polys: list[Poly] = []
     
-    for idx, poly in enumerate(polynomials):
-        others = [p.as_expr() for j, p in enumerate(polynomials) if j != idx]
+    for idx, poly in enumerate[Poly](polynomials):
+        others: list[Expr] = [p.as_expr() for j, p in enumerate[Poly](polynomials) if j != idx]
         if others:
             _, reduced_expr = reduced(poly.as_expr(), others, *gens, order="grevlex")
         else:
@@ -208,12 +208,7 @@ def _simplify_system(polynomials: list[Poly], variables: set[Symbol]) -> list[Po
         return []
     
     cleared = _clear_denominators(polynomials, variables)
-    if not cleared:
-        return []
-    
     interreduced = _interreduce_polynomials(cleared, variables)
-    if not interreduced:
-        return []
     
     monic_polys: list[Poly] = []
     for p in interreduced:
@@ -477,11 +472,11 @@ def soothing(
     """
     # Step 1: Initial linear elimination
     Q, substitution_map = linear_elimination(polynomial_system, variables, simplify=simplify)
-    V = variables - set(substitution_map.keys())
+    V = variables - set[Symbol](substitution_map.keys())
     
     if verbose:
         print(f"After initial linear elimination:")
-        print(f"  Eliminated {len(substitution_map)} variables: {list(substitution_map.keys())}")
+        print(f"  Eliminated {len(substitution_map)} variables: {list[Symbol]   (substitution_map.keys())}")
         print(f"  Remaining equations: {len(Q)}")
         print(f"  Remaining variables: {V}")
     
@@ -560,11 +555,15 @@ def soothing(
         
         if new_sigma:
             if verbose:
-                print(f"  Linear elimination found {len(new_sigma)} more eliminations: {list(new_sigma.keys())}")
+                print(f"  Linear elimination found {len(new_sigma)} more eliminations: {list[Symbol](new_sigma.keys())}")
             substitution_map.update(new_sigma)
-            V = V - set(new_sigma.keys())
+            V = V - set[Symbol](new_sigma.keys())
             var_list = [v for v in var_list if v not in new_sigma]
         
+        if verbose:
+            print(f"  Remaining equations: {Q}")
+            print(f"  Remaining variables: {V}")
+
         if not Q or not V:
             if verbose:
                 print("  System fully solved after linear elimination.")
@@ -582,8 +581,8 @@ if __name__ == "__main__":
 
     x0, x1, x2, x3, x4 = symbols("x0, x1, x2, x3, x4")
     system: list[Poly] = [
-        Poly(x0**2 + x1 + x2**3 - x1 * x4 - 3),
-        Poly(9 * x0 + x1**2 + x3 - x2 * x3**4 - 5)
+        Poly(x0**3 - 2*x1 + x2 + x3 - 2*x4**3 - 1),
+        Poly(x1**2 + x2**2 - x0*x3 + 4*x4**2 - 7),
     ]
 
     # solve using soothing

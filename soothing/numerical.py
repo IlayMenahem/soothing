@@ -36,7 +36,7 @@ def newton_raphson(
     Returns:
         A tuple containing:
             - The best solution found (Array of shape (n,)).
-            - A history of F-norms per iteration (shape (max_iter,)).
+            - A history of x-step norms per iteration (shape (max_iter,)).
             - A history of step norms per iteration (shape (max_iter,)).
     """
     J_system = jacobian if jacobian is not None else filter_jit(jacfwd(system))
@@ -55,7 +55,6 @@ def newton_raphson(
 
         J = J_system(x)
         system_val = system(x)
-        error = jnp.linalg.norm(system_val)
 
         dx_newton = jnp.linalg.pinv(J, rtol=1e-9) @ system_val
         x_target = x - dx_newton
@@ -105,14 +104,10 @@ def newton_raphson(
             step = -dx_newton
             return step, x_target
 
-        step, x_next = lax.cond(
-            null_dim > 0,
-            _null_adjust,
-            _no_adjust,
-            operand=None,
-        )
+        step, x_next = lax.cond(null_dim > 0, _null_adjust, _no_adjust, operand=None)
 
         dx_norm = jnp.linalg.norm(step)
+        error = jnp.linalg.norm(system(x_next))
         err_arr = err_arr.at[i].set(error)
         dx_arr = dx_arr.at[i].set(dx_norm)
 
@@ -185,7 +180,7 @@ def multiattempt_newton_raphson(
         return newton_raphson(system, x0, tol, max_iter, jacobian)
 
     solutions, errors, dxs = vmap(single_attempt)(initial_guesses)
-    final_errors = jnp.array([jnp.min(err) for err in errors])
+    final_errors = jnp.min(errors, axis=1)
     best_index = jnp.argmin(final_errors)
 
     return solutions[best_index], errors[best_index], dxs[best_index]
