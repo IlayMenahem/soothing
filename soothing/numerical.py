@@ -9,6 +9,7 @@ from jaxtyping import Array
 
 from soothing.utils import nullspace
 
+numeircal_zero = 1e-12
 
 def newton_raphson(
     system: Callable[[Array], Array],
@@ -56,7 +57,7 @@ def newton_raphson(
         J = J_system(x)
         system_val = system(x)
 
-        dx_newton = jnp.linalg.pinv(J, rtol=1e-9) @ system_val
+        dx_newton = jnp.linalg.pinv(J, rtol=numeircal_zero) @ system_val
         x_target = x - dx_newton
 
         null = nullspace(J)
@@ -76,11 +77,11 @@ def newton_raphson(
                     - step: The adjusted step to take.
                     - x_adj: The adjusted target point.
             """
-            weights = 1.0 / (jnp.abs(x_target) + 1e-6)
+            weights = 1.0 / (jnp.abs(x_target) + numeircal_zero)
             weighted_null = null * weights[:, None]
 
             # Solve weighted least squares: min || W * (x_target + null @ coef) ||
-            coef = jnp.linalg.lstsq(weighted_null, -weights * x_target, rcond=1e-9)[0]
+            coef = jnp.linalg.lstsq(weighted_null, -weights * x_target, rcond=numeircal_zero)[0]
 
             x_adj_candidate = x_target + null @ coef
             x_adj = jnp.where(

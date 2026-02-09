@@ -1,4 +1,4 @@
-from sympy import Symbol, Poly, symbols, solve, Expr, Integer, fraction, together
+from sympy import Symbol, Poly, symbols, solve, Expr, Integer, fraction, together, sympify
 from sympy.polys.polytools import reduced
 import jax.numpy as jnp
 from jaxtyping import Array
@@ -283,6 +283,7 @@ def linear_elimination(
     polynomial_system: list[Poly], 
     variables: set[Symbol],
     simplify: bool = True,
+    verbose: bool = True,
 ) -> tuple[list[Poly], dict[Symbol, Expr]]:
     r"""
     Linear elimination by substitution.
@@ -302,6 +303,7 @@ def linear_elimination(
     - variables (set[Symbol]): Set of variables $V = {x_1, ..., x_m}$
     - simplify (bool): If True, apply optional simplification steps
       (clear denominators, interreduce, make monic).
+    - verbose (bool): If True, print progress information
     
     Returns:
     - Tuple of (reduced_system (list[Poly]), substitution_map (dict))
@@ -320,13 +322,26 @@ def linear_elimination(
             Poly: The polynomial with var substituted with expr.
         """
         new_expr: Expr = q.as_expr().subs(var, expr)
+        num, den = fraction(together(new_expr))
+        if den != 1:
+            new_expr = num
         if new_expr != 0 and all_gens_tuple:
             return Poly(new_expr, *all_gens_tuple)
         elif new_expr != 0:
             return q
         return q
 
-    Q = list[Poly](polynomial_system)
+    gens = tuple(sorted(variables, key=str))
+    Q: list[Poly] = []
+    for p in list[Poly](polynomial_system):
+        if isinstance(p, Poly):
+            Q.append(p)
+        else:
+            expr = sympify(p)
+            if gens:
+                Q.append(Poly(expr, *gens))
+            else:
+                Q.append(Poly(expr))
     V = set[Symbol](variables)
     substitution_map: dict[Symbol, Expr] = {}
     
@@ -340,8 +355,13 @@ def linear_elimination(
             break
         
         var, poly = _select_best_pair(linear_pairs, Q)
-        
+
+        if verbose:
+            print(f"Selecting best pair: {var} -> {poly}")
+
         expr: Expr = _solve_linear_for_var(poly, var)
+        if verbose:
+            print(f"Solved {var} = {expr}")
         substitution_map[var] = expr
         Q = [q for q in Q if q != poly]
         
