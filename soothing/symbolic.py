@@ -1,8 +1,7 @@
+import math
 from typing import Callable
 
 import jax.numpy as jnp
-from equinox import filter_jit
-from jax import jacfwd, vmap
 from jaxtyping import Array
 
 from .utils import homotopy_continuation
@@ -110,6 +109,7 @@ def simple_sparsification(
     tol: float = 1e-6,
     max_iter: int = 100,
     jacobian: Callable[[Array], Array] | None = None,
+    verbose: bool = True
 ) -> tuple[Array, float]:
     """
     do a simple sparsification of the solution by zeroing entries and making newton corrections.
@@ -121,6 +121,7 @@ def simple_sparsification(
         tol: Tolerance for considering a solution as valid.
         max_iter: Maximum number of sparsification iterations.
         jacobian: Optional Jacobian of the system to reuse.
+        verbose: Whether to print verbose output.
 
     Returns:
         A tuple containing:
@@ -129,43 +130,37 @@ def simple_sparsification(
     """
     x = jnp.copy(solution)
     mask = jnp.zeros_like(x, dtype=bool)
-    jacobian = jacobian if jacobian is not None else filter_jit(jacfwd(system))
+
+    def masked_system(active_mask: Array) -> Callable[[Array], Array]:
+        def _system(x_inner: Array) -> Array:
+            return system(x_inner.at[active_mask].set(0.0))
+
+        return _system
 
     for _ in range(min(len(x), max_iter)):
-
-        def _zero_index(idx: Array) -> tuple[Array, Array]:
-            """
-            Attempt to also zero the entry at idx via Homotopy Continuation.
-
-            Args:
-                idx: Index to zero.
-
-            Returns:
-                - Tuple containing:
-                    - The error after attempting to zero that index (float).
-                    - The new solution (Array of shape (n,)).
-            """
-            target_system = lambda x: system(x.at[idx].set(0.0))
-            x_homotopy, error = homotopy_continuation(system, x, target_system)
-
-            error = jnp.array(error, dtype=x.dtype)
-
-            return error, x_homotopy
-
         idx_candidates = jnp.where(~mask)[0]
-
-        errors, candidate_solutions = vmap(_zero_index)(idx_candidates)
-        best_idx = jnp.argmin(errors)
-        best_error = errors[best_idx]
-        new_x = candidate_solutions[best_idx]
-
-        print(best_error, new_x)
-
-        if best_error > tol:
+        if idx_candidates.size == 0:
             break
 
-        mask = mask.at[idx_candidates[best_idx]].set(True)
-        x = new_x
+        current_system = masked_system(mask)
+        x = x.at[mask].set(0.0)
 
+        closest_idx = int(idx_candidates[jnp.argmin(jnp.abs(x[idx_candidates]))])
+        candidate_mask = mask.at[closest_idx].set(True)
+        target_system = masked_system(candidate_mask)
+        x_homotopy, _ = homotopy_continuation(current_system, x, target_system)
+        x_candidate = x_homotopy.at[candidate_mask].set(0.0)
+        error = float(jnp.linalg.norm(system(x_candidate)))
+
+        if not math.isfinite(error) or error > tol:
+            break
+
+        mask = mask.at[closest_idx].set(True)
+        x = x_candidate
+
+        if verbose:
+            print(error, x)
+
+    x = x.at[mask].set(0.0)
     error = jnp.linalg.norm(system(x))
     return x, error
