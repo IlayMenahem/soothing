@@ -113,7 +113,7 @@ def newton_raphson(
         dx_arr = dx_arr.at[i].set(dx_norm)
 
         is_better = error < best_err
-        best_x = jnp.where(is_better, x, best_x)
+        best_x = jnp.where(is_better, x_next, best_x)
         best_err = jnp.where(is_better, error, best_err)
 
         non_finite = (~jnp.isfinite(error)) | (~jnp.isfinite(dx_norm))
