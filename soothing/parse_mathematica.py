@@ -1,5 +1,5 @@
 import re
-from sympy import Poly
+from sympy import Poly, Symbol
 
 _GREEK_MAP = {
     r"\[Pi]": "jnp.pi",
@@ -163,7 +163,7 @@ def mathematica_to_jax(expr: str, var_to_index: dict[str, int]) -> str:
     return result
 
 
-def mathematica_to_sympy(expr: str) -> list[Poly]:
+def mathematica_to_sympy(expr: str) -> tuple[list[Poly], set[Symbol]]:
     """
     Convert Mathematica system of rational functions to SymPy polynomials.
 
@@ -173,6 +173,7 @@ def mathematica_to_sympy(expr: str) -> list[Poly]:
 
     Returns:
         List of SymPy polynomials.
+        Set of SymPy symbols.
     """
     from sympy import E, I, Symbol, fraction, pi, together
     from sympy.parsing.sympy_parser import (
@@ -241,7 +242,7 @@ def mathematica_to_sympy(expr: str) -> list[Poly]:
 
     cleaned = strip_outer_braces(expr)
     if not cleaned:
-        return []
+        return [], set()
 
     raw_parts = split_top_level(cleaned)
     normalized_parts: list[str] = []
@@ -278,7 +279,7 @@ def mathematica_to_sympy(expr: str) -> list[Poly]:
         normalized_parts.append(part)
 
     if not normalized_parts:
-        return []
+        return [], set()
 
     token_re = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\b")
     reserved = {"pi", "E", "I"}
@@ -321,8 +322,8 @@ def mathematica_to_sympy(expr: str) -> list[Poly]:
 
     gens = tuple(sorted(all_symbols, key=str))
     if gens:
-        return [Poly(sym_expr, *gens) for sym_expr in sympy_exprs]
-    return [Poly(sym_expr) for sym_expr in sympy_exprs]
+        return [Poly(sym_expr, *gens) for sym_expr in sympy_exprs], all_symbols
+    return [Poly(sym_expr) for sym_expr in sympy_exprs], all_symbols
 
 def generate_variable_mapping(variables: set[str]) -> tuple[dict[str, int], list[str]]:
     """Generate mapping from variable names to array indices."""
