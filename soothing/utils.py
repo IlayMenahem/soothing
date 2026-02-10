@@ -70,7 +70,7 @@ def homotopy_continuation(
     solution: Array,
     target_system: Callable[[Array], Array],
     tol: float = 1e-15,
-    max_iter: int = 100,
+    max_iter: int = 10,
     steps: int = 10,
     homotopy_jacobian: Callable[[Array, Array], Array] | None = None,
 ) -> tuple[Array, float]:

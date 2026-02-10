@@ -274,6 +274,15 @@ def _select_best_pair(pairs: list[tuple[Symbol, Poly]], polynomials: list[Poly])
         
         return score
     
+    def shortest_polynomial(pair: tuple[Symbol, Poly]) -> int:
+        """
+        Score a pair by the length of the polynomial.
+        """
+        var, poly = pair
+        length = len(poly.as_expr().args)
+        print(f"Length of {var} polynomial: {length}")
+        return length
+    
     best_pair: tuple[Symbol, Poly] = min(pairs, key=score)
     
     return best_pair
@@ -357,11 +366,9 @@ def linear_elimination(
         var, poly = _select_best_pair(linear_pairs, Q)
 
         if verbose:
-            print(f"Selecting best pair: {var} -> {poly}")
+            print(f"Eliminating variable: {var}")
 
         expr: Expr = _solve_linear_for_var(poly, var)
-        if verbose:
-            print(f"Solved {var} = {expr}")
         substitution_map[var] = expr
         Q = [q for q in Q if q != poly]
         
