@@ -6,16 +6,16 @@ from sympy import (
     Poly,
     Symbol,
     fraction,
-    solve,
     symbols,
     sympify,
     together,
+    zoo,
 )
 from sympy.polys.polytools import reduced
 
 from soothing.numerical import newton_raphson
 from soothing.symbolic import try_zero_variables
-from soothing.utils import sympy_to_jax_system
+from soothing.utils import solve_linear_for_var, sympy_to_jax_system
 
 
 def _get_degree(poly: Poly, var: Symbol) -> int:
@@ -76,29 +76,6 @@ def _find_linear_pairs(
                 pairs.append((var, poly))
 
     return pairs
-
-
-def _solve_linear_for_var(poly: Poly, var: Symbol) -> Expr:
-    """
-    Solve a polynomial that is linear in var for var.
-
-    Given poly = a*var + b = 0 (where a, b may depend on other variables),
-    returns var = -b/a.
-
-    Args:
-        poly (Poly): Polynomial linear in var.
-        var (Symbol): Variable to solve for.
-
-    Returns:
-        Expr: Expression for var in terms of other variables.
-    """
-    expr: Expr = poly.as_expr()
-    solutions: list[Expr] = solve(expr, var)
-
-    if not solutions:
-        raise ValueError(f"Could not solve {poly} for {var}")
-
-    return solutions[0]
 
 
 def _count_occurrences(var: Symbol, polynomials: list[Poly]) -> int:
@@ -391,7 +368,7 @@ def linear_elimination(
         if verbose:
             print(f"Eliminating variable: {var}")
 
-        expr: Expr = _solve_linear_for_var(poly, var)
+        expr: Expr = solve_linear_for_var(poly, var)
         substitution_map[var] = expr
         Q = [q for q in Q if q != poly]
 
@@ -445,7 +422,7 @@ def _select_best_to_zero(
     polynomials: list[Poly],
     var_list: list[Symbol],
     variables: set[Symbol],
-) -> tuple[int, Symbol, Array]:
+) -> list[tuple[int, Symbol, Array, float, int]]:
     """
     Select the best variable to zero based on heuristics.
 
@@ -459,30 +436,19 @@ def _select_best_to_zero(
     - variables (set[Symbol]): Set of remaining variables.
 
     Returns:
-    - tuple[int, Symbol, Array]: Tuple of (index, symbol, new_solution) for the best variable to zero.
+    - list[tuple[int, Symbol, Array, float, int]]: List of tuples containing (index, symbol, new_solution, error, score) for the best variable to zero.
     """
-    if not zeroable:
-        raise ValueError("No zeroable variables")
-
-    best: tuple[int, Symbol, Array, float] | None = None
-    best_score = -1
+    ranking: list[tuple[int, Symbol, Array, float, int]] = []
+    scores: list[tuple[int, Symbol, Array, float, int]] = []
 
     for idx, new_solution, error in zeroable:
         var = var_list[idx]
         score = _count_linear_pairs_after_zeroing(polynomials, variables, var)
+        scores.append((idx, var, new_solution, error, score))
 
-        if score > best_score or (
-            score == best_score and (best is None or error < best[3])
-        ):
-            best = (idx, var, new_solution, error)
-            best_score = score
+    ranking = sorted(scores, key=lambda x: (-x[4], x[3]))
 
-    if best is None:
-        raise ValueError("No best variable to zero")
-
-    idx, var, new_solution, error = best
-
-    return idx, var, new_solution
+    return ranking
 
 
 def soothing(
@@ -521,6 +487,31 @@ def soothing(
     Returns:
     - Tuple of (parametric_solution (list[Poly]), substitution_map (dict))
     """
+
+    def add_to_substitution_map(
+        subs_map: dict[Symbol, Expr], var: Symbol, expr: Expr
+    ) -> dict[Symbol, Expr]:
+        """
+        Add a new substitution to the substitution map and update existing substitutions.
+
+        Args:
+            subs_map (dict[Symbol, Expr]): Current substitution map.
+            var (Symbol): Variable being substituted.
+            expr (Expr): Expression that var is substituted with.
+
+        Returns:
+            dict[Symbol, Expr]: Updated substitution map with var -> expr and all existing substitutions updated to reflect this new substitution.
+        """
+        new_map = {var: expr}
+        for existing_var, existing_expr in subs_map.items():
+            if var in existing_expr.free_symbols:
+                new_expr = existing_expr.subs(var, expr)
+                new_map[existing_var] = new_expr
+            else:
+                new_map[existing_var] = existing_expr
+
+        return new_map
+
     # Step 1: Initial linear elimination
     Q, substitution_map = linear_elimination(
         polynomial_system, variables, simplify=simplify
@@ -528,11 +519,11 @@ def soothing(
     V = variables - set[Symbol](substitution_map.keys())
 
     if verbose:
-        print(f"After initial linear elimination:")
+        print("After initial linear elimination:")
         print(
             f"  Eliminated {len(substitution_map)} variables: {list[Symbol](substitution_map.keys())}"
         )
-        print(f"  Remaining equations: {len(Q)}")
+        print(f"  Remaining equations: {Q}")
         print(f"  Remaining variables: {V}")
 
     if not Q or not V:
@@ -577,7 +568,29 @@ def soothing(
             break
 
         # Select the best variable to zero
-        idx, var_to_zero, new_solution = _select_best_to_zero(zeroable, Q, var_list, V)
+        ranking = _select_best_to_zero(zeroable, Q, var_list, V)
+
+        valid_zeroing_found = False
+        var_to_zero = ranking[0][1]
+        for idx, var_to_zero_cand, new_solution, _, _ in ranking:
+            causes_zoo = False
+            new_substitution = add_to_substitution_map(
+                substitution_map, var_to_zero_cand, Integer(0)
+            )
+            for var, expr in new_substitution.items():
+                if expr.has(zoo):
+                    causes_zoo = True
+                    break
+
+            if not causes_zoo:
+                var_to_zero = var_to_zero_cand
+                valid_zeroing_found = True
+                break
+
+        if not valid_zeroing_found:
+            if verbose:
+                print("  All zeroable variables cause sympy.zoo. Stopping.")
+            break
 
         if verbose:
             print(f"  Zeroing variable: {var_to_zero}")
@@ -607,7 +620,6 @@ def soothing(
         V.discard(var_to_zero)
         var_list = [v for v in var_list if v != var_to_zero]
 
-        # If no equations or variables remain, we're done
         if not Q or not V:
             if verbose:
                 print("  System fully solved or no variables remain.")

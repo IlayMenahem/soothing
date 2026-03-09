@@ -4,44 +4,43 @@ import jax.numpy as jnp
 from equinox import filter_jit
 from jax import jacfwd
 from jaxtyping import Array
-from sympy import Poly, Symbol, lambdify
+from sympy import Expr, Poly, Symbol, lambdify, solve
 
 
 def sympy_to_jax_system(
-    polys: list[Poly], 
-    variables: list[Symbol]
+    polys: list[Poly], variables: list[Symbol]
 ) -> Callable[[Array], Array]:
     """Convert SymPy polynomials to a JAX-compatible system function.
-    
+
     Uses sympy.lambdify with the 'jax' module to create JAX-compatible functions.
-    
+
     Args:
         polys: List of SymPy Poly objects representing the system of equations.
         variables: List of Symbol objects specifying the variable ordering.
             The order determines how the input array maps to variables.
-            
+
     Returns:
         A callable that takes a JAX array of shape (n,) where n = len(variables)
         and returns a JAX array of shape (m,) where m = len(polys).
     """
     exprs = [p.as_expr() for p in polys]
-    funcs = [lambdify(variables, expr, modules=['jax']) for expr in exprs]
-    
+    funcs = [lambdify(variables, expr, modules=["jax"]) for expr in exprs]
+
     def system(x: Array) -> Array:
         """Evaluate the polynomial system at point x.
-        
+
         Args:
             x: JAX array of shape (n,) with variable values.
-            
+
         Returns:
             JAX array of shape (m,) with polynomial evaluations.
         """
 
         args = [x[i] for i in range(len(variables))]
         results = [f(*args) for f in funcs]
-        
+
         return jnp.array(results)
-    
+
     return system
 
 
@@ -204,3 +203,26 @@ def solution_test(
 
     _, s, _ = jnp.linalg.svd(J_at_solution)
     print(f"Singular values of Jacobian at solution: {s}")
+
+
+def solve_linear_for_var(poly: Poly, var: Symbol) -> Expr:
+    """
+    Solve a polynomial that is linear in var for var.
+
+    Given poly = a*var + b = 0 (where a, b may depend on other variables),
+    returns var = -b/a.
+
+    Args:
+        poly (Poly): Polynomial linear in var.
+        var (Symbol): Variable to solve for.
+
+    Returns:
+        Expr: Expression for var in terms of other variables.
+    """
+    expr: Expr = poly.as_expr()
+    solutions: list[Expr] = solve(expr, var)
+
+    if not solutions:
+        raise ValueError(f"Could not solve {poly} for {var}")
+
+    return solutions[0]
