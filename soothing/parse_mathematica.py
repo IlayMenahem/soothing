@@ -261,8 +261,8 @@ def mathematica_to_sympy(expr: str) -> tuple[list[Poly], set[Symbol]]:
             if rule_split is None:
                 rule_split = split_top_level_once(part, ":>")
             if rule_split is not None:
-                _, rhs = rule_split
-                part = rhs
+                lhs, rhs = rule_split
+                part = f"({lhs}) - ({rhs})"
 
         for math_symbol, py_symbol in sympy_greek_map.items():
             part = part.replace(math_symbol, py_symbol)
