@@ -22,7 +22,8 @@ class SystemSubstitutionMap:
 
 _NUM_COLLINEARITY_POINTS = 8
 _RANDOM_SEED = 42
-_RANDOM_VALUE_RANGE = (-1.0, 1.0)
+_RANDOM_VALUE_RANGE = (-5.0, 5.0)
+_VAR_RANGE = (-10.0, 10.0)
 _COLLINEARITY_TOL = 1e-8
 
 
@@ -158,13 +159,13 @@ def is_linear_in_variable(
         independent_expr = independent_expr.subs(remaining_subs)
 
     rng = np.random.default_rng(_RANDOM_SEED)
-    lo, hi = _RANDOM_VALUE_RANGE
 
     # All symbols remaining in independent_expr are truly free (not substituted).
     free_symbols_in_expr: set[Symbol] = {
         cast(Symbol, s) for s in independent_expr.free_symbols
     }
 
+    lo, hi = _RANDOM_VALUE_RANGE
     fixed_substitutions: dict[Symbol, float] = {
         sym: float(rng.uniform(lo, hi)) for sym in free_symbols_in_expr - {var}
     }
@@ -173,7 +174,8 @@ def is_linear_in_variable(
     expr_func = lambdify([var] + non_var_symbols, independent_expr, modules=["numpy"])
     non_var_args = [fixed_substitutions[s] for s in non_var_symbols]
 
-    var_values = rng.uniform(lo, hi, size=_NUM_COLLINEARITY_POINTS)
+    lo, hi = _VAR_RANGE
+    var_values = np.linspace(lo, hi, _NUM_COLLINEARITY_POINTS)
     expr_values = np.array([float(expr_func(v, *non_var_args)) for v in var_values])
 
     if not np.all(np.isfinite(expr_values)):
