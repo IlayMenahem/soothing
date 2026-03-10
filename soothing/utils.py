@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from equinox import filter_jit
 from jax import jacfwd
 from jaxtyping import Array
-from sympy import Expr, Poly, Symbol, lambdify, solve
+from sympy import Expr, Poly, Symbol, lambdify, reduced, solve
 
 
 def sympy_to_jax_system(
@@ -226,3 +226,59 @@ def solve_linear_for_var(poly: Poly, var: Symbol) -> Expr:
         raise ValueError(f"Could not solve {poly} for {var}")
 
     return solutions[0]
+
+
+def collect_gens(polynomials: list[Poly], variables: set[Symbol]) -> tuple[Symbol, ...]:
+    """
+    Collect all generators from the polynomials and variable set.
+
+    Args:
+        polynomials (list[Poly]): The polynomials to collect generators from.
+        variables (set[Symbol]): Set of variables considered in the system.
+
+    Returns:
+        tuple[Symbol, ...]: The generators sorted by name.
+    """
+    gens: set[Symbol] = set[Symbol](variables)
+
+    for p in polynomials:
+        gens.update(set[Symbol](p.gens))  # type: ignore[arg-type]
+
+    return tuple[Symbol, ...](sorted(gens, key=str))
+
+
+def interreduce_polynomials(
+    polynomials: list[Poly], variables: set[Symbol]
+) -> list[Poly]:
+    """
+    Interreduce a polynomial system using polynomial reduction (grevlex order).
+
+    Args:
+        polynomials (list[Poly]): Polynomial system.
+        variables (set[Symbol]): Variables remaining in the system.
+
+    Returns:
+        list[Poly]: Interreduced polynomial system.
+    """
+    if not polynomials:
+        return []
+
+    gens = collect_gens(polynomials, variables)
+    if not gens:
+        return polynomials
+
+    reduced_polys: list[Poly] = []
+
+    for idx, poly in enumerate[Poly](polynomials):
+        others: list[Expr] = [
+            p.as_expr() for j, p in enumerate[Poly](polynomials) if j != idx
+        ]
+        if others:
+            _, reduced_expr = reduced(poly.as_expr(), others, *gens, order="grevlex")
+        else:
+            reduced_expr = poly.as_expr()
+
+        if reduced_expr != 0:
+            reduced_polys.append(Poly(reduced_expr, *gens))
+
+    return reduced_polys
