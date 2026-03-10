@@ -3,15 +3,15 @@ from graphlib import TopologicalSorter
 from typing import cast
 
 import numpy as np
-from sympy import Expr, Poly, Symbol, lambdify
+from sympy import Expr, Poly, Symbol, lambdify, S, zoo, nan
 
 
 @dataclass(frozen=True)
 class SystemSubstitutionMap:
     """
-    A class to represent a system of polynomial equations that has a substitution map.
+    A system of polynomial equations with a substitution map.
 
-    The substitutions in substitution_map do not have cycles, meaning that if x is substituted by an expression that contains y, then y is not substituted by an expression that contains x.
+    The substitutions in substitution_map are acyclic: if x is substituted by an expression containing y, then y is not substituted by an expression containing x.
     """
 
     remaining_equations: list[Poly]
@@ -22,7 +22,7 @@ class SystemSubstitutionMap:
 
 _NUM_COLLINEARITY_POINTS = 8
 _RANDOM_SEED = 42
-_RANDOM_VALUE_RANGE = (-5.0, 5.0)
+_RANDOM_VALUE_RANGE = (-2.0, 2.0)
 _VAR_RANGE = (-10.0, 10.0)
 _COLLINEARITY_TOL = 1e-8
 
@@ -47,6 +47,23 @@ def _are_collinear(x: np.ndarray, y: np.ndarray, tol: float) -> bool:
     return bool(np.all(np.abs(y - y_fitted) < tol))
 
 
+def _depends_on_var(
+    sym: Symbol,
+    var: Symbol,
+    substitution_map: dict[Symbol, Expr],
+    visited: frozenset[Symbol],
+) -> bool:
+    """Transitively check if sym depends on var through substitution_map."""
+    if sym == var:
+        return True
+    if sym in visited or sym not in substitution_map:
+        return False
+    return any(
+        _depends_on_var(cast(Symbol, s), var, substitution_map, visited | {sym})
+        for s in substitution_map[sym].free_symbols
+    )
+
+
 def _get_independent_expr(
     poly: Poly, var: Symbol, substitution_map: dict[Symbol, Expr]
 ) -> Expr:
@@ -69,22 +86,10 @@ def _get_independent_expr(
     Returns:
         The rewritten expression, free of any symbol that depends on `var`.
     """
-
-    def depends_on_var(sym: Symbol, visited: frozenset[Symbol]) -> bool:
-        """Transitively check if sym depends on var through substitution_map."""
-        if sym == var:
-            return True
-        if sym in visited or sym not in substitution_map:
-            return False
-        return any(
-            depends_on_var(cast(Symbol, s), visited | {sym})
-            for s in substitution_map[sym].free_symbols
-        )
-
     vars_depending_on_var = {
         sym
         for sym in substitution_map
-        if sym != var and depends_on_var(sym, frozenset())
+        if sym != var and _depends_on_var(sym, var, substitution_map, frozenset())
     }
 
     dependency_graph: dict[Symbol, set[Symbol]] = {
@@ -99,6 +104,31 @@ def _get_independent_expr(
     substitutions = [(sym, substitution_map[sym]) for sym in substitution_order]
 
     return poly.as_expr().subs(substitutions)
+
+
+def _substitute_remaining_substituted_symbols(
+    expr: Expr, var: Symbol, substitution_map: dict[Symbol, Expr]
+) -> Expr:
+    """
+    Substitute all symbols in expr that are in substitution_map (except var) in topological order of their dependencies.
+    """
+    remaining = {
+        cast(Symbol, s)
+        for s in expr.free_symbols
+        if s != var and s in substitution_map
+    }
+
+    if not remaining:
+        return expr
+
+    dep_graph: dict[Symbol, set[Symbol]] = {
+        sym: cast(set[Symbol], substitution_map[sym].free_symbols) & remaining
+        for sym in remaining
+    }
+
+    order = reversed(list(TopologicalSorter(dep_graph).static_order()))
+
+    return expr.subs([(sym, substitution_map[sym]) for sym in order])
 
 
 def is_linear_in_variable(
@@ -135,32 +165,12 @@ def is_linear_in_variable(
         return False
 
     independent_expr = _get_independent_expr(poly, var, sub_map.substitution_map)
-
-    # _get_independent_expr only substitutes symbols that transitively depend on var.
-    # Other substituted symbols (independent of var) may still appear in the expression
-    # and must also be resolved before numeric evaluation.
-    remaining_substituted = {
-        cast(Symbol, s)
-        for s in independent_expr.free_symbols
-        if s != var and s in sub_map.substitution_map
-    }
-    if remaining_substituted:
-        remaining_dep_graph: dict[Symbol, set[Symbol]] = {
-            sym: cast(set[Symbol], sub_map.substitution_map[sym].free_symbols)
-            & remaining_substituted
-            for sym in remaining_substituted
-        }
-        remaining_order = reversed(
-            list(TopologicalSorter(remaining_dep_graph).static_order())
-        )
-        remaining_subs = [
-            (sym, sub_map.substitution_map[sym]) for sym in remaining_order
-        ]
-        independent_expr = independent_expr.subs(remaining_subs)
+    independent_expr = _substitute_remaining_substituted_symbols(
+        independent_expr, var, sub_map.substitution_map
+    )
 
     rng = np.random.default_rng(_RANDOM_SEED)
 
-    # All symbols remaining in independent_expr are truly free (not substituted).
     free_symbols_in_expr: set[Symbol] = {
         cast(Symbol, s) for s in independent_expr.free_symbols
     }
@@ -176,7 +186,12 @@ def is_linear_in_variable(
 
     lo, hi = _VAR_RANGE
     var_values = np.linspace(lo, hi, _NUM_COLLINEARITY_POINTS)
-    expr_values = np.array([float(expr_func(v, *non_var_args)) for v in var_values])
+    try:
+        expr_values = np.array(
+            [float(expr_func(v, *non_var_args)) for v in var_values]
+        )
+    except (ZeroDivisionError, OverflowError, ValueError):
+        return False
 
     if not np.all(np.isfinite(expr_values)):
         return False
@@ -198,49 +213,158 @@ def add_linear_substitution(
     Returns:
         A new SystemSubstitutionMap with the substitution added, and the polynomial at `poly_index` removed from the remaining equations.
     """
-
     poly = sub_map.remaining_equations[poly_index]
     independent_expr = _get_independent_expr(poly, var, sub_map.substitution_map)
+    independent_expr = _substitute_remaining_substituted_symbols(
+        independent_expr, var, sub_map.substitution_map
+    )
 
-    # Solve the linear equation a*var + b = 0 for var (i.e. var = -b/a)
+    # Solve a*var + b = 0 → var = -b/a
     b = independent_expr.subs(var, 0)
     a = independent_expr.diff(var)
     var_substitution = -b / a
 
-    remaining_equations = (
-        sub_map.remaining_equations[:poly_index]
-        + sub_map.remaining_equations[poly_index + 1 :]
-    )
-    new_substitution_map = {**sub_map.substitution_map, var: var_substitution}
-    new_free_variables = sub_map.free_variables - {var}
-    new_substituted_variables = sub_map.substituted_variables | {var}
+    a_is_zero = a == 0 or a.equals(S.Zero)
+    has_singular = var_substitution.has(zoo) or var_substitution.has(nan)
+    if a_is_zero or has_singular:
+        raise ValueError("degenerate substitution")
 
     return SystemSubstitutionMap(
-        remaining_equations=remaining_equations,
-        substitution_map=new_substitution_map,
-        free_variables=new_free_variables,
-        substituted_variables=new_substituted_variables,
+        remaining_equations=(
+            sub_map.remaining_equations[:poly_index]
+            + sub_map.remaining_equations[poly_index + 1 :]
+        ),
+        substitution_map={**sub_map.substitution_map, var: var_substitution},
+        free_variables=sub_map.free_variables - {var},
+        substituted_variables=sub_map.substituted_variables | {var},
     )
 
 
-def best_linear_substitutions_order(equations: list[Poly]) -> SystemSubstitutionMap:
+def _linear_substitution_candidates(
+    sub_map: SystemSubstitutionMap,
+) -> list[tuple[int, Symbol]]:
+    """Return all (poly_index, var) pairs where the polynomial is linear in that variable."""
+    return [
+        (poly_index, var)
+        for poly_index in range(len(sub_map.remaining_equations))
+        for var in cast(
+            set[Symbol], sub_map.remaining_equations[poly_index].free_symbols
+        )
+        if is_linear_in_variable(sub_map, poly_index, var)
+    ]
+
+
+def _equation_linearity_count(sub_map: SystemSubstitutionMap, poly_index: int) -> int:
+    """Return the number of variables the equation at poly_index is linear in."""
+    poly = sub_map.remaining_equations[poly_index]
+    return sum(
+        1
+        for v in cast(set[Symbol], poly.free_symbols)
+        if is_linear_in_variable(sub_map, poly_index, v)
+    )
+
+
+def _greedy_ordered_candidates(
+    sub_map: SystemSubstitutionMap, candidates: list[tuple[int, Symbol]]
+) -> list[tuple[int, Symbol]]:
     """
-    Find the substitution ordering that eliminates the most variables by performing
-    a DFS over all possible sequences of linear substitutions.
+    Return candidates filtered and sorted by the greedy heuristic.
 
-    Each node in the search tree is a SystemSubstitutionMap. Its children are produced
-    by picking any (poly_index, var) pair where the polynomial is linear in that variable
-    and applying add_linear_substitution. A node with no such pairs is a leaf.
+    Filters to the variable that the fewest equations are linear in (most constrained variable). Among those, sorts by the number of variables the equation is linear in ascending (most specific equation first).
 
-    The returned node is the leaf with the fewest remaining equations (i.e. the deepest
-    reachable node in terms of substitutions applied).
+    Args:
+        sub_map: The current substitution state.
+        candidates: All available (poly_index, var) pairs from
+            _linear_substitution_candidates.
+
+    Returns:
+        The candidates filtered to the most constrained variable and sorted by equation specificity ascending.
+    """
+    var_equation_count: dict[Symbol, int] = {}
+    for _, var in candidates:
+        var_equation_count[var] = var_equation_count.get(var, 0) + 1
+
+    min_count = min(var_equation_count.values())
+    most_constrained_vars = {
+        var for var, count in var_equation_count.items() if count == min_count
+    }
+
+    filtered = [
+        (poly_index, var)
+        for poly_index, var in candidates
+        if var in most_constrained_vars
+    ]
+
+    return sorted(filtered, key=lambda pair: _equation_linearity_count(sub_map, pair[0]))
+
+
+def _dfs(
+    sub_map: SystemSubstitutionMap,
+    memo: dict[frozenset[Symbol], SystemSubstitutionMap],
+) -> SystemSubstitutionMap:
+    """
+    Recursively explore all substitution branches and return the leaf with the
+    fewest remaining equations.
+
+    Memoizes by the frozenset of substituted variables: two paths that have
+    eliminated the same set of variables reach an equivalent state, so the best
+    result from that state only needs to be computed once.
+    """
+    state_key = frozenset(sub_map.substituted_variables)
+    if state_key in memo:
+        return memo[state_key]
+
+    candidates = _linear_substitution_candidates(sub_map)
+
+    if not candidates:
+        memo[state_key] = sub_map
+        return sub_map
+
+    child_results = []
+    for poly_index, var in candidates:
+        try:
+            child_results.append(
+                _dfs(add_linear_substitution(sub_map, poly_index, var), memo)
+            )
+        except ValueError:
+            continue
+
+    if not child_results:
+        memo[state_key] = sub_map
+        return sub_map
+
+    best = min(child_results, key=lambda m: len(m.remaining_equations))
+    memo[state_key] = best
+    return best
+
+
+def best_linear_substitutions_order(
+    equations: list[Poly], greedy: bool = False
+) -> SystemSubstitutionMap:
+    """
+    Find the substitution ordering that eliminates the most variables.
+
+    Two search strategies are available:
+
+    - DFS (default, ``greedy=False``): exhaustively explores all sequences of
+      linear substitutions, returning the leaf with the fewest remaining
+      equations. Memoizes by the frozenset of substituted variables so that
+      two paths reaching the same eliminated set are not explored twice.
+
+    - Greedy (``greedy=True``): at each step calls ``_greedy_candidate`` to
+      pick the variable that the fewest equations are linear in, breaking ties
+      by choosing the equation that is linear in the fewest variables. Runs in
+      linear time in the number of substitutions but may not find the global
+      optimum.
 
     Args:
         equations: the system of polynomial equations each of which is equated to zero.
+        greedy: If True, use the greedy heuristic instead of exhaustive DFS.
+            Defaults to False.
 
     Returns:
-        A SystemSubstitutionMap with the least number of remaining equations achievable
-        by any sequence of linear substitutions.
+        A SystemSubstitutionMap with the fewest remaining equations achievable
+        (exactly minimal for DFS, heuristically minimal for greedy).
     """
     initial = SystemSubstitutionMap(
         remaining_equations=equations,
@@ -251,34 +375,20 @@ def best_linear_substitutions_order(equations: list[Poly]) -> SystemSubstitution
         substituted_variables=set(),
     )
 
-    def linear_substitution_candidates(
-        sub_map: SystemSubstitutionMap,
-    ) -> list[tuple[int, Symbol]]:
-        """Return all (poly_index, var) pairs where the polynomial is linear in that variable."""
-        return [
-            (poly_index, var)
-            for poly_index in range(len(sub_map.remaining_equations))
-            for var in cast(
-                set[Symbol], sub_map.remaining_equations[poly_index].free_symbols
-            )
-            if is_linear_in_variable(sub_map, poly_index, var)
-        ]
+    if greedy:
+        sub_map = initial
+        while True:
+            candidates = _linear_substitution_candidates(sub_map)
+            if not candidates:
+                return sub_map
+            ordered = _greedy_ordered_candidates(sub_map, candidates)
+            for poly_index, var in ordered:
+                try:
+                    sub_map = add_linear_substitution(sub_map, poly_index, var)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return sub_map
 
-    def dfs(sub_map: SystemSubstitutionMap) -> SystemSubstitutionMap:
-        """
-        Recursively explore all substitution branches and return the leaf
-        with the fewest remaining equations.
-        """
-        candidates = linear_substitution_candidates(sub_map)
-
-        if not candidates:
-            return sub_map
-
-        child_results = [
-            dfs(add_linear_substitution(sub_map, poly_index, var))
-            for poly_index, var in candidates
-        ]
-
-        return min(child_results, key=lambda m: len(m.remaining_equations))
-
-    return dfs(initial)
+    return _dfs(initial, {})

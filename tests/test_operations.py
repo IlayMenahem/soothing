@@ -186,9 +186,10 @@ def test_add_linear_substitution_with_coefficient() -> None:
     assert result.substitution_map[x] == -y / 2
 
 
-def test_add_linear_substitution_does_not_substitute_independent_vars() -> None:
+def test_add_linear_substitution_substitutes_independent_vars() -> None:
     # substitution_map has z -> w, but z does not depend on x
-    # poly: x + z = 0  =>  x -> -z  (z should NOT be expanded to w)
+    # poly: x + z = 0  =>  after substituting z->w: x + w = 0  =>  x -> -w
+    # We substitute var-independent symbols for consistency with is_linear_in_variable.
     poly = Poly(x + z, x, z)
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly],
@@ -199,8 +200,7 @@ def test_add_linear_substitution_does_not_substitute_independent_vars() -> None:
 
     result = add_linear_substitution(sub_map, 0, x)
 
-    # x -> -z, not -w, because z is independent of x
-    assert result.substitution_map[x] == -z
+    assert result.substitution_map[x] == -w
 
 
 def test_add_linear_substitution_expands_var_dependent_substitutions() -> None:
@@ -791,3 +791,49 @@ def test_is_linear_numerical_false_positive_epsilon_cubic() -> None:
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
+
+
+# ── Degenerate substitutions and evaluation failures ─────────────────────────
+
+
+def test_add_linear_substitution_raises_when_denominator_zero() -> None:
+    """add_linear_substitution raises ValueError when a=0 (degenerate)."""
+    import pytest
+
+    # y*x + y = 0 with y -> 0: independent_expr becomes 0*x + 0 = 0, a=0
+    poly = Poly(y * x + y, x, y)
+    sub_map = SystemSubstitutionMap(
+        remaining_equations=[poly],
+        substitution_map={y: y * 0},
+        free_variables={x},
+        substituted_variables={y},
+    )
+
+    with pytest.raises(ValueError, match="degenerate"):
+        add_linear_substitution(sub_map, 0, x)
+
+
+def test_best_linear_substitutions_order_skips_degenerate_and_continues() -> None:
+    """best_linear_substitutions_order skips degenerate candidates and uses valid ones."""
+    poly0 = Poly(x + y, x, y)
+    poly1 = Poly(z * x + z, x, z)
+    result = best_linear_substitutions_order([poly0, poly1], greedy=True)
+
+    assert len(result.substitution_map) >= 1
+    from sympy import nan, zoo
+
+    for sym, expr in result.substitution_map.items():
+        assert not (hasattr(expr, "has") and (expr.has(zoo) or expr.has(nan)))
+
+
+def test_best_linear_substitutions_order_full_system_no_nan_zoo() -> None:
+    """best_linear_substitutions_order on the Mathematica system produces no nan/zoo."""
+    from soothing.parse_mathematica import mathematica_to_sympy
+    from sympy import nan, zoo
+
+    system = r"""0 -> (DpDph1 e (-3 + 2 xr))/(256 \[Pi]^2), kappah -> (DpDph1^3 e^3 (-1 + xr))/(768 \[Pi]^2)"""
+    polys, _ = mathematica_to_sympy(system)
+    result = best_linear_substitutions_order(polys, greedy=True)
+
+    for sym, expr in result.substitution_map.items():
+        assert not (hasattr(expr, "has") and (expr.has(zoo) or expr.has(nan)))
