@@ -1,8 +1,9 @@
-from sympy import Poly, symbols
+from sympy import Poly, simplify, symbols
 
 from soothing.operations import (
     SystemSubstitutionMap,
     add_linear_substitution,
+    best_linear_substitutions_order,
     is_linear_in_variable,
 )
 
@@ -258,3 +259,189 @@ def test_add_linear_substitution_does_not_mutate_original() -> None:
 
     assert len(sub_map.remaining_equations) == 1
     assert x not in sub_map.substitution_map
+
+
+def test_is_linear_with_high_degree_other_vars() -> None:
+    # y^10 * x + z^5  — linear in x despite high degrees of y and z
+    poly = Poly(y**10 * x + z**5, x, y, z)
+    sub_map = make_sub_map([poly])
+
+    assert is_linear_in_variable(sub_map, 0, x) is True
+
+
+def test_is_linear_constant_poly() -> None:
+    # 5  — x does not appear
+    poly = Poly(5, x)
+    sub_map = make_sub_map([poly])
+
+    assert is_linear_in_variable(sub_map, 0, x) is False
+
+
+def test_add_linear_substitution_complex_coefficients() -> None:
+    # (y^2 + z)*x + (w - 1) = 0  =>  x -> -(w - 1)/(y^2 + z)
+    poly = Poly((y**2 + z) * x + (w - 1), x, y, z, w)
+    sub_map = make_sub_map([poly])
+
+    result = add_linear_substitution(sub_map, 0, x)
+
+    assert result.substitution_map[x] == -(w - 1) / (y**2 + z)
+
+
+def test_add_linear_substitution_multiple_dependencies() -> None:
+    # substitution_map: y -> x + 1, z -> 2*x
+    # poly: y + z + w = 0  =>  substitute y and z:
+    #   (x + 1) + 2*x + w = 0  =>  3*x + w + 1 = 0  =>  x -> -(w + 1)/3
+    poly = Poly(y + z + w, y, z, w)
+    sub_map = SystemSubstitutionMap(
+        remaining_equations=[poly],
+        substitution_map={y: x + 1, z: 2 * x},
+        free_variables={x, w},
+        substituted_variables={y, z},
+    )
+
+    result = add_linear_substitution(sub_map, 0, x)
+
+    assert result.substitution_map[x] == -(w + 1) / 3
+
+
+# ── best_linear_substitutions_order ──────────────────────────────────────────
+
+
+def test_best_linear_substitutions_order_no_linear_equations() -> None:
+    # x^2 + y^2 - 1 = 0  — no variable appears linearly, nothing to substitute
+    poly = Poly(x**2 + y**2 - 1, x, y)
+
+    result = best_linear_substitutions_order([poly])
+
+    assert len(result.remaining_equations) == 1
+    assert result.substitution_map == {}
+    assert result.substituted_variables == set()
+
+
+def test_best_linear_substitutions_order_single_linear_equation() -> None:
+    # x + y = 0  =>  one variable eliminated, no remaining equations
+    poly = Poly(x + y, x, y)
+
+    result = best_linear_substitutions_order([poly])
+
+    assert len(result.remaining_equations) == 0
+    assert len(result.substituted_variables) == 1
+
+
+def test_best_linear_substitutions_order_fully_linear_system() -> None:
+    # x + y = 0
+    # y + z = 0
+    # Both equations are linear; a full chain of substitutions eliminates all of them.
+    poly0 = Poly(x + y, x, y)
+    poly1 = Poly(y + z, y, z)
+
+    result = best_linear_substitutions_order([poly0, poly1])
+
+    assert len(result.remaining_equations) == 0
+    assert len(result.substituted_variables) == 2
+
+
+def test_best_linear_substitutions_order_partial_system() -> None:
+    # x + y = 0          — linear, can be eliminated
+    # x^2 + z^2 - 1 = 0  — non-linear, must remain
+    poly0 = Poly(x + y, x, y)
+    poly1 = Poly(x**2 + z**2 - 1, x, z)
+
+    result = best_linear_substitutions_order([poly0, poly1])
+
+    assert len(result.remaining_equations) == 1
+    assert len(result.substituted_variables) == 1
+
+
+def test_best_linear_substitutions_order_three_variable_chain() -> None:
+    # x + y = 0   =>  x -> -y
+    # y + z = 0   =>  y -> -z
+    # z + w = 0   =>  z -> -w
+    # All three equations are eliminated by chaining substitutions.
+    poly0 = Poly(x + y, x, y)
+    poly1 = Poly(y + z, y, z)
+    poly2 = Poly(z + w, z, w)
+
+    result = best_linear_substitutions_order([poly0, poly1, poly2])
+
+    assert len(result.remaining_equations) == 0
+    assert len(result.substituted_variables) == 3
+
+
+def test_best_linear_substitutions_order_substitution_map_solves_equations() -> None:
+    # x + 2*y = 0  =>  x -> -2*y
+    # Verify the substitution actually satisfies the original equation.
+    poly = Poly(x + 2 * y, x, y)
+
+    result = best_linear_substitutions_order([poly])
+
+    substituted_var = next(iter(result.substituted_variables))
+    substitution_expr = result.substitution_map[substituted_var]
+    residual = poly.as_expr().subs(substituted_var, substitution_expr)
+    assert simplify(residual) == 0
+
+
+def test_best_linear_substitutions_order_variable_sets_are_disjoint() -> None:
+    # free_variables and substituted_variables must be disjoint and together
+    # cover all original variables.
+    poly0 = Poly(x + y, x, y)
+    poly1 = Poly(y + z, y, z)
+
+    result = best_linear_substitutions_order([poly0, poly1])
+
+    assert result.free_variables.isdisjoint(result.substituted_variables)
+    original_vars = {x, y, z}
+    assert result.free_variables | result.substituted_variables == original_vars
+
+
+def test_best_linear_substitutions_order_prefers_deeper_branch() -> None:
+    # Two possible first moves from poly0 = a + b = 0:
+    #   (a) eliminate a  =>  a -> -b.  poly1 = a*b + b = 0 becomes (-b)*b + b = -b^2 + b = 0,
+    #       which is non-linear in b  =>  1 equation remains, no further move.
+    #   (b) eliminate b  =>  b -> -a.  poly1 = a*b + b = 0 becomes a*(-a) + (-a) = -a^2 - a = 0,
+    #       which is non-linear in a  =>  1 equation remains, no further move.
+    # Both branches stall at 1 remaining equation, so the minimum achievable is 1.
+    #
+    # A system where branching order matters:
+    #   poly0: a + b = 0              (linear in both a and b)
+    #   poly1: a + c = 0              (linear in both a and c)
+    # Any first substitution removes one equation and makes the remaining one still linear,
+    # so the optimal result is 0 remaining equations regardless of order chosen.
+    # This verifies the DFS explores branches until all equations are consumed.
+    a, b_sym, c_sym = symbols("a b c")
+    poly0 = Poly(a + b_sym, a, b_sym, c_sym)
+    poly1 = Poly(a + c_sym, a, b_sym, c_sym)
+
+    result = best_linear_substitutions_order([poly0, poly1])
+
+    assert len(result.remaining_equations) == 0
+    assert len(result.substituted_variables) == 2
+
+
+def test_best_linear_substitutions_order_non_linear_system_unchanged_equations() -> (
+    None
+):
+    # x^2 - 1 = 0 and y^2 - 4 = 0 — purely quadratic, no linear substitutions possible.
+    poly0 = Poly(x**2 - 1, x)
+    poly1 = Poly(y**2 - 4, y)
+
+    result = best_linear_substitutions_order([poly0, poly1])
+
+    assert len(result.remaining_equations) == 2
+    assert result.substitution_map == {}
+
+
+def test_best_linear_substitutions_order_returns_system_substitution_map() -> None:
+    poly = Poly(x + y, x, y)
+
+    result = best_linear_substitutions_order([poly])
+
+    assert isinstance(result, SystemSubstitutionMap)
+
+
+def test_best_linear_substitutions_order_empty_system() -> None:
+    result = best_linear_substitutions_order([])
+
+    assert result.remaining_equations == []
+    assert result.substitution_map == {}
+    assert result.substituted_variables == set()
