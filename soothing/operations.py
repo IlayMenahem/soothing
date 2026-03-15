@@ -106,29 +106,43 @@ def _get_independent_expr(
     return poly.as_expr().subs(substitutions)
 
 
-def _substitute_remaining_substituted_symbols(
-    expr: Expr, var: Symbol, substitution_map: dict[Symbol, Expr]
+def _back_substitute(
+    expr: Expr,
+    substitution_map: dict[Symbol, Expr],
+    exclude: set[Symbol] | None = None,
 ) -> Expr:
     """
-    Substitute all symbols in expr that are in substitution_map (except var) in topological order of their dependencies.
+    Substitute into expr every symbol that appears in substitution_map and not in
+    exclude, in topological order of their dependencies.
+
+    Args:
+        expr: Expression to rewrite.
+        substitution_map: Map from substituted symbols to their defining expressions.
+        exclude: Symbols to leave unsubstituted. If None, substitute all mapped symbols.
+
+    Returns:
+        The expression after back-substitution.
     """
-    remaining = {
-        cast(Symbol, s)
-        for s in expr.free_symbols
-        if s != var and s in substitution_map
-    }
+    exclude_set = exclude if exclude is not None else set()
 
-    if not remaining:
-        return expr
+    while True:
+        remaining = {
+            cast(Symbol, s)
+            for s in expr.free_symbols
+            if s in substitution_map and s not in exclude_set
+        }
+        if not remaining:
+            return expr
 
-    dep_graph: dict[Symbol, set[Symbol]] = {
-        sym: cast(set[Symbol], substitution_map[sym].free_symbols) & remaining
-        for sym in remaining
-    }
-
-    order = reversed(list(TopologicalSorter(dep_graph).static_order()))
-
-    return expr.subs([(sym, substitution_map[sym]) for sym in order])
+        dep_graph: dict[Symbol, set[Symbol]] = {
+            sym: cast(
+                set[Symbol],
+                getattr(substitution_map[sym], "free_symbols", set()) & remaining,
+            )
+            for sym in remaining
+        }
+        order = reversed(list(TopologicalSorter(dep_graph).static_order()))
+        expr = expr.subs([(sym, substitution_map[sym]) for sym in order])
 
 
 def is_linear_in_variable(
@@ -165,9 +179,7 @@ def is_linear_in_variable(
         return False
 
     independent_expr = _get_independent_expr(poly, var, sub_map.substitution_map)
-    independent_expr = _substitute_remaining_substituted_symbols(
-        independent_expr, var, sub_map.substitution_map
-    )
+    independent_expr = _back_substitute(independent_expr, sub_map.substitution_map, exclude={var})
 
     rng = np.random.default_rng(_RANDOM_SEED)
 
@@ -190,7 +202,7 @@ def is_linear_in_variable(
         expr_values = np.array(
             [float(expr_func(v, *non_var_args)) for v in var_values]
         )
-    except (ZeroDivisionError, OverflowError, ValueError):
+    except OverflowError:
         return False
 
     if not np.all(np.isfinite(expr_values)):
@@ -198,6 +210,24 @@ def is_linear_in_variable(
 
     return _are_collinear(var_values, expr_values, tol=_COLLINEARITY_TOL)
 
+
+def is_zero(sub_map: SystemSubstitutionMap, poly_index: int) -> bool:
+    """
+    Check if the polynomial at `poly_index` is zero.
+
+    Substitutes all symbols from the substitution map into the polynomial (in
+    dependency order), then returns True iff the resulting expression is zero.
+
+    Args:
+        sub_map: The system substitution map.
+        poly_index: Index into `sub_map.remaining_equations` of the polynomial to test.
+
+    Returns:
+        True if the polynomial at `poly_index` is zero, False otherwise.
+    """
+    poly = sub_map.remaining_equations[poly_index]
+    expr = _back_substitute(poly.as_expr(), sub_map.substitution_map)
+    return expr.equals(S.Zero)
 
 def add_linear_substitution(
     sub_map: SystemSubstitutionMap, poly_index: int, var: Symbol
@@ -215,9 +245,7 @@ def add_linear_substitution(
     """
     poly = sub_map.remaining_equations[poly_index]
     independent_expr = _get_independent_expr(poly, var, sub_map.substitution_map)
-    independent_expr = _substitute_remaining_substituted_symbols(
-        independent_expr, var, sub_map.substitution_map
-    )
+    independent_expr = _back_substitute(independent_expr, sub_map.substitution_map, exclude={var})
 
     # Solve a*var + b = 0 → var = -b/a
     b = independent_expr.subs(var, 0)
@@ -225,8 +253,8 @@ def add_linear_substitution(
     var_substitution = -b / a
 
     a_is_zero = a == 0 or a.equals(S.Zero)
-    has_singular = var_substitution.has(zoo) or var_substitution.has(nan)
-    if a_is_zero or has_singular:
+    is_nan = var_substitution.has(nan)
+    if a_is_zero or is_nan:
         raise ValueError("degenerate substitution")
 
     return SystemSubstitutionMap(

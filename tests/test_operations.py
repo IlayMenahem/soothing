@@ -1,10 +1,11 @@
-from sympy import Poly, Rational, Symbol, simplify, symbols
+from sympy import Poly, Rational, S, simplify, symbols
 
 from soothing.operations import (
     SystemSubstitutionMap,
     add_linear_substitution,
     best_linear_substitutions_order,
     is_linear_in_variable,
+    is_zero,
 )
 
 x, y, z, w = symbols("x y z w")
@@ -837,3 +838,95 @@ def test_best_linear_substitutions_order_full_system_no_nan_zoo() -> None:
 
     for sym, expr in result.substitution_map.items():
         assert not (hasattr(expr, "has") and (expr.has(zoo) or expr.has(nan)))
+
+
+# ── is_zero ──────────────────────────────────────────────────────────────────
+
+
+def test_is_zero_returns_true_for_zero_polynomial() -> None:
+    poly = Poly(0, x, y)
+    sub_map = make_sub_map([poly])
+
+    assert is_zero(sub_map, 0) is True
+
+
+def test_is_zero_returns_false_for_nonzero_constant() -> None:
+    poly = Poly(1, x)
+    sub_map = make_sub_map([poly])
+
+    assert is_zero(sub_map, 0) is False
+
+
+def test_is_zero_returns_false_for_nonzero_polynomial() -> None:
+    poly = Poly(x + y, x, y)
+    sub_map = make_sub_map([poly])
+
+    assert is_zero(sub_map, 0) is False
+
+
+def test_is_zero_selects_poly_by_index() -> None:
+    poly0 = Poly(0, x)
+    poly1 = Poly(x + 1, x)
+    sub_map = make_sub_map([poly0, poly1])
+
+    assert is_zero(sub_map, 0) is True
+    assert is_zero(sub_map, 1) is False
+
+
+def test_is_zero_after_substitution_simplifies_to_zero() -> None:
+    # poly: y - 1;  substitution: y -> 1  =>  1 - 1 = 0
+    poly = Poly(y - 1, y)
+    sub_map = SystemSubstitutionMap(
+        remaining_equations=[poly],
+        substitution_map={y: S.One},
+        free_variables=set(),
+        substituted_variables={y},
+    )
+
+    assert is_zero(sub_map, 0) is True
+
+
+def test_is_zero_after_substitution_remains_nonzero() -> None:
+    # poly: y - 1;  substitution: y -> 2  =>  2 - 1 = 1
+    poly = Poly(y - 1, y)
+    sub_map = SystemSubstitutionMap(
+        remaining_equations=[poly],
+        substitution_map={y: S(2)},
+        free_variables=set(),
+        substituted_variables={y},
+    )
+
+    assert is_zero(sub_map, 0) is False
+
+
+def test_is_zero_with_chained_substitution_to_zero() -> None:
+    # poly: z;  substitution: z -> y, y -> 0  =>  z -> 0 (after fixpoint)
+    poly = Poly(z, z)
+    sub_map = SystemSubstitutionMap(
+        remaining_equations=[poly],
+        substitution_map={y: S.Zero, z: y},
+        free_variables=set(),
+        substituted_variables={y, z},
+    )
+
+    assert is_zero(sub_map, 0) is True
+
+
+def test_is_zero_with_substitution_expression_simplifies_to_zero() -> None:
+    # poly: x - y;  substitution: x -> y  =>  y - y = 0
+    poly = Poly(x - y, x, y)
+    sub_map = SystemSubstitutionMap(
+        remaining_equations=[poly],
+        substitution_map={x: y},
+        free_variables={y},
+        substituted_variables={x},
+    )
+
+    assert is_zero(sub_map, 0) is True
+
+
+def test_is_zero_no_substitution_map_nonzero_poly() -> None:
+    poly = Poly(x**2 + y, x, y)
+    sub_map = make_sub_map([poly])
+
+    assert is_zero(sub_map, 0) is False
