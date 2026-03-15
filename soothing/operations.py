@@ -268,6 +268,26 @@ def add_linear_substitution(
     )
 
 
+def _drop_zero_equations(sub_map: SystemSubstitutionMap) -> SystemSubstitutionMap:
+    """
+    Return a new SystemSubstitutionMap with polynomials that are zero
+    (after substitution) removed from remaining_equations.
+    """
+    non_zero = [
+        poly
+        for i, poly in enumerate(sub_map.remaining_equations)
+        if not is_zero(sub_map, i)
+    ]
+    if len(non_zero) == len(sub_map.remaining_equations):
+        return sub_map
+    return SystemSubstitutionMap(
+        remaining_equations=non_zero,
+        substitution_map=sub_map.substitution_map,
+        free_variables=sub_map.free_variables,
+        substituted_variables=sub_map.substituted_variables,
+    )
+
+
 def _linear_substitution_candidates(
     sub_map: SystemSubstitutionMap,
 ) -> list[tuple[int, Symbol]]:
@@ -338,6 +358,8 @@ def _dfs(
     eliminated the same set of variables reach an equivalent state, so the best
     result from that state only needs to be computed once.
     """
+    print(len(sub_map.remaining_equations))
+
     state_key = frozenset(sub_map.substituted_variables)
     if state_key in memo:
         return memo[state_key]
@@ -351,9 +373,9 @@ def _dfs(
     child_results = []
     for poly_index, var in candidates:
         try:
-            child_results.append(
-                _dfs(add_linear_substitution(sub_map, poly_index, var), memo)
-            )
+            child_map = add_linear_substitution(sub_map, poly_index, var)
+            child_map = _drop_zero_equations(child_map)
+            child_results.append(_dfs(child_map, memo))
         except ValueError:
             continue
 
@@ -413,6 +435,7 @@ def best_linear_substitutions_order(
             for poly_index, var in ordered:
                 try:
                     sub_map = add_linear_substitution(sub_map, poly_index, var)
+                    sub_map = _drop_zero_equations(sub_map)
                     break
                 except ValueError:
                     continue
