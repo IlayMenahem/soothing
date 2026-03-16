@@ -3,7 +3,7 @@ from graphlib import TopologicalSorter
 from typing import cast
 
 import numpy as np
-from sympy import Expr, Poly, Symbol, lambdify, S, zoo, nan
+from sympy import Expr, Symbol, lambdify, S, nan
 
 
 @dataclass(frozen=True)
@@ -14,7 +14,7 @@ class SystemSubstitutionMap:
     The substitutions in substitution_map are acyclic: if x is substituted by an expression containing y, then y is not substituted by an expression containing x.
     """
 
-    remaining_equations: list[Poly]
+    remaining_equations: list[Expr]
     substitution_map: dict[Symbol, Expr]
     free_variables: set[Symbol]
     substituted_variables: set[Symbol]
@@ -65,7 +65,7 @@ def _depends_on_var(
 
 
 def _get_independent_expr(
-    poly: Poly, var: Symbol, substitution_map: dict[Symbol, Expr]
+    poly: Expr, var: Symbol, substitution_map: dict[Symbol, Expr]
 ) -> Expr:
     """
     Return the expression for `poly` with all symbols that transitively depend
@@ -143,6 +143,29 @@ def _back_substitute(
         }
         order = reversed(list(TopologicalSorter(dep_graph).static_order()))
         expr = expr.subs([(sym, substitution_map[sym]) for sym in order])
+
+
+def _propagate_constants(
+    substitution_map: dict[Symbol, Expr],
+) -> dict[Symbol, Expr]:
+    """
+    Repeatedly substitute constant-valued entries into all other entries
+    until no further constants can be propagated (fixed-point iteration).
+
+    A constant entry is one whose value has no free symbols.
+    """
+    result = dict(substitution_map)
+    while True:
+        constants = {k: v for k, v in result.items() if not v.free_symbols}
+        if not constants:
+            return result
+        new_result = {
+            k: v if k in constants else v.subs(list(constants.items()))
+            for k, v in result.items()
+        }
+        if new_result == result:
+            return result
+        result = new_result
 
 
 def is_linear_in_variable(
@@ -257,12 +280,13 @@ def add_linear_substitution(
     if a_is_zero or is_nan:
         raise ValueError("degenerate substitution")
 
+    merged = {**sub_map.substitution_map, var: var_substitution}
     return SystemSubstitutionMap(
         remaining_equations=(
             sub_map.remaining_equations[:poly_index]
             + sub_map.remaining_equations[poly_index + 1 :]
         ),
-        substitution_map={**sub_map.substitution_map, var: var_substitution},
+        substitution_map=_propagate_constants(merged),
         free_variables=sub_map.free_variables - {var},
         substituted_variables=sub_map.substituted_variables | {var},
     )
@@ -358,7 +382,8 @@ def _dfs(
     eliminated the same set of variables reach an equivalent state, so the best
     result from that state only needs to be computed once.
     """
-    print(len(sub_map.remaining_equations))
+    if len(sub_map.remaining_equations) == 0:
+        print(sub_map, '\n')
 
     state_key = frozenset(sub_map.substituted_variables)
     if state_key in memo:
@@ -389,7 +414,7 @@ def _dfs(
 
 
 def best_linear_substitutions_order(
-    equations: list[Poly], greedy: bool = False
+    equations: list[Expr], greedy: bool = False
 ) -> SystemSubstitutionMap:
     """
     Find the substitution ordering that eliminates the most variables.

@@ -2,6 +2,7 @@ from sympy import Poly, Rational, S, simplify, symbols
 
 from soothing.operations import (
     SystemSubstitutionMap,
+    _propagate_constants,
     add_linear_substitution,
     best_linear_substitutions_order,
     is_linear_in_variable,
@@ -930,3 +931,84 @@ def test_is_zero_no_substitution_map_nonzero_poly() -> None:
     sub_map = make_sub_map([poly])
 
     assert is_zero(sub_map, 0) is False
+
+
+# ── _propagate_constants ──────────────────────────────────────────────────────
+
+
+def test_propagate_constants_empty_map_returns_empty() -> None:
+    assert _propagate_constants({}) == {}
+
+
+def test_propagate_constants_no_constants_returns_unchanged() -> None:
+    # x -> y+1, y -> z  — neither value is constant
+    result = _propagate_constants({x: y + 1, y: z})
+
+    assert result == {x: y + 1, y: z}
+
+
+def test_propagate_constants_single_constant_substituted_into_others() -> None:
+    # x -> 3, y -> x + 1  =>  y should become 4
+    result = _propagate_constants({x: Rational(3), y: x + 1})
+
+    assert result[x] == Rational(3)
+    assert result[y] == Rational(4)
+
+
+def test_propagate_constants_constant_not_modified() -> None:
+    # The constant entry itself must remain unchanged
+    result = _propagate_constants({x: Rational(5), y: x * 2})
+
+    assert result[x] == Rational(5)
+
+
+def test_propagate_constants_cascade_two_levels() -> None:
+    # x -> 2, y -> x + 1, z -> y * 3
+    # After first pass: y -> 3, z -> (x+1)*3 -> still has x? No — x is constant.
+    # Both y and z should collapse: y=3, z=9
+    result = _propagate_constants({x: Rational(2), y: x + 1, z: y * 3})
+
+    assert result[x] == Rational(2)
+    assert result[y] == Rational(3)
+    assert result[z] == Rational(9)
+
+
+def test_propagate_constants_cascade_three_levels() -> None:
+    # a -> 1, b -> a + 1, c -> b + 1, d -> c + 1  =>  b=2, c=3, d=4
+    a, b, c, d = symbols("a b c d")
+    result = _propagate_constants({
+        a: Rational(1),
+        b: a + 1,
+        c: b + 1,
+        d: c + 1,
+    })
+
+    assert result[a] == Rational(1)
+    assert result[b] == Rational(2)
+    assert result[c] == Rational(3)
+    assert result[d] == Rational(4)
+
+
+def test_propagate_constants_non_constant_entries_preserved() -> None:
+    # x -> 2, y -> z + x  =>  y -> z + 2, z stays free
+    result = _propagate_constants({x: Rational(2), y: z + x})
+
+    assert result[x] == Rational(2)
+    assert result[y] == z + 2
+    assert z not in result
+
+
+def test_propagate_constants_multiple_independent_constants() -> None:
+    # x -> 1, y -> 2, z -> x + y  =>  z -> 3
+    result = _propagate_constants({x: Rational(1), y: Rational(2), z: x + y})
+
+    assert result[z] == Rational(3)
+
+
+def test_propagate_constants_idempotent() -> None:
+    # Calling twice on the same input produces the same result
+    initial = {x: Rational(3), y: x + 1, z: y * 2}
+    once = _propagate_constants(initial)
+    twice = _propagate_constants(once)
+
+    assert once == twice
