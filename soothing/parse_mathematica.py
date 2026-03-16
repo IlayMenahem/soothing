@@ -1,5 +1,5 @@
 import re
-from sympy import Poly, Symbol
+from sympy import Expr, Symbol
 
 _GREEK_MAP = {
     r"\[Pi]": "jnp.pi",
@@ -163,7 +163,7 @@ def mathematica_to_jax(expr: str, var_to_index: dict[str, int]) -> str:
     return result
 
 
-def mathematica_to_sympy(expr: str) -> tuple[list[Poly], set[Symbol]]:
+def mathematica_to_sympy(expr: str) -> tuple[list[Expr], set[Symbol]]:
     """
     Convert Mathematica system of rational functions to SymPy polynomials.
 
@@ -172,7 +172,7 @@ def mathematica_to_sympy(expr: str) -> tuple[list[Poly], set[Symbol]]:
             a comma-separated list, or a Mathematica list {..}.
 
     Returns:
-        List of SymPy polynomials.
+        List of SymPy expressions.
         Set of SymPy symbols.
     """
     from sympy import E, I, Symbol, fraction, pi, together
@@ -320,10 +320,7 @@ def mathematica_to_sympy(expr: str) -> tuple[list[Poly], set[Symbol]]:
     for sym_expr in sympy_exprs:
         all_symbols.update(sym_expr.free_symbols)
 
-    gens = tuple(sorted(all_symbols, key=str))
-    if gens:
-        return [Poly(sym_expr, *gens) for sym_expr in sympy_exprs], all_symbols
-    return [Poly(sym_expr) for sym_expr in sympy_exprs], all_symbols
+    return sympy_exprs, all_symbols
 
 def generate_variable_mapping(variables: set[str]) -> tuple[dict[str, int], list[str]]:
     """Generate mapping from variable names to array indices."""
