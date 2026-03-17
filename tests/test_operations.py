@@ -1,13 +1,13 @@
 from sympy import Poly, Rational, S, simplify, symbols
 
-from soothing.operations import (
+from soothing.system_substitution import (
     SystemSubstitutionMap,
     _propagate_constants,
     add_linear_substitution,
-    best_linear_substitutions_order,
     is_linear_in_variable,
     is_zero,
 )
+from soothing.linear_substitution_order import best_linear_substitutions_order
 
 x, y, z, w = symbols("x y z w")
 
