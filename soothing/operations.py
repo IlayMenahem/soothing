@@ -3,7 +3,7 @@ from graphlib import TopologicalSorter
 from typing import cast
 
 import numpy as np
-from sympy import Expr, Symbol, lambdify, S, nan
+from sympy import Expr, Symbol, lambdify, S, nan, simplify
 
 
 @dataclass(frozen=True)
@@ -281,12 +281,15 @@ def add_linear_substitution(
         raise ValueError("degenerate substitution")
 
     merged = {**sub_map.substitution_map, var: var_substitution}
+    propagated = _propagate_constants(merged)
+    substitution_map = {k: simplify(v) for k, v in propagated.items()}
+
     return SystemSubstitutionMap(
         remaining_equations=(
             sub_map.remaining_equations[:poly_index]
             + sub_map.remaining_equations[poly_index + 1 :]
         ),
-        substitution_map=_propagate_constants(merged),
+        substitution_map=substitution_map,
         free_variables=sub_map.free_variables - {var},
         substituted_variables=sub_map.substituted_variables | {var},
     )
@@ -342,7 +345,7 @@ def _greedy_ordered_candidates(
     """
     Return candidates filtered and sorted by the greedy heuristic.
 
-    Filters to the variable that the fewest equations are linear in (most constrained variable). Among those, sorts by the number of variables the equation is linear in ascending (most specific equation first).
+    The best polynomial index and variable pair to substitute for is the one that leaves the most equations linear in some variable.
 
     Args:
         sub_map: The current substitution state.
@@ -350,24 +353,9 @@ def _greedy_ordered_candidates(
             _linear_substitution_candidates.
 
     Returns:
-        The candidates filtered to the most constrained variable and sorted by equation specificity ascending.
+        The best polynomial index and variable pair to substitute for.
     """
-    var_equation_count: dict[Symbol, int] = {}
-    for _, var in candidates:
-        var_equation_count[var] = var_equation_count.get(var, 0) + 1
-
-    min_count = min(var_equation_count.values())
-    most_constrained_vars = {
-        var for var, count in var_equation_count.items() if count == min_count
-    }
-
-    filtered = [
-        (poly_index, var)
-        for poly_index, var in candidates
-        if var in most_constrained_vars
-    ]
-
-    return sorted(filtered, key=lambda pair: _equation_linearity_count(sub_map, pair[0]))
+    raise NotImplementedError("greedy_ordered_candidates not implemented")
 
 
 def _dfs(
@@ -382,8 +370,12 @@ def _dfs(
     eliminated the same set of variables reach an equivalent state, so the best
     result from that state only needs to be computed once.
     """
-    if len(sub_map.remaining_equations) == 0:
-        print(sub_map, '\n')
+    is_kappah_zero = Symbol('kappah') in sub_map.substitution_map.keys() and sub_map.substitution_map[Symbol('kappah')] == 0
+    if len(sub_map.remaining_equations) == 0 and not is_kappah_zero:
+        print(len(sub_map.free_variables))
+        for sym, expr in sub_map.substitution_map.items():
+            print(sym, '=', expr)
+        print('\n')
 
     state_key = frozenset(sub_map.substituted_variables)
     if state_key in memo:
