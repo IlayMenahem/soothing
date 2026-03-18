@@ -6,7 +6,7 @@ from typing import cast
 from sympy import Expr, Symbol, default_sort_key
 
 from .system_substitution import (
-    _drop_zero_equations,
+    is_zero,
     SystemSubstitutionMap,
     add_linear_substitution,
     is_linear_in_variable,
@@ -53,6 +53,26 @@ def _equation_linearity_count(sub_map: SystemSubstitutionMap, poly_index: int) -
         1
         for v in cast(set[Symbol], poly.free_symbols)
         if is_linear_in_variable(sub_map, poly_index, v)
+    )
+
+
+def _drop_zero_equations(sub_map: SystemSubstitutionMap) -> SystemSubstitutionMap:
+    """
+    Return a new SystemSubstitutionMap with polynomials that are zero
+    (after substitution) removed from remaining_equations.
+    """
+    non_zero = [
+        poly
+        for i, poly in enumerate(sub_map.remaining_equations)
+        if not is_zero(sub_map, i)
+    ]
+    if len(non_zero) == len(sub_map.remaining_equations):
+        return sub_map
+    return SystemSubstitutionMap(
+        remaining_equations=non_zero,
+        substitution_map=sub_map.substitution_map,
+        free_variables=sub_map.free_variables,
+        substituted_variables=sub_map.substituted_variables,
     )
 
 
