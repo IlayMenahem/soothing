@@ -12,11 +12,8 @@ even in the case of very large non linear polynomial systems of equations, it is
 \State $V \gets \{x_1,\dots,x_m\}$
 \State $\Sigma \gets \emptyset$
 \State $L \gets \{(x,p)\mid x\in V,\ p\in Q,\ p \text{ is linear in } x\}$
-\State interreduce $Q$ \Comment{optional step to simplify the system}
-\State make all the polynomials in $Q$ monic \Comment{optional step to simplify the system}
 \While{$L \neq \emptyset$}
     \State Select any pair $(x,p)\in L$
-    \State $L \gets L\setminus\{(x,p)\}$
     \State $Q \gets Q\setminus\{p\}$ \Comment{use $p$ to eliminate $x$}
     \State Solve $p=0$ for $x$ to obtain $x \gets f(\hat{x})$ \Comment{$\hat{x}=V\setminus\{x\}$}
     \State $\Sigma \gets \Sigma \cup \{x \mapsto f(\hat{x})\}$
@@ -25,15 +22,12 @@ even in the case of very large non linear polynomial systems of equations, it is
     \EndFor
     \State $V \gets V\setminus\{x\}$
     \State $L \gets \{(x',p')\mid x'\in V,\ p'\in Q,\ p' \text{ is linear in } x'\}$
-    \State make all the rational functions in $Q$ polynomials by clearing the denominators \Comment{optional step to simplify the system}
-    \State interreduce $Q$ \Comment{optional step to simplify the system}
-    \State make all the polynomials in $Q$ monic \Comment{optional step to simplify the system}
 \EndWhile
 \State \Return $(Q,\Sigma)$
 \end{algorithmic}
 \end{algorithm}
 
-the polynomial order we will use to interreduce, and make polynomials monic, should maximize the number of monomials with that are linear in one of any of the variables. thus we should use the grevlex order. we have the freedom to choose which linear variable to eliminate at each step. good heuristics to choose which variable to eliminate include:
+we have the freedom to choose which linear variable to eliminate at each step. good heuristics to choose which variable to eliminate include:
 \begin{list}{-}{}
     \item \textbf{Lowest degree in the other equations:} eliminate the variable that appears with the lowest degree in the other equations first.
     \item \textbf{Lowest degree after substitution:} eliminate the variable that will lead to the lowest degree in the other equations after substitution.
