@@ -7,6 +7,7 @@ from soothing.system_substitution import (
     add_linear_substitution,
     is_linear_in_variable,
     is_zero,
+    validate_substitution_map,
 )
 from soothing.linear_substitution_order import (
     _valid_action_results,
@@ -1151,3 +1152,11 @@ def test_propagate_constants_idempotent() -> None:
     twice = _propagate_constants(once)
 
     assert once == twice
+
+
+def test_validate_substitution_map_accepts_nested_solution() -> None:
+    x, y, z = symbols("x y z")
+    system = [x - y - 1, y - z, z - 2]
+    substitution_map = {x: y + 1, y: z, z: 2}
+
+    assert validate_substitution_map(system, substitution_map)

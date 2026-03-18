@@ -9,6 +9,7 @@ __all__ = [
     "SystemSubstitutionMap",
     "is_linear_in_variable",
     "is_zero",
+    "validate_substitution_map",
     "add_linear_substitution",
 ]
 
@@ -257,6 +258,27 @@ def is_zero(sub_map: SystemSubstitutionMap, poly_index: int) -> bool:
     poly = sub_map.remaining_equations[poly_index]
     expr = _back_substitute(poly.as_expr(), sub_map.substitution_map)
     return expr.equals(S.Zero)
+
+
+def validate_substitution_map(
+    system: list[Expr], substitution_map: dict[Symbol, Expr]
+) -> bool:
+    """
+    Validate that the substitution map is a valid solution to the system of equations.
+
+    Args:
+        system: List of equations.
+        substitution_map: Dictionary of substitutions.
+
+    Returns:
+        True if the substitution map is a valid solution to the system of equations,
+        False otherwise.
+    """
+    return all(
+        _back_substitute(equation, substitution_map).equals(S.Zero)
+        for equation in system
+    )
+
 
 def add_linear_substitution(
     sub_map: SystemSubstitutionMap, poly_index: int, var: Symbol
