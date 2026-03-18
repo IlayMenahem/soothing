@@ -3,7 +3,7 @@ from graphlib import TopologicalSorter
 from typing import cast
 
 import numpy as np
-from sympy import Expr, Symbol, lambdify, S, nan, simplify
+from sympy import Expr, Symbol, lambdify, S, nan, simplify, zoo
 
 __all__ = [
     "SystemSubstitutionMap",
@@ -282,13 +282,15 @@ def add_linear_substitution(
     var_substitution = -b / a
 
     a_is_zero = a == 0 or a.equals(S.Zero)
-    is_nan = var_substitution.has(nan)
-    if a_is_zero or is_nan:
+    has_invalid_value = var_substitution.has(nan) or var_substitution.has(zoo)
+    if a_is_zero or has_invalid_value:
         raise ValueError("degenerate substitution")
 
     merged = {**sub_map.substitution_map, var: var_substitution}
     propagated = _propagate_constants(merged)
     substitution_map = {k: simplify(v) for k, v in propagated.items()}
+    if any(expr.has(nan) or expr.has(zoo) for expr in substitution_map.values()):
+        raise ValueError("degenerate substitution")
 
     return SystemSubstitutionMap(
         remaining_equations=(
