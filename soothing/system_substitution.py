@@ -28,10 +28,12 @@ class SystemSubstitutionMap:
 
 
 _NUM_COLLINEARITY_POINTS = 8
+_NUM_ZERO_SAMPLES = 12
 _RANDOM_SEED = 42
 _RANDOM_VALUE_RANGE = (-2.0, 2.0)
 _VAR_RANGE = (-10.0, 10.0)
 _COLLINEARITY_TOL = 1e-8
+_ZERO_TOL = 1e-9
 
 
 def _are_collinear(x: np.ndarray, y: np.ndarray, tol: float) -> bool:
@@ -245,8 +247,11 @@ def is_zero(sub_map: SystemSubstitutionMap, poly_index: int) -> bool:
     """
     Check if the polynomial at `poly_index` is zero.
 
-    Substitutes all symbols from the substitution map into the polynomial (in
-    dependency order), then returns True iff the resulting expression is zero.
+    Back-substitutes the substitution map, then evaluates the result at
+    `_NUM_ZERO_SAMPLES` random points (one draw per sample over all free
+    symbols in the expression). Returns True iff every evaluation is within
+    `_ZERO_TOL` of zero (probabilistic: a nonzero polynomial vanishes on a
+    lower-dimensional set, so random points almost surely detect it).
 
     Args:
         sub_map: The system substitution map.
@@ -257,7 +262,33 @@ def is_zero(sub_map: SystemSubstitutionMap, poly_index: int) -> bool:
     """
     poly = sub_map.remaining_equations[poly_index]
     expr = _back_substitute(poly.as_expr(), sub_map.substitution_map)
-    return expr.equals(S.Zero)
+
+    free_symbols_in_expr: tuple[Symbol, ...] = tuple(
+        sorted((cast(Symbol, s) for s in expr.free_symbols), key=lambda s: s.name)
+    )
+
+    if not free_symbols_in_expr:
+        try:
+            val = complex(expr.evalf())
+        except (TypeError, ValueError):
+            return False
+        return bool(np.isfinite(val) and abs(val) < _ZERO_TOL)
+
+    rng = np.random.default_rng(_RANDOM_SEED)
+    lo, hi = _RANDOM_VALUE_RANGE
+    expr_func = lambdify(free_symbols_in_expr, expr, modules=["numpy"])
+
+    for _ in range(_NUM_ZERO_SAMPLES):
+        args = [float(rng.uniform(lo, hi)) for _ in free_symbols_in_expr]
+        try:
+            raw = expr_func(*args)
+            v = float(np.asarray(raw, dtype=np.float64).reshape(-1)[0])
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if not np.isfinite(v) or abs(v) >= _ZERO_TOL:
+            return False
+
+    return True
 
 
 def validate_substitution_map(
