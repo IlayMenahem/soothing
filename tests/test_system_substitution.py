@@ -4,6 +4,7 @@ from typing import cast
 
 from soothing.system_substitution import (
     SystemSubstitutionMap,
+    _back_substitute,
     _propagate_constants,
     add_linear_substitution,
     is_linear_in_variable,
@@ -38,6 +39,30 @@ def make_sub_map(
         if substituted_variables is not None
         else set(normalized_sub_map.keys()),
     )
+
+
+# ── helper regressions ─────────────────────────────────────────────────────────
+
+
+def test_back_substitute_resolves_symbols_introduced_by_earlier_substitutions() -> None:
+    expr = x + y
+    substitution_map = {y: z + 1, z: w + 2}
+
+    assert _back_substitute(expr, substitution_map) == x + w + 3
+
+
+def test_back_substitute_respects_exclude_while_resolving_other_symbols() -> None:
+    expr = y + z
+    substitution_map = {y: x + 1, z: y + 2}
+
+    assert _back_substitute(expr, substitution_map, exclude={y}) == 2 * y + 2
+
+
+def test_back_substitute_returns_original_expr_when_all_symbols_are_excluded() -> None:
+    expr = y + z
+    substitution_map = {y: x + 1, z: y + 2}
+
+    assert _back_substitute(expr, substitution_map, exclude={y, z}) == expr
 
 
 # ── is_linear_in_variable ─────────────────────────────────────────────────────
@@ -801,9 +826,32 @@ def test_propagate_constants_idempotent() -> None:
     assert once == twice
 
 
+def test_propagate_constants_mixed_chain_reaches_same_fixpoint() -> None:
+    a, b, c, d, e = symbols("a b c d e")
+    result = _propagate_constants({
+        a: Rational(2),
+        b: a + 1,
+        c: b + d,
+        e: c + b,
+    })
+
+    assert result[a] == Rational(2)
+    assert result[b] == Rational(3)
+    assert result[c] == d + 3
+    assert result[e] == c + 3
+
+
 def test_validate_substitution_map_accepts_nested_solution() -> None:
     x, y, z = symbols("x y z")
     system = [x - y - 1, y - z, z - 2]
     substitution_map = {x: y + 1, y: z, z: 2}
 
     assert validate_substitution_map(system, substitution_map)
+
+
+def test_validate_substitution_map_rejects_nested_non_solution() -> None:
+    x, y, z = symbols("x y z")
+    system = [x - y - 1, y - z, z - 2]
+    substitution_map = {x: y + 1, y: z, z: 3}
+
+    assert not validate_substitution_map(system, substitution_map)

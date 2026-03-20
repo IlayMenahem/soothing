@@ -60,17 +60,25 @@ def _depends_on_var(
     sym: Symbol,
     var: Symbol,
     substitution_map: dict[Symbol, Expr],
-    visited: frozenset[Symbol],
+    memo: dict[Symbol, bool],
+    visited: set[Symbol],
 ) -> bool:
     """Transitively check if sym depends on var through substitution_map."""
     if sym == var:
         return True
+    if sym in memo:
+        return memo[sym]
     if sym in visited or sym not in substitution_map:
         return False
-    return any(
-        _depends_on_var(cast(Symbol, s), var, substitution_map, visited | {sym})
-        for s in substitution_map[sym].free_symbols
+
+    visited.add(sym)
+    depends_on_var = any(
+        _depends_on_var(cast(Symbol, child), var, substitution_map, memo, visited)
+        for child in substitution_map[sym].free_symbols
     )
+    visited.remove(sym)
+    memo[sym] = depends_on_var
+    return depends_on_var
 
 
 def _get_independent_expr(
@@ -95,10 +103,12 @@ def _get_independent_expr(
     Returns:
         The rewritten expression, free of any symbol that depends on `var`.
     """
+    dependency_memo: dict[Symbol, bool] = {}
     vars_depending_on_var = {
         sym
         for sym in substitution_map
-        if sym != var and _depends_on_var(sym, var, substitution_map, frozenset())
+        if sym != var
+        and _depends_on_var(sym, var, substitution_map, dependency_memo, set())
     }
 
     dependency_graph: dict[Symbol, set[Symbol]] = {
@@ -133,25 +143,34 @@ def _back_substitute(
         The expression after back-substitution.
     """
     exclude_set = exclude if exclude is not None else set()
+    substitutable_symbols = tuple(
+        sym for sym in substitution_map if sym not in exclude_set
+    )
+    if not substitutable_symbols:
+        return expr
+
+    substitutable_symbol_set = set(substitutable_symbols)
+    dependency_graph: dict[Symbol, set[Symbol]] = {
+        sym: cast(set[Symbol], getattr(substitution_map[sym], "free_symbols", set()))
+        & substitutable_symbol_set
+        for sym in substitutable_symbols
+    }
+    substitution_order = tuple(
+        reversed(list(TopologicalSorter(dependency_graph).static_order()))
+    )
 
     while True:
         remaining = {
             cast(Symbol, s)
             for s in expr.free_symbols
-            if s in substitution_map and s not in exclude_set
+            if s in substitutable_symbol_set
         }
         if not remaining:
             return expr
 
-        dep_graph: dict[Symbol, set[Symbol]] = {
-            sym: cast(
-                set[Symbol],
-                getattr(substitution_map[sym], "free_symbols", set()) & remaining,
-            )
-            for sym in remaining
-        }
-        order = reversed(list(TopologicalSorter(dep_graph).static_order()))
-        expr = expr.subs([(sym, substitution_map[sym]) for sym in order])
+        expr = expr.subs(
+            [(sym, substitution_map[sym]) for sym in substitution_order if sym in remaining]
+        )
 
 
 def _propagate_constants(
@@ -164,17 +183,34 @@ def _propagate_constants(
     A constant entry is one whose value has no free symbols.
     """
     result = dict(substitution_map)
-    while True:
-        constants = {k: v for k, v in result.items() if not v.free_symbols}
-        if not constants:
-            return result
-        new_result = {
-            k: v if k in constants else v.subs(list(constants.items()))
-            for k, v in result.items()
+    pending_constants = {k: v for k, v in result.items() if not v.free_symbols}
+    applied_constants: set[Symbol] = set()
+
+    while pending_constants:
+        current_constants = {
+            k: v for k, v in pending_constants.items() if k not in applied_constants
         }
-        if new_result == result:
+        if not current_constants:
             return result
-        result = new_result
+
+        applied_constants.update(current_constants)
+        substitutions = list(current_constants.items())
+        next_pending_constants: dict[Symbol, Expr] = {}
+
+        for sym, expr in result.items():
+            if sym in applied_constants:
+                continue
+
+            updated_expr = expr.subs(substitutions)
+            if updated_expr != expr:
+                result[sym] = updated_expr
+
+            if not result[sym].free_symbols:
+                next_pending_constants[sym] = result[sym]
+
+        pending_constants = next_pending_constants
+
+    return result
 
 
 def is_linear_in_variable(
