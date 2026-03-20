@@ -188,7 +188,7 @@ def multiattempt_newton_raphson(
 
 
 if __name__ == "__main__":
-    from soothing.symbolic import simple_sparsification
+    from soothing.sparseification import simple_sparsification
     from soothing.utils import estimate_solution_dim, solution_test
 
     jax.config.update("jax_enable_x64", True)
