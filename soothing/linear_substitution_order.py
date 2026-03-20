@@ -3,7 +3,7 @@ from math import log, sqrt
 from random import Random
 from typing import cast
 
-from sympy import Expr, Symbol, default_sort_key
+from sympy import Expr, Symbol, default_sort_key, symbols
 
 from .system_substitution import (
     is_zero,
@@ -96,7 +96,6 @@ def _valid_action_results(
     """Return valid actions together with the states they produce."""
     results: list[tuple[LinearSubstitutionAction, SystemSubstitutionMap]] = []
     for action in _linear_substitution_candidates(sub_map):
-        print(action)
         child_map = _try_apply_action(sub_map, action)
         if child_map is not None:
             results.append((action, child_map))
