@@ -28,7 +28,7 @@ class SystemSubstitutionMap:
 
 
 _NUM_COLLINEARITY_POINTS = 8
-_NUM_ZERO_SAMPLES = 12
+_NUM_ZERO_SAMPLES = 8
 _RANDOM_SEED = 42
 _RANDOM_VALUE_RANGE = (-2.0, 2.0)
 _VAR_RANGE = (-10.0, 10.0)
@@ -190,10 +190,6 @@ def is_linear_in_variable(
     in `var` if and only if those points are collinear (almost surely over the
     random choices, avoiding a measure-zero set of bad samples).
 
-    Testing the back-substituted expression (rather than the raw polynomial) is
-    essential: a symbol like `x1 = f(x0)` in the substitution map makes the raw
-    polynomial appear linear in `x0` even though the true expression is not.
-
     Args:
         sub_map: The system substitution map containing the remaining equations.
         poly_index: Index into `sub_map.remaining_equations` of the polynomial to test.
@@ -242,27 +238,8 @@ def is_linear_in_variable(
 
     return _are_collinear(var_values, expr_values, tol=_COLLINEARITY_TOL)
 
-
-def is_zero(sub_map: SystemSubstitutionMap, poly_index: int) -> bool:
-    """
-    Check if the polynomial at `poly_index` is zero.
-
-    Back-substitutes the substitution map, then evaluates the result at
-    `_NUM_ZERO_SAMPLES` random points (one draw per sample over all free
-    symbols in the expression). Returns True iff every evaluation is within
-    `_ZERO_TOL` of zero (probabilistic: a nonzero polynomial vanishes on a
-    lower-dimensional set, so random points almost surely detect it).
-
-    Args:
-        sub_map: The system substitution map.
-        poly_index: Index into `sub_map.remaining_equations` of the polynomial to test.
-
-    Returns:
-        True if the polynomial at `poly_index` is zero, False otherwise.
-    """
-    poly = sub_map.remaining_equations[poly_index]
-    expr = _back_substitute(poly.as_expr(), sub_map.substitution_map)
-
+def _is_zero_probabilistic(expr: Expr, substitution_map: dict[Symbol, Expr]) -> bool:
+    expr = _back_substitute(expr, substitution_map)
     free_symbols_in_expr: tuple[Symbol, ...] = tuple(
         sorted((cast(Symbol, s) for s in expr.free_symbols), key=lambda s: s.name)
     )
@@ -289,6 +266,28 @@ def is_zero(sub_map: SystemSubstitutionMap, poly_index: int) -> bool:
             return False
 
     return True
+
+
+def is_zero(sub_map: SystemSubstitutionMap, poly_index: int) -> bool:
+    """
+    Check if the polynomial at `poly_index` is zero.
+
+    Back-substitutes the substitution map, then evaluates the result at
+    `_NUM_ZERO_SAMPLES` random points (one draw per sample over all free
+    symbols in the expression). Returns True iff every evaluation is within
+    `_ZERO_TOL` of zero (probabilistic: a nonzero polynomial vanishes on a
+    lower-dimensional set, so random points almost surely detect it).
+
+    Args:
+        sub_map: The system substitution map.
+        poly_index: Index into `sub_map.remaining_equations` of the polynomial to test.
+
+    Returns:
+        True if the polynomial at `poly_index` is zero, False otherwise.
+    """
+    poly = sub_map.remaining_equations[poly_index]
+
+    return _is_zero_probabilistic(poly.as_expr(), sub_map.substitution_map)
 
 
 def validate_substitution_map(
@@ -334,7 +333,7 @@ def add_linear_substitution(
     a = independent_expr.diff(var)
     var_substitution = -b / a
 
-    a_is_zero = a == 0 or a.equals(S.Zero)
+    a_is_zero = _is_zero_probabilistic(a, sub_map.substitution_map)
     has_invalid_value = var_substitution.has(nan) or var_substitution.has(zoo)
     if a_is_zero or has_invalid_value:
         raise ValueError("degenerate substitution")
