@@ -87,6 +87,22 @@ def test_best_linear_substitutions_order_empty_system() -> None:
     assert stats.search_nodes_visited == 0
 
 
+def test_best_linear_substitutions_order_counts_search_nodes_for_empty_system() -> None:
+    result, stats = best_linear_substitutions_order([])
+
+    assert result.remaining_equations == []
+    assert stats.search_nodes_visited == 0
+
+
+def test_best_linear_substitutions_order_does_not_print_during_search(capsys) -> None:
+    poly = Poly(x + y, x, y)
+
+    best_linear_substitutions_order(_as_exprs(poly))
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
 def test_best_linear_substitutions_order_accepts_explicit_dfs_strategy() -> None:
     poly = Poly(x + y, x, y)
     result, stats = best_linear_substitutions_order(_as_exprs(poly))

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from math import sqrt
-from typing import Iterable, cast
+from typing import Callable, Iterable, cast
 
 from sympy import Expr, Symbol, default_sort_key, symbols
 
@@ -18,7 +18,10 @@ _MCTS_DEFAULT_ROLLOUT_DEPTH = 4
 _MCTS_DEFAULT_EXPLORATION_WEIGHT = sqrt(2.0)
 _MCTS_DEFAULT_RANDOM_SEED = 0
 
+_KAPPAH = symbols("kappah")
+
 LinearSubstitutionAction = tuple[int, Symbol]
+CompletionPolicy = Callable[[SystemSubstitutionMap], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,10 +111,26 @@ def _state_priority(sub_map: SystemSubstitutionMap) -> tuple[int, int]:
     return (len(sub_map.remaining_equations), -len(sub_map.substituted_variables))
 
 
+def _is_solved(sub_map: SystemSubstitutionMap) -> bool:
+    return len(sub_map.remaining_equations) == 0
+
+
+def _is_kappah_zero(sub_map: SystemSubstitutionMap) -> bool:
+    return (
+        _KAPPAH in sub_map.substituted_variables
+        and sub_map.substitution_map[_KAPPAH] == 0
+    )
+
+
+def _is_accepted_solution(sub_map: SystemSubstitutionMap) -> bool:
+    return _is_solved(sub_map) and not _is_kappah_zero(sub_map)
+
+
 def _dfs(
     sub_map: SystemSubstitutionMap,
     memo: dict[frozenset[Symbol], SystemSubstitutionMap],
     counters: _RunCounters,
+    is_accepted_solution: CompletionPolicy,
 ) -> SystemSubstitutionMap:
     """
     Recursively explore all substitution branches and return the leaf with the
@@ -120,14 +139,12 @@ def _dfs(
     Memoizes by the frozenset of substituted variables: two paths that have
     eliminated the same set of variables reach an equivalent state, so the best
     result from that state only needs to be computed once.
+
+    ``is_accepted_solution`` decides when a fully substituted map counts as a
+    successful terminal state (e.g. excluding degenerate ``kappah -> 0``).
     """
     counters.search_nodes_visited += 1
-    
-    kappa = symbols("kappah")
-    solved = len(sub_map.remaining_equations) == 0
-    is_kappah_zero = kappa in sub_map.substituted_variables and sub_map.substitution_map[kappa] == 0
-    if solved and not is_kappah_zero:
-        print("solved and kappa is not zero")
+    if is_accepted_solution(sub_map):
         return sub_map
 
     state_key = frozenset(sub_map.substituted_variables)
@@ -140,17 +157,12 @@ def _dfs(
         if child_map is None:
             continue
 
-        child_result = _dfs(child_map, memo, counters)
-        child_solved = len(child_result.remaining_equations) == 0
-        child_kappa_is_zero = (
-            kappa in child_result.substituted_variables
-            and child_result.substitution_map[kappa] == 0
-        )
-        if child_solved and not child_kappa_is_zero:
+        child_result = _dfs(child_map, memo, counters, is_accepted_solution)
+        if is_accepted_solution(child_result):
             memo[state_key] = child_result
             return child_result
         child_results.append(child_result)
-    
+
     if not child_results:
         memo[state_key] = sub_map
         return sub_map
@@ -170,6 +182,19 @@ def best_linear_substitutions_order(equations: list[Expr]) -> tuple[SystemSubsti
     Returns:
         The chosen ``SystemSubstitutionMap`` and run statistics for the search.
     """
+    if not equations:
+        empty = SystemSubstitutionMap(
+            remaining_equations=[],
+            substitution_map={},
+            free_variables=set(),
+            substituted_variables=set(),
+        )
+        return empty, LinearSubstitutionOrderStats(
+            eliminations=0,
+            successful_substitutions=0,
+            search_nodes_visited=0,
+        )
+
     initial = SystemSubstitutionMap(
         remaining_equations=equations,
         substitution_map={},
@@ -180,12 +205,12 @@ def best_linear_substitutions_order(equations: list[Expr]) -> tuple[SystemSubsti
     )
 
     counters = _RunCounters()
-    result = _dfs(initial, {}, counters)
+    result = _dfs(initial, {}, counters, _is_accepted_solution)
 
     stats = LinearSubstitutionOrderStats(
         eliminations=len(equations) - len(result.remaining_equations),
         successful_substitutions=counters.successful_substitutions,
         search_nodes_visited=counters.search_nodes_visited,
     )
-    
+
     return result, stats
