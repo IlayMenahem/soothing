@@ -12,7 +12,7 @@ from .system_substitution import (
     is_linear_in_variable,
 )
 
-__all__ = ["best_linear_substitutions_order"]
+__all__ = ["LinearSubstitutionOrderStats", "best_linear_substitutions_order"]
 
 _MCTS_DEFAULT_ITERATIONS = 4
 _MCTS_DEFAULT_ROLLOUT_DEPTH = 4
@@ -20,6 +20,37 @@ _MCTS_DEFAULT_EXPLORATION_WEIGHT = sqrt(2.0)
 _MCTS_DEFAULT_RANDOM_SEED = 0
 
 LinearSubstitutionAction = tuple[int, Symbol]
+
+
+@dataclass(frozen=True, slots=True)
+class LinearSubstitutionOrderStats:
+    """
+    Run statistics for :func:`best_linear_substitutions_order`.
+
+    ``eliminations`` is ``len(input equations) - len(remaining_equations)`` in
+    the returned map.
+
+    ``successful_substitutions`` counts every successful linear substitution
+    application, including speculative tries (greedy ordering,
+    child enumeration in DFS/MCTS).
+
+    ``search_nodes_visited`` depends on ``strategy``: DFS counts recursive
+    ``_dfs`` entries; greedy counts decision steps where at least one candidate
+    exists; MCTS sums ``len(path)`` over simulations (tree nodes traversed
+    per iteration, including the root).
+    """
+
+    eliminations: int
+    successful_substitutions: int
+    search_nodes_visited: int
+
+
+class _RunCounters:
+    __slots__ = ("successful_substitutions", "search_nodes_visited")
+
+    def __init__(self) -> None:
+        self.successful_substitutions = 0
+        self.search_nodes_visited = 0
 
 
 @dataclass(slots=True)
@@ -77,7 +108,9 @@ def _drop_zero_equations(sub_map: SystemSubstitutionMap) -> SystemSubstitutionMa
 
 
 def _try_apply_action(
-    sub_map: SystemSubstitutionMap, action: LinearSubstitutionAction
+    sub_map: SystemSubstitutionMap,
+    action: LinearSubstitutionAction,
+    counters: _RunCounters | None = None,
 ) -> SystemSubstitutionMap | None:
     """Apply one substitution action, returning None when it is degenerate."""
     poly_index, var = action
@@ -87,16 +120,20 @@ def _try_apply_action(
         if str(error) != "degenerate substitution":
             raise
         return None
-    return _drop_zero_equations(child_map)
+    out = _drop_zero_equations(child_map)
+    if counters is not None:
+        counters.successful_substitutions += 1
+    return out
 
 
 def _valid_action_results(
     sub_map: SystemSubstitutionMap,
+    counters: _RunCounters | None = None,
 ) -> list[tuple[LinearSubstitutionAction, SystemSubstitutionMap]]:
     """Return valid actions together with the states they produce."""
     results: list[tuple[LinearSubstitutionAction, SystemSubstitutionMap]] = []
     for action in _linear_substitution_candidates(sub_map):
-        child_map = _try_apply_action(sub_map, action)
+        child_map = _try_apply_action(sub_map, action, counters)
         if child_map is not None:
             results.append((action, child_map))
     return results
@@ -132,6 +169,7 @@ def _state_reward(
 def _greedy_ordered_candidates(
     sub_map: SystemSubstitutionMap,
     candidates: list[LinearSubstitutionAction],
+    counters: _RunCounters | None = None,
 ) -> list[LinearSubstitutionAction]:
     """
     Return candidates filtered and sorted by the greedy heuristic.
@@ -153,7 +191,7 @@ def _greedy_ordered_candidates(
         tuple[int, int, int, tuple[object, ...], LinearSubstitutionAction]
     ] = []
     for action in candidates:
-        child_map = _try_apply_action(sub_map, action)
+        child_map = _try_apply_action(sub_map, action, counters)
         if child_map is None:
             continue
         future_candidates = _linear_substitution_candidates(child_map)
@@ -174,6 +212,7 @@ def _greedy_ordered_candidates(
 def _dfs(
     sub_map: SystemSubstitutionMap,
     memo: dict[frozenset[Symbol], SystemSubstitutionMap],
+    counters: _RunCounters,
 ) -> SystemSubstitutionMap:
     """
     Recursively explore all substitution branches and return the leaf with the
@@ -183,13 +222,32 @@ def _dfs(
     eliminated the same set of variables reach an equivalent state, so the best
     result from that state only needs to be computed once.
     """
+    counters.search_nodes_visited += 1
+    kappa = symbols("kappah")
+    solved = len(sub_map.remaining_equations) == 0
+    is_kappah_zero = kappa in sub_map.substituted_variables and sub_map.substitution_map[kappa] == 0
+
+    if solved and not is_kappah_zero:
+        print("solved and kappa is not zero")
+        return sub_map
+
     state_key = frozenset(sub_map.substituted_variables)
     if state_key in memo:
         return memo[state_key]
 
-    child_results = [
-        _dfs(child_map, memo) for _, child_map in _valid_action_results(sub_map)
-    ]
+    child_results = []
+    for _, child_map in _valid_action_results(sub_map, counters):
+        child_result = _dfs(child_map, memo, counters)
+        child_solved = len(child_result.remaining_equations) == 0
+        child_kappa_is_zero = (
+            kappa in child_result.substituted_variables
+            and child_result.substitution_map[kappa] == 0
+        )
+        if child_solved and not child_kappa_is_zero:
+            memo[state_key] = child_result
+            return child_result
+        child_results.append(child_result)
+    
     if not child_results:
         memo[state_key] = sub_map
         return sub_map
@@ -201,12 +259,13 @@ def _dfs(
 
 def _new_mcts_node(
     state: SystemSubstitutionMap,
+    counters: _RunCounters,
     *,
     parent: _MCTSNode | None = None,
     action: LinearSubstitutionAction | None = None,
 ) -> _MCTSNode:
-    unexpanded_children = _valid_action_results(state)
-    
+    unexpanded_children = _valid_action_results(state, counters)
+
     return _MCTSNode(
         state=state,
         unexpanded_children=unexpanded_children,
@@ -235,11 +294,12 @@ def _rollout(
     *,
     rollout_depth: int,
     rng: Random,
+    counters: _RunCounters,
 ) -> SystemSubstitutionMap:
     """Simulate a bounded random playout from start_state."""
     state = start_state
     for _ in range(rollout_depth):
-        action_results = _valid_action_results(state)
+        action_results = _valid_action_results(state, counters)
         if not action_results:
             return state
         _, state = action_results[rng.randrange(len(action_results))]
@@ -253,6 +313,7 @@ def _mcts(
     rollout_depth: int,
     exploration_weight: float,
     random_seed: int,
+    counters: _RunCounters,
 ) -> SystemSubstitutionMap:
     """Run a bounded Monte Carlo tree search and return the best discovered state."""
     if iterations <= 0:
@@ -262,7 +323,7 @@ def _mcts(
     if exploration_weight < 0:
         raise ValueError("mcts_exploration_weight must be non-negative")
 
-    root = _new_mcts_node(initial)
+    root = _new_mcts_node(initial, counters)
     best_state = initial
     best_priority = _state_priority(initial)
     initial_equation_count = len(initial.remaining_equations)
@@ -280,7 +341,9 @@ def _mcts(
 
         if node.unexpanded_children:
             action, child_state = node.unexpanded_children.pop(0)
-            child_node = _new_mcts_node(child_state, parent=node, action=action)
+            child_node = _new_mcts_node(
+                child_state, counters, parent=node, action=action
+            )
             node.children.append(child_node)
             node = child_node
             path.append(node)
@@ -288,7 +351,10 @@ def _mcts(
                 best_state = child_state
                 best_priority = _state_priority(child_state)
 
-        rollout_state = _rollout(node.state, rollout_depth=rollout_depth, rng=rng)
+        rollout_state = _rollout(
+            node.state, rollout_depth=rollout_depth, rng=rng, counters=counters
+        )
+        counters.search_nodes_visited += len(path)
         if _state_priority(rollout_state) < best_priority:
             best_state = rollout_state
             best_priority = _state_priority(rollout_state)
@@ -305,16 +371,18 @@ def _mcts(
     return best_state
 
 
-def _greedy_search(initial: SystemSubstitutionMap) -> SystemSubstitutionMap:
+def _greedy_search(
+    initial: SystemSubstitutionMap, counters: _RunCounters
+) -> SystemSubstitutionMap:
     """Repeatedly apply the locally best valid substitution."""
     sub_map = initial
     while True:
         candidates = _linear_substitution_candidates(sub_map)
         if not candidates:
             return sub_map
-
-        for action in _greedy_ordered_candidates(sub_map, candidates):
-            child_map = _try_apply_action(sub_map, action)
+        counters.search_nodes_visited += 1
+        for action in _greedy_ordered_candidates(sub_map, candidates, counters):
+            child_map = _try_apply_action(sub_map, action, counters)
             if child_map is not None:
                 sub_map = child_map
                 break
@@ -330,7 +398,7 @@ def best_linear_substitutions_order(
     mcts_rollout_depth: int = _MCTS_DEFAULT_ROLLOUT_DEPTH,
     mcts_exploration_weight: float = _MCTS_DEFAULT_EXPLORATION_WEIGHT,
     random_seed: int = _MCTS_DEFAULT_RANDOM_SEED,
-) -> SystemSubstitutionMap:
+) -> tuple[SystemSubstitutionMap, LinearSubstitutionOrderStats]:
     """
     Find a substitution ordering that minimizes the remaining equations.
 
@@ -355,7 +423,7 @@ def best_linear_substitutions_order(
         random_seed: Seed used by the MCTS rollout RNG.
 
     Returns:
-        A SystemSubstitutionMap chosen by the requested strategy.
+        The chosen ``SystemSubstitutionMap`` and run statistics for the search.
     """
     initial = SystemSubstitutionMap(
         remaining_equations=equations,
@@ -366,17 +434,27 @@ def best_linear_substitutions_order(
         substituted_variables=set(),
     )
 
+    counters = _RunCounters()
     if strategy == "dfs":
-        return _dfs(initial, {})
+        result = _dfs(initial, {}, counters)
     elif strategy == "greedy":
-        return _greedy_search(initial)
+        result = _greedy_search(initial, counters)
     elif strategy == "mcts":
-        return _mcts(
+        result = _mcts(
             initial,
             iterations=mcts_iterations,
             rollout_depth=mcts_rollout_depth,
             exploration_weight=mcts_exploration_weight,
             random_seed=random_seed,
+            counters=counters,
         )
     else:
         raise ValueError(f"Unknown strategy: {strategy}")
+
+    stats = LinearSubstitutionOrderStats(
+        eliminations=len(equations) - len(result.remaining_equations),
+        successful_substitutions=counters.successful_substitutions,
+        search_nodes_visited=counters.search_nodes_visited,
+    )
+    
+    return result, stats

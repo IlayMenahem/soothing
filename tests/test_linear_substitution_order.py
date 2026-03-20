@@ -2,6 +2,7 @@ import pytest
 from sympy import Expr, Poly, S, simplify, symbols
 
 from soothing.linear_substitution_order import (
+    LinearSubstitutionOrderStats,
     _valid_action_results,
     best_linear_substitutions_order,
 )
@@ -16,23 +17,27 @@ def _as_exprs(*polys: Poly) -> list[Expr]:
 
 def test_best_linear_substitutions_order_no_linear_equations() -> None:
     poly = Poly(x**2 + y**2 - 1, x, y)
-    result = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
+    result, stats = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
     assert len(result.remaining_equations) == 1
     assert result.substitution_map == {}
     assert result.substituted_variables == set()
+    assert stats.eliminations == 0
 
 
 def test_best_linear_substitutions_order_single_linear_equation() -> None:
     poly = Poly(x + y, x, y)
-    result = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
+    result, stats = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
     assert len(result.remaining_equations) == 0
     assert len(result.substituted_variables) == 1
+    assert stats.eliminations == 1
+    assert stats.successful_substitutions >= 1
+    assert stats.search_nodes_visited == 1
 
 
 def test_best_linear_substitutions_order_fully_linear_system() -> None:
     poly0 = Poly(x + y, x, y)
     poly1 = Poly(y + z, y, z)
-    result = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
+    result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
     assert len(result.remaining_equations) == 0
     assert len(result.substituted_variables) == 2
 
@@ -40,7 +45,7 @@ def test_best_linear_substitutions_order_fully_linear_system() -> None:
 def test_best_linear_substitutions_order_partial_system() -> None:
     poly0 = Poly(x + y, x, y)
     poly1 = Poly(x**2 + z**2 - 1, x, z)
-    result = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
+    result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
     assert len(result.remaining_equations) == 1
     assert len(result.substituted_variables) == 1
 
@@ -49,7 +54,7 @@ def test_best_linear_substitutions_order_three_variable_chain() -> None:
     poly0 = Poly(x + y, x, y)
     poly1 = Poly(y + z, y, z)
     poly2 = Poly(z + w, z, w)
-    result = best_linear_substitutions_order(
+    result, _ = best_linear_substitutions_order(
         _as_exprs(poly0, poly1, poly2), strategy="greedy"
     )
     assert len(result.remaining_equations) == 0
@@ -58,7 +63,7 @@ def test_best_linear_substitutions_order_three_variable_chain() -> None:
 
 def test_best_linear_substitutions_order_substitution_map_solves_equations() -> None:
     poly = Poly(x + 2 * y, x, y)
-    result = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
+    result, _ = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
     substituted_var = next(iter(result.substituted_variables))
     substitution_expr = result.substitution_map[substituted_var]
     residual = poly.as_expr().subs(substituted_var, substitution_expr)
@@ -68,7 +73,7 @@ def test_best_linear_substitutions_order_substitution_map_solves_equations() -> 
 def test_best_linear_substitutions_order_variable_sets_are_disjoint() -> None:
     poly0 = Poly(x + y, x, y)
     poly1 = Poly(y + z, y, z)
-    result = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
+    result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
     assert result.free_variables.isdisjoint(result.substituted_variables)
     assert result.free_variables | result.substituted_variables == {x, y, z}
 
@@ -77,7 +82,7 @@ def test_best_linear_substitutions_order_prefers_deeper_branch() -> None:
     a, b_sym, c_sym = symbols("a b c")
     poly0 = Poly(a + b_sym, a, b_sym, c_sym)
     poly1 = Poly(a + c_sym, a, b_sym, c_sym)
-    result = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
+    result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
     assert len(result.remaining_equations) == 0
     assert len(result.substituted_variables) == 2
 
@@ -85,31 +90,35 @@ def test_best_linear_substitutions_order_prefers_deeper_branch() -> None:
 def test_best_linear_substitutions_order_non_linear_system_unchanged_equations() -> None:
     poly0 = Poly(x**2 - 1, x)
     poly1 = Poly(y**2 - 4, y)
-    result = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
+    result, stats = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
     assert len(result.remaining_equations) == 2
     assert result.substitution_map == {}
+    assert stats.eliminations == 0
 
 
 def test_best_linear_substitutions_order_returns_system_substitution_map() -> None:
     poly = Poly(x + y, x, y)
-    result = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
+    result, stats = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
     assert isinstance(result, SystemSubstitutionMap)
+    assert isinstance(stats, LinearSubstitutionOrderStats)
 
 
 def test_best_linear_substitutions_order_empty_system() -> None:
-    result = best_linear_substitutions_order([])
+    result, stats = best_linear_substitutions_order([])
     assert result.remaining_equations == []
     assert result.substitution_map == {}
     assert result.substituted_variables == set()
+    assert stats.eliminations == 0
+    assert stats.search_nodes_visited == 0
 
 
 def test_best_linear_substitutions_order_defaults_to_dfs() -> None:
     poly0 = Poly(x + y, x, y)
     poly1 = Poly(y + z, y, z)
-    default_result = best_linear_substitutions_order(
+    default_result, _ = best_linear_substitutions_order(
         _as_exprs(poly0, poly1), strategy="greedy"
     )
-    explicit_result = best_linear_substitutions_order(
+    explicit_result, _ = best_linear_substitutions_order(
         _as_exprs(poly0, poly1), strategy="dfs"
     )
     assert default_result.remaining_equations == explicit_result.remaining_equations
@@ -120,9 +129,11 @@ def test_best_linear_substitutions_order_defaults_to_dfs() -> None:
 
 def test_best_linear_substitutions_order_accepts_explicit_dfs_strategy() -> None:
     poly = Poly(x + y, x, y)
-    result = best_linear_substitutions_order(_as_exprs(poly), strategy="dfs")
+    result, stats = best_linear_substitutions_order(_as_exprs(poly), strategy="dfs")
     assert len(result.remaining_equations) == 0
     assert len(result.substituted_variables) == 1
+    assert stats.eliminations == 1
+    assert stats.search_nodes_visited >= 1
 
 
 def test_best_linear_substitutions_order_rejects_unknown_strategy() -> None:
@@ -133,7 +144,7 @@ def test_best_linear_substitutions_order_rejects_unknown_strategy() -> None:
 
 def test_best_linear_substitutions_order_accepts_explicit_greedy_strategy() -> None:
     poly = Poly(x + y, x, y)
-    result = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
+    result, _ = best_linear_substitutions_order(_as_exprs(poly), strategy="greedy")
     assert len(result.remaining_equations) == 0
     assert len(result.substituted_variables) == 1
 
@@ -142,14 +153,14 @@ def test_best_linear_substitutions_order_mcts_is_deterministic_with_seed() -> No
     a, b_sym, c_sym = symbols("a b c")
     poly0 = Poly(a + b_sym, a, b_sym, c_sym)
     poly1 = Poly(a + c_sym, a, b_sym, c_sym)
-    first = best_linear_substitutions_order(
+    first, stats_a = best_linear_substitutions_order(
         _as_exprs(poly0, poly1),
         strategy="mcts",
         random_seed=7,
         mcts_iterations=32,
         mcts_rollout_depth=2,
     )
-    second = best_linear_substitutions_order(
+    second, stats_b = best_linear_substitutions_order(
         _as_exprs(poly0, poly1),
         strategy="mcts",
         random_seed=7,
@@ -160,12 +171,14 @@ def test_best_linear_substitutions_order_mcts_is_deterministic_with_seed() -> No
     assert first.substitution_map == second.substitution_map
     assert first.free_variables == second.free_variables
     assert first.substituted_variables == second.substituted_variables
+    assert stats_a == stats_b
+    assert stats_a.search_nodes_visited >= 32
 
 
 def test_best_linear_substitutions_order_mcts_matches_dfs_on_trivial_system() -> None:
     poly = Poly(x + y, x, y)
-    dfs_result = best_linear_substitutions_order(_as_exprs(poly), strategy="dfs")
-    mcts_result = best_linear_substitutions_order(
+    dfs_result, _ = best_linear_substitutions_order(_as_exprs(poly), strategy="dfs")
+    mcts_result, _ = best_linear_substitutions_order(
         _as_exprs(poly),
         strategy="mcts",
         random_seed=5,
@@ -182,7 +195,7 @@ def test_best_linear_substitutions_order_mcts_reaches_optimum_on_small_branch() 
     a, b_sym, c_sym = symbols("a b c")
     poly0 = Poly(a + b_sym, a, b_sym, c_sym)
     poly1 = Poly(a * b_sym + c_sym, a, b_sym, c_sym)
-    result = best_linear_substitutions_order(
+    result, _ = best_linear_substitutions_order(
         _as_exprs(poly0, poly1),
         strategy="mcts",
         random_seed=11,
@@ -213,7 +226,7 @@ def test_best_linear_substitutions_order_mcts_skips_degenerate_and_stays_valid()
     poly0 = Poly(y, x, y, z)
     poly1 = Poly(y * x + 1, x, y, z)
     poly2 = Poly(x + z, x, y, z)
-    result = best_linear_substitutions_order(
+    result, _ = best_linear_substitutions_order(
         _as_exprs(poly0, poly1, poly2),
         strategy="mcts",
         random_seed=3,
@@ -230,7 +243,7 @@ def test_best_linear_substitutions_order_skips_degenerate_and_continues() -> Non
 
     poly0 = Poly(x + y, x, y)
     poly1 = Poly(z * x + z, x, z)
-    result = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
+    result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1), strategy="greedy")
     assert len(result.substitution_map) >= 1
     for expr in result.substitution_map.values():
         assert not (hasattr(expr, "has") and (expr.has(zoo) or expr.has(nan)))
@@ -242,6 +255,6 @@ def test_best_linear_substitutions_order_full_system_no_nan_zoo() -> None:
 
     system = r"""0 -> (DpDph1 e (-3 + 2 xr))/(256 \[Pi]^2), kappah -> (DpDph1^3 e^3 (-1 + xr))/(768 \[Pi]^2)"""
     polys, _ = mathematica_to_sympy(system)
-    result = best_linear_substitutions_order([poly.as_expr() for poly in polys], strategy="greedy")
+    result, _ = best_linear_substitutions_order([poly.as_expr() for poly in polys], strategy="greedy")
     for expr in result.substitution_map.values():
         assert not (hasattr(expr, "has") and (expr.has(zoo) or expr.has(nan)))
