@@ -28,16 +28,15 @@ def make_sub_map(
     all_syms = {
         cast(Symbol, sym) for equation in equations_expr for sym in equation.free_symbols
     }
+    keys = set(normalized_sub_map.keys())
+    free = free_variables if free_variables is not None else all_syms - keys
+    sub = substituted_variables if substituted_variables is not None else keys
+    equation_symbols = frozenset(free | sub)
 
     return SystemSubstitutionMap(
         remaining_equations=equations_expr,
         substitution_map=normalized_sub_map,
-        free_variables=free_variables
-        if free_variables is not None
-        else all_syms - set(normalized_sub_map.keys()),
-        substituted_variables=substituted_variables
-        if substituted_variables is not None
-        else set(normalized_sub_map.keys()),
+        equation_symbols=equation_symbols,
     )
 
 
@@ -117,8 +116,7 @@ def test_is_linear_with_substituted_variable_in_poly() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={z: 2 * w},
-        free_variables={x, w},
-        substituted_variables={z},
+        equation_symbols=frozenset({x, w} | {z}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is True
@@ -129,8 +127,7 @@ def test_is_linear_with_chained_substitution_not_obscuring_linearity() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={z: w, y: z},
-        free_variables={x, w},
-        substituted_variables={y, z},
+        equation_symbols=frozenset({x, w} | {y, z}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is True
@@ -170,8 +167,8 @@ def test_add_linear_substitution_updates_variable_sets() -> None:
 
     result = add_linear_substitution(sub_map, 0, x)
 
-    assert x not in result.free_variables
-    assert x in result.substituted_variables
+    assert x in result.substitution_map
+    assert result.equation_symbols == sub_map.equation_symbols
 
 
 def test_add_linear_substitution_preserves_other_equations() -> None:
@@ -214,8 +211,7 @@ def test_add_linear_substitution_substitutes_independent_vars() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={z: w},
-        free_variables={x, w},
-        substituted_variables={z},
+        equation_symbols=frozenset({x, w} | {z}),
     )
 
     result = add_linear_substitution(sub_map, 0, x)
@@ -230,8 +226,7 @@ def test_add_linear_substitution_expands_var_dependent_substitutions() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x + 1},
-        free_variables={x, z},
-        substituted_variables={y},
+        equation_symbols=frozenset({x, z} | {y}),
     )
 
     result = add_linear_substitution(sub_map, 0, x)
@@ -247,8 +242,7 @@ def test_add_linear_substitution_chained_var_dependent_substitutions() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x + 1, z: y + 2},
-        free_variables={x, w},
-        substituted_variables={y, z},
+        equation_symbols=frozenset({x, w} | {y, z}),
     )
 
     result = add_linear_substitution(sub_map, 0, x)
@@ -262,8 +256,7 @@ def test_add_linear_substitution_preserves_existing_substitution_map() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map=existing,
-        free_variables={x, y},
-        substituted_variables={z},
+        equation_symbols=frozenset({x, y} | {z}),
     )
 
     result = add_linear_substitution(sub_map, 0, x)
@@ -315,8 +308,7 @@ def test_add_linear_substitution_multiple_dependencies() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x + 1, z: 2 * x},
-        free_variables={x, w},
-        substituted_variables={y, z},
+        equation_symbols=frozenset({x, w} | {y, z}),
     )
 
     result = add_linear_substitution(sub_map, 0, x)
@@ -335,8 +327,7 @@ def test_is_linear_false_positive_quadratic_via_direct_substitution() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x**2},
-        free_variables={x, z},
-        substituted_variables={y},
+        equation_symbols=frozenset({x, z} | {y}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -350,8 +341,7 @@ def test_is_linear_false_positive_chained_quadratic_substitution() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x + 1, z: y**2},
-        free_variables={x, w},
-        substituted_variables={y, z},
+        equation_symbols=frozenset({x, w} | {y, z}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -363,8 +353,7 @@ def test_is_linear_false_positive_product_hidden_by_substitution() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x**2 + x},
-        free_variables={x, z},
-        substituted_variables={y},
+        equation_symbols=frozenset({x, z} | {y}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -377,8 +366,7 @@ def test_is_linear_false_positive_cubic_via_substitution() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x**3},
-        free_variables={x, w},
-        substituted_variables={y},
+        equation_symbols=frozenset({x, w} | {y}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -391,8 +379,7 @@ def test_is_linear_false_positive_two_hop_chain_squared() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x**2 + 1, z: y - 1},
-        free_variables={x, w},
-        substituted_variables={y, z},
+        equation_symbols=frozenset({x, w} | {y, z}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -416,8 +403,7 @@ def test_is_linear_false_positive_var_appears_in_substituted_expr_non_linearly()
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x**2 * z},
-        free_variables={x, z, w},
-        substituted_variables={y},
+        equation_symbols=frozenset({x, z, w} | {y}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -430,8 +416,7 @@ def test_is_linear_false_positive_multiple_substituted_vars_both_nonlinear() -> 
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: x**2, z: x**3},
-        free_variables={x, w},
-        substituted_variables={y, z},
+        equation_symbols=frozenset({x, w} | {y, z}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -448,8 +433,7 @@ def test_is_linear_false_positive_quadratic_masked_by_independent_substitution()
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={w: z + 1, y: x**2},
-        free_variables={x, z},
-        substituted_variables={y, w},
+        equation_symbols=frozenset({x, z} | {y, w}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -463,8 +447,7 @@ def test_is_linear_false_positive_three_hop_nonlinear_chain() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={a: x**2, b_sym: a + 1, c_sym: b_sym - 1},
-        free_variables={x, z},
-        substituted_variables={a, b_sym, c_sym},
+        equation_symbols=frozenset({x, z} | {a, b_sym, c_sym}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -479,8 +462,7 @@ def test_is_linear_numerical_false_positive_epsilon_quadratic_direct() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={},
-        free_variables={x},
-        substituted_variables=set(),
+        equation_symbols=frozenset({x} | set()),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -492,8 +474,7 @@ def test_is_linear_numerical_false_positive_epsilon_quadratic_negative_coeff() -
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={},
-        free_variables={x},
-        substituted_variables=set(),
+        equation_symbols=frozenset({x} | set()),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -507,8 +488,7 @@ def test_is_linear_numerical_false_positive_epsilon_quadratic_via_substitution()
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: Rational(1, 10**9) * x**2},
-        free_variables={x},
-        substituted_variables={y},
+        equation_symbols=frozenset({x} | {y}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -528,8 +508,7 @@ def test_is_linear_numerical_false_positive_large_linear_term_drowns_curvature()
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={},
-        free_variables={x},
-        substituted_variables=set(),
+        equation_symbols=frozenset({x} | set()),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -549,8 +528,7 @@ def test_is_linear_numerical_false_positive_chained_cancellation_produces_epsilo
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: (1 + Rational(1, 10**9)) * x**2, z: -(x**2)},
-        free_variables={x},
-        substituted_variables={y, z},
+        equation_symbols=frozenset({x} | {y, z}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -568,8 +546,7 @@ def test_is_linear_numerical_false_positive_two_hop_chain_epsilon_quadratic() ->
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={a: x**2, b_sym: Rational(1, 10**9) * a},
-        free_variables={x},
-        substituted_variables={a, b_sym},
+        equation_symbols=frozenset({x} | {a, b_sym}),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -588,8 +565,7 @@ def test_is_linear_numerical_false_positive_free_symbol_scales_quadratic_below_t
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={},
-        free_variables={x, y},
-        substituted_variables=set(),
+        equation_symbols=frozenset({x, y} | set()),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -608,8 +584,7 @@ def test_is_linear_numerical_false_positive_two_free_symbols_scale_quadratic_bel
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={},
-        free_variables={x, y, w},
-        substituted_variables=set(),
+        equation_symbols=frozenset({x, y, w} | set()),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -627,8 +602,7 @@ def test_is_linear_numerical_false_positive_epsilon_cubic() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={},
-        free_variables={x},
-        substituted_variables=set(),
+        equation_symbols=frozenset({x} | set()),
     )
 
     assert is_linear_in_variable(sub_map, 0, x) is False
@@ -646,8 +620,7 @@ def test_add_linear_substitution_raises_when_denominator_zero() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: y * 0},
-        free_variables={x},
-        substituted_variables={y},
+        equation_symbols=frozenset({x} | {y}),
     )
 
     with pytest.raises(ValueError, match="degenerate"):
@@ -693,8 +666,7 @@ def test_is_zero_after_substitution_simplifies_to_zero() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: S.One},
-        free_variables=set(),
-        substituted_variables={y},
+        equation_symbols=frozenset(set() | {y}),
     )
 
     assert is_zero(sub_map, 0) is True
@@ -706,8 +678,7 @@ def test_is_zero_after_substitution_remains_nonzero() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: S(2)},
-        free_variables=set(),
-        substituted_variables={y},
+        equation_symbols=frozenset(set() | {y}),
     )
 
     assert is_zero(sub_map, 0) is False
@@ -719,8 +690,7 @@ def test_is_zero_with_chained_substitution_to_zero() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={y: S.Zero, z: y},
-        free_variables=set(),
-        substituted_variables={y, z},
+        equation_symbols=frozenset(set() | {y, z}),
     )
 
     assert is_zero(sub_map, 0) is True
@@ -732,8 +702,7 @@ def test_is_zero_with_substitution_expression_simplifies_to_zero() -> None:
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map={x: y},
-        free_variables={y},
-        substituted_variables={x},
+        equation_symbols=frozenset({y} | {x}),
     )
 
     assert is_zero(sub_map, 0) is True

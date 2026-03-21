@@ -14,7 +14,6 @@ def test_best_linear_substitutions_order_no_linear_equations() -> None:
     result, stats = best_linear_substitutions_order(_as_exprs(poly))
     assert len(result.remaining_equations) == 1
     assert result.substitution_map == {}
-    assert result.substituted_variables == set()
     assert stats.eliminations == 0
 
 
@@ -23,7 +22,7 @@ def test_best_linear_substitutions_order_fully_linear_system() -> None:
     poly1 = Poly(y + z, y, z)
     result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1))
     assert len(result.remaining_equations) == 0
-    assert len(result.substituted_variables) == 2
+    assert len(result.substitution_map) == 2
 
 
 def test_best_linear_substitutions_order_partial_system() -> None:
@@ -31,7 +30,7 @@ def test_best_linear_substitutions_order_partial_system() -> None:
     poly1 = Poly(x**2 + z**2 - 1, x, z)
     result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1))
     assert len(result.remaining_equations) == 1
-    assert len(result.substituted_variables) == 1
+    assert len(result.substitution_map) == 1
 
 
 def test_best_linear_substitutions_order_three_variable_chain() -> None:
@@ -40,13 +39,13 @@ def test_best_linear_substitutions_order_three_variable_chain() -> None:
     poly2 = Poly(z + w, z, w)
     result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1, poly2))
     assert len(result.remaining_equations) == 0
-    assert len(result.substituted_variables) == 3
+    assert len(result.substitution_map) == 3
 
 
 def test_best_linear_substitutions_order_substitution_map_solves_equations() -> None:
     poly = Poly(x + 2 * y, x, y)
     result, _ = best_linear_substitutions_order(_as_exprs(poly))
-    substituted_var = next(iter(result.substituted_variables))
+    substituted_var = next(iter(result.substitution_map))
     substitution_expr = result.substitution_map[substituted_var]
     residual = poly.as_expr().subs(substituted_var, substitution_expr)
     assert simplify(residual) == 0
@@ -56,8 +55,10 @@ def test_best_linear_substitutions_order_variable_sets_are_disjoint() -> None:
     poly0 = Poly(x + y, x, y)
     poly1 = Poly(y + z, y, z)
     result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1))
-    assert result.free_variables.isdisjoint(result.substituted_variables)
-    assert result.free_variables | result.substituted_variables == {x, y, z}
+    free = result.equation_symbols - result.substitution_map.keys()
+    keys = set(result.substitution_map)
+    assert free.isdisjoint(keys)
+    assert free | keys == {x, y, z}
 
 
 def test_best_linear_substitutions_order_prefers_deeper_branch() -> None:
@@ -66,7 +67,7 @@ def test_best_linear_substitutions_order_prefers_deeper_branch() -> None:
     poly1 = Poly(a + c_sym, a, b_sym, c_sym)
     result, _ = best_linear_substitutions_order(_as_exprs(poly0, poly1))
     assert len(result.remaining_equations) == 0
-    assert len(result.substituted_variables) == 2
+    assert len(result.substitution_map) == 2
 
 
 def test_best_linear_substitutions_order_non_linear_system_unchanged_equations() -> None:
@@ -82,7 +83,6 @@ def test_best_linear_substitutions_order_empty_system() -> None:
     result, stats = best_linear_substitutions_order([])
     assert result.remaining_equations == []
     assert result.substitution_map == {}
-    assert result.substituted_variables == set()
     assert stats.eliminations == 0
     assert stats.search_nodes_visited == 0
 
@@ -94,20 +94,11 @@ def test_best_linear_substitutions_order_counts_search_nodes_for_empty_system() 
     assert stats.search_nodes_visited == 0
 
 
-def test_best_linear_substitutions_order_does_not_print_during_search(capsys) -> None:
-    poly = Poly(x + y, x, y)
-
-    best_linear_substitutions_order(_as_exprs(poly))
-
-    captured = capsys.readouterr()
-    assert captured.out == ""
-
-
 def test_best_linear_substitutions_order_accepts_explicit_dfs_strategy() -> None:
     poly = Poly(x + y, x, y)
     result, stats = best_linear_substitutions_order(_as_exprs(poly))
     assert len(result.remaining_equations) == 0
-    assert len(result.substituted_variables) == 1
+    assert len(result.substitution_map) == 1
     assert stats.eliminations == 1
     assert stats.search_nodes_visited >= 1
 

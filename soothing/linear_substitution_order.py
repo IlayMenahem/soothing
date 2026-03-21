@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from math import sqrt
 from typing import Callable, Iterable, cast
 
-from sympy import Expr, Symbol, default_sort_key, symbols
+from sympy import Expr, Symbol, default_sort_key, symbols, simplify
 
 from .system_substitution import (
     is_zero,
@@ -82,8 +82,7 @@ def _drop_zero_equations(sub_map: SystemSubstitutionMap) -> SystemSubstitutionMa
     return SystemSubstitutionMap(
         remaining_equations=non_zero,
         substitution_map=sub_map.substitution_map,
-        free_variables=sub_map.free_variables,
-        substituted_variables=sub_map.substituted_variables,
+        equation_symbols=sub_map.equation_symbols,
     )
 
 
@@ -108,7 +107,7 @@ def _try_apply_action(
 
 def _state_priority(sub_map: SystemSubstitutionMap) -> tuple[int, int]:
     """Compare states by primary objective, then by eliminated variables."""
-    return (len(sub_map.remaining_equations), -len(sub_map.substituted_variables))
+    return (len(sub_map.remaining_equations), -len(sub_map.substitution_map))
 
 
 def _is_solved(sub_map: SystemSubstitutionMap) -> bool:
@@ -117,7 +116,7 @@ def _is_solved(sub_map: SystemSubstitutionMap) -> bool:
 
 def _is_kappah_zero(sub_map: SystemSubstitutionMap) -> bool:
     return (
-        _KAPPAH in sub_map.substituted_variables
+        _KAPPAH in sub_map.substitution_map
         and sub_map.substitution_map[_KAPPAH] == 0
     )
 
@@ -136,7 +135,7 @@ def _dfs(
     Recursively explore all substitution branches and return the leaf with the
     fewest remaining equations.
 
-    Memoizes by the frozenset of substituted variables: two paths that have
+    Memoizes by the frozenset of substitution-map keys: two paths that have
     eliminated the same set of variables reach an equivalent state, so the best
     result from that state only needs to be computed once.
 
@@ -147,7 +146,7 @@ def _dfs(
     if is_accepted_solution(sub_map):
         return sub_map
 
-    state_key = frozenset(sub_map.substituted_variables)
+    state_key = frozenset(sub_map.substitution_map)
     if state_key in memo:
         return memo[state_key]
 
@@ -186,8 +185,7 @@ def best_linear_substitutions_order(equations: list[Expr]) -> tuple[SystemSubsti
         empty = SystemSubstitutionMap(
             remaining_equations=[],
             substitution_map={},
-            free_variables=set(),
-            substituted_variables=set(),
+            equation_symbols=frozenset(),
         )
         return empty, LinearSubstitutionOrderStats(
             eliminations=0,
@@ -198,10 +196,9 @@ def best_linear_substitutions_order(equations: list[Expr]) -> tuple[SystemSubsti
     initial = SystemSubstitutionMap(
         remaining_equations=equations,
         substitution_map={},
-        free_variables={
+        equation_symbols=frozenset(
             cast(Symbol, sym) for poly in equations for sym in poly.free_symbols
-        },
-        substituted_variables=set(),
+        ),
     )
 
     counters = _RunCounters()

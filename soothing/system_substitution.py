@@ -23,8 +23,7 @@ class SystemSubstitutionMap:
 
     remaining_equations: list[Expr]
     substitution_map: dict[Symbol, Expr]
-    free_variables: set[Symbol]
-    substituted_variables: set[Symbol]
+    equation_symbols: frozenset[Symbol]
 
 
 _NUM_COLLINEARITY_POINTS = 8
@@ -386,6 +385,5 @@ def add_linear_substitution(
             + sub_map.remaining_equations[poly_index + 1 :]
         ),
         substitution_map=substitution_map,
-        free_variables=sub_map.free_variables - {var},
-        substituted_variables=sub_map.substituted_variables | {var},
+        equation_symbols=sub_map.equation_symbols,
     )
