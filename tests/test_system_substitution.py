@@ -1,6 +1,7 @@
-import pytest
-from sympy import Expr, Poly, Rational, S, symbols, Symbol
 from typing import cast
+
+import pytest
+from sympy import Expr, Poly, Rational, S, Symbol, symbols
 
 from soothing.system_substitution import (
     SystemSubstitutionMap,
@@ -11,10 +12,8 @@ from soothing.system_substitution import (
     is_zero,
     validate_substitution_map,
 )
+
 x, y, z, w = symbols("x y z w")
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def make_sub_map(
@@ -24,7 +23,10 @@ def make_sub_map(
     substituted_variables: set[Symbol] | None = None,
 ) -> SystemSubstitutionMap:
     normalized_sub_map = substitution_map or {}
-    equations_expr = [equation.as_expr() if isinstance(equation, Poly) else equation for equation in equations]
+    equations_expr = [
+        equation.as_expr() if isinstance(equation, Poly) else equation
+        for equation in equations
+    ]
     all_syms = {
         cast(Symbol, sym) for equation in equations_expr for sym in equation.free_symbols
     }
@@ -40,787 +42,348 @@ def make_sub_map(
     )
 
 
-# ── helper regressions ─────────────────────────────────────────────────────────
+def sub_map_from_poly(poly: Poly, substitution_map: dict[Symbol, Expr]) -> SystemSubstitutionMap:
+    """Build map with equation_symbols = symbols appearing in poly, keys, and substitution values."""
+    syms: set[Symbol] = {cast(Symbol, s) for s in poly.free_symbols}
+    for key, val in substitution_map.items():
+        syms.add(key)
+        syms.update(cast(Symbol, s) for s in val.free_symbols)
+    return SystemSubstitutionMap(
+        remaining_equations=[poly.as_expr()],
+        substitution_map=substitution_map,
+        equation_symbols=frozenset(syms),
+    )
 
 
-def test_back_substitute_resolves_symbols_introduced_by_earlier_substitutions() -> None:
-    expr = x + y
-    substitution_map = {y: z + 1, z: w + 2}
-
-    assert _back_substitute(expr, substitution_map) == x + w + 3
+# ── _back_substitute ─────────────────────────────────────────────────────────
 
 
-def test_back_substitute_respects_exclude_while_resolving_other_symbols() -> None:
-    expr = y + z
-    substitution_map = {y: x + 1, z: y + 2}
-
-    assert _back_substitute(expr, substitution_map, exclude={y}) == 2 * y + 2
-
-
-def test_back_substitute_returns_original_expr_when_all_symbols_are_excluded() -> None:
-    expr = y + z
-    substitution_map = {y: x + 1, z: y + 2}
-
-    assert _back_substitute(expr, substitution_map, exclude={y, z}) == expr
-
-
-# ── is_linear_in_variable ─────────────────────────────────────────────────────
-
-
-def test_is_linear_returns_true_for_plain_linear_poly() -> None:
-    poly = Poly(3 * x + 2 * y - 1, x, y)
-    sub_map = make_sub_map([poly])
-
-    assert is_linear_in_variable(sub_map, 0, x) is True
+@pytest.mark.parametrize(
+    ("expr", "substitution_map", "exclude", "expected"),
+    [
+        (x + y, {y: z + 1, z: w + 2}, None, x + w + 3),
+        (y + z, {y: x + 1, z: y + 2}, {y}, 2 * y + 2),
+        (y + z, {y: x + 1, z: y + 2}, {y, z}, y + z),
+    ],
+    ids=["chains", "respects_exclude", "all_excluded"],
+)
+def test_back_substitute(
+    expr: Expr,
+    substitution_map: dict[Symbol, Expr],
+    exclude: set[Symbol] | None,
+    expected: Expr,
+) -> None:
+    kwargs = {} if exclude is None else {"exclude": exclude}
+    assert _back_substitute(expr, substitution_map, **kwargs) == expected
 
 
-def test_is_linear_returns_false_for_quadratic_poly() -> None:
-    poly = Poly(x**2 + y, x, y)
-    sub_map = make_sub_map([poly])
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
+# ── is_linear_in_variable ───────────────────────────────────────────────────
 
 
-def test_is_linear_returns_false_when_var_absent() -> None:
-    poly = Poly(3 * y + 1, x, y)
-    sub_map = make_sub_map([poly])
+@pytest.mark.parametrize(
+    ("poly", "expected"),
+    [
+        (Poly(3 * x + 2 * y - 1, x, y), True),
+        (Poly(x**2 + y, x, y), False),
+        (Poly(3 * y + 1, x, y), False),
+        (Poly(y * x + z, x, y, z), True),
+        (Poly(x * y + x**2, x, y), False),
+        (Poly(x**3 + y, x, y), False),
+        (Poly(y**10 * x + z**5, x, y, z), True),
+        (Poly(5, x), False),
+    ],
+    ids=[
+        "plain_linear",
+        "quadratic",
+        "var_absent",
+        "linear_with_coeff",
+        "product_of_vars",
+        "cubic",
+        "high_degree_other_vars",
+        "constant_poly",
+    ],
+)
+def test_is_linear_in_variable(poly: Poly, expected: bool) -> None:
+    assert is_linear_in_variable(make_sub_map([poly]), 0, x) is expected
 
-    assert is_linear_in_variable(sub_map, 0, x) is False
 
-
-def test_is_linear_returns_true_for_linear_with_coefficient() -> None:
-    poly = Poly(y * x + z, x, y, z)
-    sub_map = make_sub_map([poly])
-
-    assert is_linear_in_variable(sub_map, 0, x) is True
-
-
-def test_is_linear_returns_false_for_product_of_vars() -> None:
-    poly = Poly(x * y + x**2, x, y)
-    sub_map = make_sub_map([poly])
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_selects_correct_poly_by_index() -> None:
+@pytest.mark.parametrize(
+    ("poly_index", "expected"),
+    [(0, False), (1, True)],
+)
+def test_is_linear_selects_correct_poly_by_index(poly_index: int, expected: bool) -> None:
     poly0 = Poly(x**2 + y, x, y)
     poly1 = Poly(x + y, x, y)
-    sub_map = make_sub_map([poly0, poly1])
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-    assert is_linear_in_variable(sub_map, 1, x) is True
+    assert is_linear_in_variable(make_sub_map([poly0, poly1]), poly_index, x) is expected
 
 
 def test_is_linear_with_substituted_variable_in_poly() -> None:
     poly = Poly(x + z, x, z)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={z: 2 * w},
-        equation_symbols=frozenset({x, w} | {z}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is True
+    assert is_linear_in_variable(sub_map_from_poly(poly, {z: 2 * w}), 0, x) is True
 
 
 def test_is_linear_with_chained_substitution_not_obscuring_linearity() -> None:
     poly = Poly(x + y, x, y)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={z: w, y: z},
-        equation_symbols=frozenset({x, w} | {y, z}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is True
+    assert is_linear_in_variable(sub_map_from_poly(poly, {z: w, y: z}), 0, x) is True
 
 
-def test_is_linear_returns_false_for_cubic() -> None:
-    poly = Poly(x**3 + y, x, y)
-    sub_map = make_sub_map([poly])
+@pytest.mark.parametrize(
+    ("poly", "substitution_map"),
+    [
+        (Poly(y + z, y, z), {y: x**2}),
+        (Poly(z + w, z, w), {y: x + 1, z: y**2}),
+        (Poly(y + z, y, z), {y: x**2 + x}),
+        (Poly(y + w, y, w), {y: x**3}),
+        (Poly(z + w, z, w), {y: x**2 + 1, z: y - 1}),
+        (Poly(x**2 * y + x, x, y), {}),
+        (Poly(y + w, y, w), {y: x**2 * z}),
+        (Poly(y + z + w, y, z, w), {y: x**2, z: x**3}),
+        (Poly(y + w, y, w), {w: z + 1, y: x**2}),
+    ],
+    ids=[
+        "quadratic_via_direct_substitution",
+        "chained_quadratic_substitution",
+        "product_hidden_by_substitution",
+        "cubic_via_substitution",
+        "two_hop_chain_squared",
+        "nonlinear_coefficient_on_var",
+        "var_nonlinear_in_substituted_expr",
+        "multiple_substituted_nonlinear",
+        "quadratic_masked_by_independent_substitution",
+    ],
+)
+def test_is_linear_false_positive_nonlinear_after_substitution(
+    poly: Poly, substitution_map: dict[Symbol, Expr]
+) -> None:
+    sm = sub_map_from_poly(poly, substitution_map)
+    assert is_linear_in_variable(sm, 0, x) is False
 
-    assert is_linear_in_variable(sub_map, 0, x) is False
+
+def test_is_linear_false_positive_three_hop_nonlinear_chain() -> None:
+    a, b_sym, c_sym = symbols("a b c")
+    poly = Poly(c_sym + z, c_sym, z)
+    sm = sub_map_from_poly(poly, {a: x**2, b_sym: a + 1, c_sym: b_sym - 1})
+    assert is_linear_in_variable(sm, 0, x) is False
+
+
+@pytest.mark.parametrize(
+    ("poly", "substitution_map"),
+    [
+        (Poly(Rational(1, 10**9) * x**2 + x, x), {}),
+        (Poly(-Rational(1, 10**9) * x**2 + x, x), {}),
+        (Poly(y + x, y, x), {y: Rational(1, 10**9) * x**2}),
+        (Poly(Rational(1, 10**9) * x**2 + 10**6 * x, x), {}),
+        (
+            Poly(y + z + x, y, z, x),
+            {y: (1 + Rational(1, 10**9)) * x**2, z: -(x**2)},
+        ),
+        (Poly(Rational(1, 10**9) * y * x**2 + x, x, y), {}),
+        (Poly(Rational(1, 10**9) * y * w * x**2 + x, x, y, w), {}),
+        (Poly(Rational(1, 10**9) * x**3 + x, x), {}),
+    ],
+    ids=[
+        "epsilon_quadratic_direct",
+        "epsilon_quadratic_negative_coeff",
+        "epsilon_quadratic_via_substitution",
+        "large_linear_term",
+        "chained_cancellation_epsilon_quadratic",
+        "free_symbol_scales_quadratic",
+        "two_free_symbols_scale_quadratic",
+        "epsilon_cubic",
+    ],
+)
+def test_is_linear_numerical_false_positive(
+    poly: Poly, substitution_map: dict[Symbol, Expr]
+) -> None:
+    sm = sub_map_from_poly(poly, substitution_map)
+    assert is_linear_in_variable(sm, 0, x) is False
+
+
+def test_is_linear_numerical_false_positive_two_hop_chain_epsilon_quadratic() -> None:
+    a, b_sym = symbols("a b")
+    poly = Poly(b_sym + x, b_sym, x)
+    sm = sub_map_from_poly(poly, {a: x**2, b_sym: Rational(1, 10**9) * a})
+    assert is_linear_in_variable(sm, 0, x) is False
 
 
 # ── add_linear_substitution ───────────────────────────────────────────────────
 
 
-def test_add_linear_substitution_removes_poly_from_remaining() -> None:
+def test_add_linear_substitution_x_plus_y_removes_equation_and_maps_x() -> None:
     poly = Poly(x + y, x, y)
     sub_map = make_sub_map([poly])
-
     result = add_linear_substitution(sub_map, 0, x)
-
-    assert len(result.remaining_equations) == 0
-
-
-def test_add_linear_substitution_solves_correctly() -> None:
-    poly = Poly(x + y, x, y)
-    sub_map = make_sub_map([poly])
-
-    result = add_linear_substitution(sub_map, 0, x)
-
     assert result.substitution_map[x] == -y
-
-
-def test_add_linear_substitution_updates_variable_sets() -> None:
-    poly = Poly(x + y, x, y)
-    sub_map = make_sub_map([poly])
-
-    result = add_linear_substitution(sub_map, 0, x)
-
-    assert x in result.substitution_map
+    assert len(result.remaining_equations) == 0
     assert result.equation_symbols == sub_map.equation_symbols
 
 
-def test_add_linear_substitution_preserves_other_equations() -> None:
+def test_add_linear_substitution_fraction_and_coefficient() -> None:
+    assert add_linear_substitution(make_sub_map([Poly(x * y + z, x, y, z)]), 0, x).substitution_map[
+        x
+    ] == -z / y
+    assert add_linear_substitution(make_sub_map([Poly(2 * x + y, x, y)]), 0, x).substitution_map[
+        x
+    ] == -y / 2
+
+
+def test_add_linear_substitution_preserves_other_equation_and_index() -> None:
     poly0 = Poly(x + y, x, y).as_expr()
     poly1 = Poly(y + z, y, z).as_expr()
-    sub_map = make_sub_map([poly0, poly1])
+    r0 = add_linear_substitution(make_sub_map([poly0, poly1]), 0, x)
+    assert r0.remaining_equations == [poly1]
 
-    result = add_linear_substitution(sub_map, 0, x)
-
-    assert len(result.remaining_equations) == 1
-    assert result.remaining_equations[0] == poly1
-
-
-def test_add_linear_substitution_removes_poly_by_index() -> None:
-    poly0 = Poly(x**2 + y, x, y).as_expr()
-    poly1 = Poly(x + z, x, z).as_expr()
-    sub_map = make_sub_map([poly0, poly1])
-
-    result = add_linear_substitution(sub_map, 1, x)
-
-    assert len(result.remaining_equations) == 1
-    assert result.remaining_equations[0] == poly0
+    poly_a = Poly(x**2 + y, x, y).as_expr()
+    poly_b = Poly(x + z, x, z).as_expr()
+    r1 = add_linear_substitution(make_sub_map([poly_a, poly_b]), 1, x)
+    assert r1.remaining_equations == [poly_a]
 
 
-def test_add_linear_substitution_with_coefficient() -> None:
-    # 2*x + y = 0  =>  x -> -y/2
-    poly = Poly(2 * x + y, x, y)
-    sub_map = make_sub_map([poly])
-
-    result = add_linear_substitution(sub_map, 0, x)
-
-    assert result.substitution_map[x] == -y / 2
-
-
-def test_add_linear_substitution_substitutes_independent_vars() -> None:
-    # substitution_map has z -> w, but z does not depend on x
-    # poly: x + z = 0  =>  after substituting z->w: x + w = 0  =>  x -> -w
-    # We substitute var-independent symbols for consistency with is_linear_in_variable.
-    poly = Poly(x + z, x, z)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={z: w},
-        equation_symbols=frozenset({x, w} | {z}),
-    )
-
-    result = add_linear_substitution(sub_map, 0, x)
-
-    assert result.substitution_map[x] == -w
+@pytest.mark.parametrize(
+    ("poly", "substitution_map", "expected_x"),
+    [
+        (Poly(x + z, x, z), {z: w}, -w),
+        (Poly(y + z, y, z), {y: x + 1}, -(z + 1)),
+        (Poly(z + w, z, w), {y: x + 1, z: y + 2}, -(w + 3)),
+        (
+            Poly(y + z + w, y, z, w),
+            {y: x + 1, z: 2 * x},
+            -(w + 1) / 3,
+        ),
+    ],
+    ids=["independent_var", "var_dependent", "chained_var_dependent", "multiple_dependencies"],
+)
+def test_add_linear_substitution_resolves_x(
+    poly: Poly, substitution_map: dict[Symbol, Expr], expected_x: Expr
+) -> None:
+    assert add_linear_substitution(sub_map_from_poly(poly, substitution_map), 0, x).substitution_map[
+        x
+    ] == expected_x
 
 
-def test_add_linear_substitution_expands_var_dependent_substitutions() -> None:
-    # substitution_map: y -> x + 1  (y depends on x)
-    # poly: y + z = 0  =>  must substitute y first: (x + 1) + z = 0  =>  x -> -(z + 1)
-    poly = Poly(y + z, y, z)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x + 1},
-        equation_symbols=frozenset({x, z} | {y}),
-    )
-
-    result = add_linear_substitution(sub_map, 0, x)
-
-    assert result.substitution_map[x] == -(z + 1)
-
-
-def test_add_linear_substitution_chained_var_dependent_substitutions() -> None:
-    # chain: y -> x + 1, z -> y + 2 = (x + 1) + 2 = x + 3
-    # poly: z + w = 0  =>  substitute z (which depends on x via y):
-    #   (x + 3) + w = 0  =>  x -> -(w + 3)
-    poly = Poly(z + w, z, w)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x + 1, z: y + 2},
-        equation_symbols=frozenset({x, w} | {y, z}),
-    )
-
-    result = add_linear_substitution(sub_map, 0, x)
-
-    assert result.substitution_map[x] == -(w + 3)
-
-
-def test_add_linear_substitution_preserves_existing_substitution_map() -> None:
+def test_add_linear_substitution_preserves_existing_map_and_immutability() -> None:
     poly = Poly(x + y, x, y)
     existing = {z: w + 1}
     sub_map = SystemSubstitutionMap(
         remaining_equations=[poly.as_expr()],
         substitution_map=existing,
-        equation_symbols=frozenset({x, y} | {z}),
+        equation_symbols=frozenset({x, y, z}),
     )
-
     result = add_linear_substitution(sub_map, 0, x)
-
     assert result.substitution_map[z] == w + 1
 
-
-def test_add_linear_substitution_does_not_mutate_original() -> None:
-    poly = Poly(x + y, x, y)
-    sub_map = make_sub_map([poly])
-
-    add_linear_substitution(sub_map, 0, x)
-
-    assert len(sub_map.remaining_equations) == 1
-    assert x not in sub_map.substitution_map
-
-
-def test_is_linear_with_high_degree_other_vars() -> None:
-    # y^10 * x + z^5  — linear in x despite high degrees of y and z
-    poly = Poly(y**10 * x + z**5, x, y, z)
-    sub_map = make_sub_map([poly])
-
-    assert is_linear_in_variable(sub_map, 0, x) is True
-
-
-def test_is_linear_constant_poly() -> None:
-    # 5  — x does not appear
-    poly = Poly(5, x)
-    sub_map = make_sub_map([poly])
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
+    base = make_sub_map([poly])
+    add_linear_substitution(base, 0, x)
+    assert len(base.remaining_equations) == 1 and x not in base.substitution_map
 
 
 def test_add_linear_substitution_complex_coefficients() -> None:
-    # (y^2 + z)*x + (w - 1) = 0  =>  x -> -(w - 1)/(y^2 + z)
     poly = Poly((y**2 + z) * x + (w - 1), x, y, z, w)
-    sub_map = make_sub_map([poly])
-
-    result = add_linear_substitution(sub_map, 0, x)
-
-    assert result.substitution_map[x] == -(w - 1) / (y**2 + z)
-
-
-def test_add_linear_substitution_multiple_dependencies() -> None:
-    # substitution_map: y -> x + 1, z -> 2*x
-    # poly: y + z + w = 0  =>  substitute y and z:
-    #   (x + 1) + 2*x + w = 0  =>  3*x + w + 1 = 0  =>  x -> -(w + 1)/3
-    poly = Poly(y + z + w, y, z, w)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x + 1, z: 2 * x},
-        equation_symbols=frozenset({x, w} | {y, z}),
-    )
-
-    result = add_linear_substitution(sub_map, 0, x)
-
-    assert result.substitution_map[x] == -(w + 1) / 3
-
-
-# ── is_linear_in_variable edge cases ──────────────────────────────────────────
-
-
-def test_is_linear_false_positive_quadratic_via_direct_substitution() -> None:
-    # substitution_map: y -> x**2
-    # poly: y + z  — looks trivially linear in x on the raw polynomial,
-    # but after back-substitution it becomes x**2 + z, which is quadratic in x.
-    poly = Poly(y + z, y, z)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x**2},
-        equation_symbols=frozenset({x, z} | {y}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_false_positive_chained_quadratic_substitution() -> None:
-    # substitution_map: z -> y**2,  y -> x + 1
-    # chain: z = (x+1)**2 — quadratic in x
-    # poly: z + w  — raw polynomial is linear in z but non-linear in x after expansion.
-    poly = Poly(z + w, z, w)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x + 1, z: y**2},
-        equation_symbols=frozenset({x, w} | {y, z}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_false_positive_product_hidden_by_substitution() -> None:
-    # Hidden quadratic after substitution should not be treated as linear.
-    poly = Poly(y + z, y, z)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x**2 + x},
-        equation_symbols=frozenset({x, z} | {y}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_false_positive_cubic_via_substitution() -> None:
-    # substitution_map: y -> x**3
-    # poly: y + w  — after back-substitution: x**3 + w, cubic in x.
-    poly = Poly(y + w, y, w)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x**3},
-        equation_symbols=frozenset({x, w} | {y}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_false_positive_two_hop_chain_squared() -> None:
-    # substitution_map: y -> x**2 + 1,  z -> y - 1  =>  z = x**2
-    # poly: z + w  — after full expansion: x**2 + w, quadratic in x.
-    poly = Poly(z + w, z, w)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x**2 + 1, z: y - 1},
-        equation_symbols=frozenset({x, w} | {y, z}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_false_positive_nonlinear_coefficient_on_var() -> None:
-    # poly: x**2 * y + x  — this is *not* linear in x (degree-2 term exists),
-    # even though x appears with coefficient y.  No substitution map involvement.
-    poly = Poly(x**2 * y + x, x, y)
-    sub_map = make_sub_map([poly])
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_false_positive_var_appears_in_substituted_expr_non_linearly() -> (
-    None
-):
-    # substitution_map: y -> x**2 * z   (quadratic in x, scaled by free var z)
-    # poly: y + w  =>  x**2 * z + w  — quadratic in x.
-    poly = Poly(y + w, y, w)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x**2 * z},
-        equation_symbols=frozenset({x, z, w} | {y}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_false_positive_multiple_substituted_vars_both_nonlinear() -> None:
-    # substitution_map: y -> x**2,  z -> x**3
-    # poly: y + z + w  =>  x**2 + x**3 + w  — non-linear in x.
-    poly = Poly(y + z + w, y, z, w)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: x**2, z: x**3},
-        equation_symbols=frozenset({x, w} | {y, z}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_false_positive_quadratic_masked_by_independent_substitution() -> (
-    None
-):
-    # substitution_map: w -> 7  (independent of x),  y -> x**2  (depends on x)
-    # poly: y + w  =>  after full resolution: x**2 + 7  — quadratic in x.
-    # The independent substitution (w -> 7) must not distract from detecting
-    # the non-linearity introduced by y -> x**2.
-    poly = Poly(y + w, y, w)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={w: z + 1, y: x**2},
-        equation_symbols=frozenset({x, z} | {y, w}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_false_positive_three_hop_nonlinear_chain() -> None:
-    # chain: a -> x**2,  b -> a + 1 = x**2 + 1,  c -> b - 1 = x**2
-    # poly: c + z  =>  x**2 + z  — quadratic in x despite 3-hop chain.
-    a, b_sym, c_sym = symbols("a b c")
-    poly = Poly(c_sym + z, c_sym, z)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={a: x**2, b_sym: a + 1, c_sym: b_sym - 1},
-        equation_symbols=frozenset({x, z} | {a, b_sym, c_sym}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-# ── is_linear_in_variable numerical edge cases ────────────────────────────────
-
-
-def test_is_linear_numerical_false_positive_epsilon_quadratic_direct() -> None:
-    # Very small quadratic perturbation should still be detected as non-linear.
-    poly = Poly(Rational(1, 10**9) * x**2 + x, x)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={},
-        equation_symbols=frozenset({x} | set()),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_numerical_false_positive_epsilon_quadratic_negative_coeff() -> None:
-    # Same as above with negative quadratic coefficient.
-    poly = Poly(-Rational(1, 10**9) * x**2 + x, x)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={},
-        equation_symbols=frozenset({x} | set()),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_numerical_false_positive_epsilon_quadratic_via_substitution() -> (
-    None
-):
-    # Same epsilon-quadratic case, but introduced via substitution.
-    poly = Poly(y + x, y, x)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: Rational(1, 10**9) * x**2},
-        equation_symbols=frozenset({x} | {y}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_numerical_false_positive_large_linear_term_drowns_curvature() -> (
-    None
-):
-    # Mechanism: a dominant linear term (1e6 * x) does NOT increase the
-    # point-to-chord deviation of the quadratic component.  The deviation formula
-    # for eps*x^2 + L*x is eps*(xi-x0)(xi-x_last), independent of L.
-    # So scaling up the linear coefficient provides no protection.
-    #
-    # Expression: 1e-9 * x**2 + 1e6 * x
-    # Max deviation ≈ 1e-9 * 1.058 ≈ 1.06e-9 < 1e-8  ✓ fools test
-    poly = Poly(Rational(1, 10**9) * x**2 + 10**6 * x, x)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={},
-        equation_symbols=frozenset({x} | set()),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_numerical_false_positive_chained_cancellation_produces_epsilon_quadratic() -> (
-    None
-):
-    # Mechanism: two substituted variables whose quadratic parts nearly cancel,
-    # leaving only an epsilon-quadratic residual.  SymPy's exact arithmetic
-    # simplifies the sum symbolically, so the epsilon survives cleanly into
-    # the numeric evaluation.
-    #
-    # substitution_map: y -> (1 + 1e-9) * x**2,  z -> -x**2
-    # poly: y + z + x  =>  back-substituted: (1 + 1e-9)*x^2 - x^2 + x = 1e-9*x^2 + x
-    poly = Poly(y + z + x, y, z, x)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: (1 + Rational(1, 10**9)) * x**2, z: -(x**2)},
-        equation_symbols=frozenset({x} | {y, z}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_numerical_false_positive_two_hop_chain_epsilon_quadratic() -> None:
-    # Mechanism: epsilon-quadratic produced at the end of a two-hop substitution
-    # chain.  _get_independent_expr must fully expand both hops; the result is
-    # still 1e-9*x^2 + x and is still below the collinearity tolerance.
-    #
-    # chain: a -> x**2,  b -> 1e-9 * a = 1e-9 * x**2
-    # poly: b + x  =>  back-substituted: 1e-9*x^2 + x
-    a, b_sym = symbols("a b")
-    poly = Poly(b_sym + x, b_sym, x)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={a: x**2, b_sym: Rational(1, 10**9) * a},
-        equation_symbols=frozenset({x} | {a, b_sym}),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_numerical_false_positive_free_symbol_scales_quadratic_below_threshold() -> (
-    None
-):
-    # Mechanism: the quadratic coefficient is the product of epsilon and a free
-    # symbol fixed by the RNG.  With the default seed the free symbol y is fixed
-    # to ≈ 1.661, so the effective coefficient ≈ 1.661e-9 < 1e-8.
-    #
-    # Expression: 1e-9 * y * x**2 + x,  y free (fixed to ≈ 1.661 by seeded RNG)
-    # Effective quadratic coefficient ≈ 1.661e-9 < 9.45e-9 threshold  ✓ fools test
-    poly = Poly(Rational(1, 10**9) * y * x**2 + x, x, y)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={},
-        equation_symbols=frozenset({x, y} | set()),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_numerical_false_positive_two_free_symbols_scale_quadratic_below_threshold() -> (
-    None
-):
-    # Mechanism: two free symbols y and w are both fixed by the RNG before the
-    # var samples are drawn.  With the default seed their values are ≈ 1.661 and
-    # ≈ 1.158, giving a product ≈ 1.924.  The effective quadratic coefficient is
-    # 1e-9 * 1.924 ≈ 1.924e-9 < 9.45e-9 threshold, so the test is still fooled.
-    #
-    # Expression: 1e-9 * y * w * x**2 + x,  y & w both free
-    poly = Poly(Rational(1, 10**9) * y * w * x**2 + x, x, y, w)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={},
-        equation_symbols=frozenset({x, y, w} | set()),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-def test_is_linear_numerical_false_positive_epsilon_cubic() -> None:
-    # Mechanism: a cubic term with a sufficiently small coefficient.
-    # The maximum point-to-chord deviation of x^3 on the seeded sample points
-    # is ≈ 4.213, so the threshold epsilon for a cubic is 1e-8 / 4.213 ≈ 2.37e-9.
-    # Using 1e-9 keeps the coefficient well inside that window.
-    #
-    # Expression: 1e-9 * x**3 + x
-    # Max deviation ≈ 1e-9 * 4.213 ≈ 4.21e-9 < 1e-8  ✓ fools test
-    poly = Poly(Rational(1, 10**9) * x**3 + x, x)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={},
-        equation_symbols=frozenset({x} | set()),
-    )
-
-    assert is_linear_in_variable(sub_map, 0, x) is False
-
-
-# ── Degenerate substitutions and evaluation failures ─────────────────────────
+    r = add_linear_substitution(make_sub_map([poly]), 0, x)
+    assert r.substitution_map[x] == -(w - 1) / (y**2 + z)
 
 
 def test_add_linear_substitution_raises_when_denominator_zero() -> None:
-    """add_linear_substitution raises ValueError when a=0 (degenerate)."""
-    import pytest
-
-    # y*x + y = 0 with y -> 0: independent_expr becomes 0*x + 0 = 0, a=0
     poly = Poly(y * x + y, x, y)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: y * 0},
-        equation_symbols=frozenset({x} | {y}),
-    )
-
+    sm = sub_map_from_poly(poly, {y: y * 0})
     with pytest.raises(ValueError, match="degenerate"):
-        add_linear_substitution(sub_map, 0, x)
+        add_linear_substitution(sm, 0, x)
 
 
-# ── is_zero ──────────────────────────────────────────────────────────────────
+# ── is_zero ───────────────────────────────────────────────────────────────────
 
 
-def test_is_zero_returns_true_for_zero_polynomial() -> None:
-    poly = Poly(0, x, y)
-    sub_map = make_sub_map([poly])
-
-    assert is_zero(sub_map, 0) is True
-
-
-def test_is_zero_returns_false_for_nonzero_constant() -> None:
-    poly = Poly(1, x)
-    sub_map = make_sub_map([poly])
-
-    assert is_zero(sub_map, 0) is False
-
-
-def test_is_zero_returns_false_for_nonzero_polynomial() -> None:
-    poly = Poly(x + y, x, y)
-    sub_map = make_sub_map([poly])
-
-    assert is_zero(sub_map, 0) is False
-
-
-def test_is_zero_selects_poly_by_index() -> None:
-    poly0 = Poly(0, x)
-    poly1 = Poly(x + 1, x)
-    sub_map = make_sub_map([poly0, poly1])
-
-    assert is_zero(sub_map, 0) is True
-    assert is_zero(sub_map, 1) is False
+@pytest.mark.parametrize(
+    ("polys", "poly_index", "expected"),
+    [
+        ([Poly(0, x, y)], 0, True),
+        ([Poly(1, x)], 0, False),
+        ([Poly(x + y, x, y)], 0, False),
+        ([Poly(0, x), Poly(x + 1, x)], 0, True),
+        ([Poly(0, x), Poly(x + 1, x)], 1, False),
+        ([Poly(x**2 + y, x, y)], 0, False),
+    ],
+    ids=[
+        "zero_poly",
+        "nonzero_constant",
+        "nonzero_poly",
+        "index0_zero",
+        "index1_nonzero",
+        "no_substitution_nonzero",
+    ],
+)
+def test_is_zero(polys: list[Expr | Poly], poly_index: int, expected: bool) -> None:
+    assert is_zero(make_sub_map(polys), poly_index) is expected
 
 
-def test_is_zero_after_substitution_simplifies_to_zero() -> None:
-    # poly: y - 1;  substitution: y -> 1  =>  1 - 1 = 0
-    poly = Poly(y - 1, y)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: S.One},
-        equation_symbols=frozenset(set() | {y}),
-    )
-
-    assert is_zero(sub_map, 0) is True
-
-
-def test_is_zero_after_substitution_remains_nonzero() -> None:
-    # poly: y - 1;  substitution: y -> 2  =>  2 - 1 = 1
-    poly = Poly(y - 1, y)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: S(2)},
-        equation_symbols=frozenset(set() | {y}),
-    )
-
-    assert is_zero(sub_map, 0) is False
+@pytest.mark.parametrize(
+    ("poly", "substitution_map", "expected"),
+    [
+        (Poly(y - 1, y), {y: S.One}, True),
+        (Poly(y - 1, y), {y: S(2)}, False),
+        (Poly(z, z), {y: S.Zero, z: y}, True),
+        (Poly(x - y, x, y), {x: y}, True),
+    ],
+    ids=["subst_to_zero", "subst_nonzero", "chained_to_zero", "expr_simplifies_to_zero"],
+)
+def test_is_zero_with_substitution(
+    poly: Poly, substitution_map: dict[Symbol, Expr], expected: bool
+) -> None:
+    assert is_zero(sub_map_from_poly(poly, substitution_map), 0) is expected
 
 
-def test_is_zero_with_chained_substitution_to_zero() -> None:
-    # poly: z;  substitution: z -> y, y -> 0  =>  z -> 0 (after fixpoint)
-    poly = Poly(z, z)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={y: S.Zero, z: y},
-        equation_symbols=frozenset(set() | {y, z}),
-    )
-
-    assert is_zero(sub_map, 0) is True
+# ── _propagate_constants ───────────────────────────────────────────────────────
 
 
-def test_is_zero_with_substitution_expression_simplifies_to_zero() -> None:
-    # poly: x - y;  substitution: x -> y  =>  y - y = 0
-    poly = Poly(x - y, x, y)
-    sub_map = SystemSubstitutionMap(
-        remaining_equations=[poly.as_expr()],
-        substitution_map={x: y},
-        equation_symbols=frozenset({y} | {x}),
-    )
-
-    assert is_zero(sub_map, 0) is True
-
-
-def test_is_zero_no_substitution_map_nonzero_poly() -> None:
-    poly = Poly(x**2 + y, x, y)
-    sub_map = make_sub_map([poly])
-
-    assert is_zero(sub_map, 0) is False
-
-
-# ── _propagate_constants ──────────────────────────────────────────────────────
-
-
-def test_propagate_constants_empty_map_returns_empty() -> None:
+def test_propagate_constants() -> None:
     assert _propagate_constants({}) == {}
 
+    assert _propagate_constants({x: y + 1, y: z}) == {x: y + 1, y: z}
 
-def test_propagate_constants_no_constants_returns_unchanged() -> None:
-    # x -> y+1, y -> z  — neither value is constant
-    result = _propagate_constants({x: y + 1, y: z})
+    r = _propagate_constants({x: Rational(3), y: x + 1})
+    assert r[x] == Rational(3) and r[y] == Rational(4)
 
-    assert result == {x: y + 1, y: z}
+    assert _propagate_constants({x: Rational(5), y: x * 2})[x] == Rational(5)
 
+    r2 = _propagate_constants({x: Rational(2), y: x + 1, z: y * 3})
+    assert r2 == {x: Rational(2), y: Rational(3), z: Rational(9)}
 
-def test_propagate_constants_single_constant_substituted_into_others() -> None:
-    # x -> 3, y -> x + 1  =>  y should become 4
-    result = _propagate_constants({x: Rational(3), y: x + 1})
-
-    assert result[x] == Rational(3)
-    assert result[y] == Rational(4)
-
-
-def test_propagate_constants_constant_not_modified() -> None:
-    # The constant entry itself must remain unchanged
-    result = _propagate_constants({x: Rational(5), y: x * 2})
-
-    assert result[x] == Rational(5)
-
-
-def test_propagate_constants_cascade_two_levels() -> None:
-    # x -> 2, y -> x + 1, z -> y * 3
-    # After first pass: y -> 3, z -> (x+1)*3 -> still has x? No — x is constant.
-    # Both y and z should collapse: y=3, z=9
-    result = _propagate_constants({x: Rational(2), y: x + 1, z: y * 3})
-
-    assert result[x] == Rational(2)
-    assert result[y] == Rational(3)
-    assert result[z] == Rational(9)
-
-
-def test_propagate_constants_cascade_three_levels() -> None:
-    # a -> 1, b -> a + 1, c -> b + 1, d -> c + 1  =>  b=2, c=3, d=4
     a, b, c, d = symbols("a b c d")
-    result = _propagate_constants({
+    r3 = _propagate_constants({
         a: Rational(1),
         b: a + 1,
         c: b + 1,
         d: c + 1,
     })
+    assert r3 == {a: Rational(1), b: Rational(2), c: Rational(3), d: Rational(4)}
 
-    assert result[a] == Rational(1)
-    assert result[b] == Rational(2)
-    assert result[c] == Rational(3)
-    assert result[d] == Rational(4)
+    r4 = _propagate_constants({x: Rational(2), y: z + x})
+    assert r4[x] == Rational(2) and r4[y] == z + 2 and z not in r4
 
+    assert _propagate_constants({x: Rational(1), y: Rational(2), z: x + y})[z] == Rational(3)
 
-def test_propagate_constants_non_constant_entries_preserved() -> None:
-    # x -> 2, y -> z + x  =>  y -> z + 2, z stays free
-    result = _propagate_constants({x: Rational(2), y: z + x})
-
-    assert result[x] == Rational(2)
-    assert result[y] == z + 2
-    assert z not in result
-
-
-def test_propagate_constants_multiple_independent_constants() -> None:
-    # x -> 1, y -> 2, z -> x + y  =>  z -> 3
-    result = _propagate_constants({x: Rational(1), y: Rational(2), z: x + y})
-
-    assert result[z] == Rational(3)
-
-
-def test_propagate_constants_idempotent() -> None:
     initial = {x: Rational(3), y: x + 1, z: y * 2}
     once = _propagate_constants(initial)
-    twice = _propagate_constants(once)
+    assert once == _propagate_constants(once)
 
-    assert once == twice
-
-
-def test_propagate_constants_mixed_chain_reaches_same_fixpoint() -> None:
-    a, b, c, d, e = symbols("a b c d e")
-    result = _propagate_constants({
-        a: Rational(2),
-        b: a + 1,
-        c: b + d,
-        e: c + b,
+    a2, b2, c2, d2, e = symbols("a b c d e")
+    r5 = _propagate_constants({
+        a2: Rational(2),
+        b2: a2 + 1,
+        c2: b2 + d2,
+        e: c2 + b2,
     })
-
-    assert result[a] == Rational(2)
-    assert result[b] == Rational(3)
-    assert result[c] == d + 3
-    assert result[e] == c + 3
+    assert r5[a2] == Rational(2) and r5[b2] == Rational(3)
+    assert r5[c2] == d2 + 3 and r5[e] == c2 + 3
 
 
-def test_validate_substitution_map_accepts_nested_solution() -> None:
-    x, y, z = symbols("x y z")
-    system = [x - y - 1, y - z, z - 2]
-    substitution_map = {x: y + 1, y: z, z: 2}
-
-    assert validate_substitution_map(system, substitution_map)
+# ── validate_substitution_map ────────────────────────────────────────────────
 
 
-def test_validate_substitution_map_rejects_nested_non_solution() -> None:
-    x, y, z = symbols("x y z")
-    system = [x - y - 1, y - z, z - 2]
-    substitution_map = {x: y + 1, y: z, z: 3}
+@pytest.mark.parametrize("z_val, ok", [(2, True), (3, False)])
+def test_validate_substitution_map_nested(z_val: int, ok: bool) -> None:
+    xa, ya, za = symbols("x y z")
+    system = [xa - ya - 1, ya - za, za - 2]
+    substitution_map = {xa: ya + 1, ya: za, za: z_val}
+    assert validate_substitution_map(system, substitution_map) is ok
 
-    assert not validate_substitution_map(system, substitution_map)
