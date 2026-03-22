@@ -1,4 +1,4 @@
-use soothing_linear::{evaluate, simplify_once, DagBuilder, Q, VarId};
+use soothing_linear::{evaluate, simplify_once, Dag, DagBuilder, Q, VarId};
 use std::collections::HashMap;
 
 #[test]
@@ -48,4 +48,19 @@ fn double_neg_and_add_zero() {
     let mut m = HashMap::new();
     m.insert(x, Q::new(3, 2));
     assert_eq!(evaluate(&out, r, &m).unwrap(), Q::new(3, 2));
+}
+
+#[test]
+fn affine_div_simplifies_to_one_minus_x() {
+    let (d, root) = Dag::from_rational_string("(x + -1) / (x + -1 + -(x + 1 + -1))").unwrap();
+    let x = VarId(0);
+    let mut bb = DagBuilder::new();
+    let r = simplify_once(&mut bb, &d, root);
+    let out = bb.snapshot();
+    for &val in &[Q::new(0, 1), Q::new(5, 2), Q::new(-3, 7)] {
+        let mut m = HashMap::new();
+        m.insert(x, val);
+        let expected = Q::new(1, 1) - val;
+        assert_eq!(evaluate(&out, r, &m).unwrap(), expected);
+    }
 }
