@@ -11,16 +11,14 @@ even in the case of very large non linear polynomial systems of equations, it is
 \State $Q \gets P$
 \State $V \gets \{x_1,\dots,x_m\}$
 \State $\Sigma \gets \emptyset$
-\State $L \gets \{(x,p)\mid x\in V,\ p\in Q,\ p \text{ is linear in } x\}$
+\State $L \gets \{(x',p')\mid x'\in V,\ p'\in Q,\ p' \text{ is linear in } x'\}$
 \While{$L \neq \emptyset$}
     \State Select any pair $(x,p)\in L$
-    \State $Q \gets Q\setminus\{p\}$ \Comment{use $p$ to eliminate $x$}
-    \State Solve $p=0$ for $x$ to obtain $x \gets f(\hat{x})$ \Comment{$\hat{x}=V\setminus\{x\}$}
+    \State Solve $p=0$ for $x$ to obtain $x \gets f(\hat{x})$
     \State $\Sigma \gets \Sigma \cup \{x \mapsto f(\hat{x})\}$
-    \ForAll{$q \in Q$}
-        \State $q \gets q[x \leftarrow f(\hat{x})]$
-    \EndFor
+    \State Substitute $x \gets f(\hat{x})$ in $Q$
     \State $V \gets V\setminus\{x\}$
+    \State clear $Q$ of zero equations
     \State $L \gets \{(x',p')\mid x'\in V,\ p'\in Q,\ p' \text{ is linear in } x'\}$
 \EndWhile
 \State \Return $(Q,\Sigma)$
@@ -33,3 +31,5 @@ we have the freedom to choose which linear variable to eliminate at each step. g
     \item \textbf{Lowest degree after substitution:} eliminate the variable that will lead to the lowest degree in the other equations after substitution.
     \item \textbf{Greatest or least number of occurrences:} eliminate the variable that appears in the greatest or least number of equations first.
 \end{list}
+
+It is also possible to use DFS or BFS to search on the order of elimination.

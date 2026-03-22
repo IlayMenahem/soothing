@@ -1,1 +1,69 @@
-\section{Substitution Map}
+\section*{System dataset}
+
+For linear elimination we need to be able to do the following operations efficiently
+\begin{itemize}
+    \item is polynomial linear in a variable
+    \item is polynomial zero
+    \item linearly eliminate a variable from a polynomial
+\end{itemize}
+
+To prevent an exponential blowup in the size of the equations, we store the current polynomial system in unexpanded form. Each polynomial expression is represented as a DAG, so common subexpressions are shared and elimination steps do not force an immediate expansion of all dependent equations. The algorithm therefore works directly with graph-represented polynomials.
+
+Once the system is stored in this form, linearity and vanishing can no longer be decided from the top-level syntax alone. Instead, the required operations are phrased in terms of evaluation of the polynomial represented by the DAG.
+
+For the operation ``is polynomial zero'', we evaluate the represented expression at sampled points of its remaining free variables. If every sampled value is zero, we treat the equation as zero and discard it from the active system.
+
+\begin{lemma}
+    If we sample $n$ points from a polynomial $p(x)$ and all the sampled values are zero, then $p(x) \equiv 0$ with probability 1.
+\end{lemma}
+\begin{proof}
+    --- To be added ---
+\end{proof}
+
+For the operation ``is polynomial linear in a variable'', let $p$ be one of the remaining equations and let $x$ be a variable that has not yet been eliminated. The represented polynomial is viewed as a function of $x$ and of the other still-free variables. To determine whether it is linear in $x$, we fix the other variables and evaluate the expression at several values of $x$. If the sampled values lie on a single affine line, then the represented expression behaves as $a x + b$ in the variable $x$, and $x$ is a valid candidate for linear elimination.
+
+\begin{lemma}
+    If we sample $n$ points from a polynomial $p(x)$ and the sampled values lie on a single affine line, then $p(x) = a x + b$ for some constants $a$ and $b$ with probability 1.
+\end{lemma}
+\begin{proof}
+    --- To be added ---
+\end{proof}
+
+
+For the operation ``linearly eliminate a variable from a polynomial'', suppose that the represented equation is linear in $x$, so it can be written as
+\[
+a x + b = 0,
+\]
+where $x$ is the variable to be eliminated. Since the equation is linear in $x$, both $a$ and $b$ may depend on the other variables but not on $x$. These coefficients can be recovered by evaluation: $b = p(0)$ and $a = p(1) - p(0)$. If $a = 0$ and $b \neq 0$, then the attempted elimination step is illegitimate, because the equation cannot be solved for $x$, if $b = 0$ we discard the equation. Otherwise, the elimination step solves for $x$ and records the resulting expression as part of the unexpanded system:
+\[
+x \mapsto -\frac{b}{a} = \frac{p(0)}{p(0) - p(1)}.
+\]
+The original equation is then removed from the remaining system, while the solved form is retained as a DAG-represented expression rather than applied eagerly to every other equation.
+
+\subsection*{Evaluating a DAG-represented expression}
+
+Let $G$ be a DAG representing a polynomial expression, and let $\alpha$ be an assignment of values to the variables occurring in $G$. To evaluate the represented expression, we process the nodes of $G$ in topological order, so that every child of a node is evaluated before the node itself.
+
+\begin{algorithm}[H]
+\caption{Evaluating a polynomial expression represented as a DAG}
+\begin{algorithmic}[1]
+\Require DAG $G$ with root $r$, and an assignment $\alpha$ of values to the variables of $G$
+\Ensure The value of the polynomial represented by $G$ at $\alpha$
+\For{each node $v$ of $G$ in topological order}
+    \If{$v$ is a constant node with value $c$}
+        \State $\mathrm{val}(v) \gets c$
+    \ElsIf{$v$ is a variable node labeled by $x$}
+        \State $\mathrm{val}(v) \gets \alpha(x)$
+    \ElsIf{$v$ is an addition node with children $u_1,\dots,u_k$}
+        \State $\mathrm{val}(v) \gets \mathrm{val}(u_1) + \cdots + \mathrm{val}(u_k)$
+    \ElsIf{$v$ is a multiplication node with children $u_1,\dots,u_k$}
+        \State $\mathrm{val}(v) \gets \mathrm{val}(u_1)\cdots \mathrm{val}(u_k)$
+    \ElsIf{$v$ is a negation node with child $u$}
+        \State $\mathrm{val}(v) \gets -\mathrm{val}(u)$
+    \EndIf
+\EndFor
+\State \Return $\mathrm{val}(r)$
+\end{algorithmic}
+\end{algorithm}
+
+Because the expression is represented as a DAG rather than a tree, a shared subexpression appears as a single node and is evaluated only once. The values computed at intermediate nodes can therefore be reused wherever that subexpression occurs, which makes repeated evaluations efficient and supports the tests for linearity and vanishing described above.
