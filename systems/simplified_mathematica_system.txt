@@ -1,0 +1,74 @@
+0 -> (DpDph1 e (-3 + 2 xr))/(
+ 256 \[Pi]^2), 0 -> -(((3 DpDph1^2 -
+     8 (DpDphh3 + DpDphh4)) e^2 (-3 + 2 xr))/(
+  512 \[Pi]^2)), 0 -> -(((DpDph1^2 -
+     2 (2 DpDphh3 + DpDphh4)) e^2 (-3 + 2 xr))/(
+  128 \[Pi]^2)), 0 -> (
+ DpDph1 (5 DpDph1^2 - 24 (DpDphh3 + DpDphh4)) e^3 (-3 + 2 xr))/(
+ 1024 \[Pi]^2), 0 -> -((
+  DpDph1 (5 DpDph1^2 - 6 (8 DpDphh3 + 3 DpDphh4)) e^3 (-3 + 2 xr))/(
+  384 \[Pi]^2)), 0 -> (
+ DpDph1 (DpDph1^2 - 4 (2 DpDphh3 + DpDphh4)) e^3 (-3 + 2 xr))/(
+ 128 \[Pi]^2), 0 -> (
+ 3 (DpDph1^4 - 6 DpDph1^2 (2 DpDphh3 + DpDphh4) +
+    16 (3 DpDphh3^2 + DpDphh4^2)) e^4 (-3 + 2 xr))/(
+ 1024 \[Pi]^2), 0 -> (
+ DpDph1 (DpDph1 + 8 DppDh1 - 4 DppDh2) e^2 (-1 + xr))/(
+ 5120 \[Pi]^2), 0 -> -((
+  DpDph1 (DpDph1 + 8 DppDh1 - 4 DppDh2) e^2 (-1 + xr))/(
+  2048 \[Pi]^2)), 0 -> (
+ DpDph1 (9 DpDph1 - 8 DppDh1 - 36 DppDh2) e^2 (-1 + xr))/(
+ 5120 \[Pi]^2), 0 -> -(((33 DpDph1^4 - 12 DpDph1^2 (18 DpDphh3 + 19 DpDphh4) +
+     32 (3 DpDphh3^2 + 12 DpDphh3 DpDphh4 + 5 DpDphh4^2)) e^4 (-3 +
+     2 xr))/(10240 \[Pi]^2)), 0 -> -(((13 DpDph1^4 - 2 DpDph1^2 (198 DpDphh3 + 19 DpDphh4) +
+     8 (2 DpDphh3^2 + 98 DpDphh3 DpDphh4 - 45 DpDphh4^2)) e^4 (-3 +
+     2 xr))/(7680 \[Pi]^2)), 0 -> ((6 DpDph1^4 -
+    DpDph1^2 (102 DpDphh3 + 31 DpDphh4) +
+    4 (8 DpDphh3^2 + 47 DpDphh3 DpDphh4 - 10 DpDphh4^2)) e^4 (-3 +
+    2 xr))/(960 \[Pi]^2), 0 -> -(((3 DpDph1^4 -
+     18 DpDph1^2 (2 DpDphh3 + DpDphh4) +
+     16 DpDphh3 (DpDphh3 + 4 DpDphh4)) e^4 (-3 + 2 xr))/(
+  640 \[Pi]^2)), 0 -> (
+ 3 DpDph1 (-8 DhDphp3 + DpDph1^2) e^3 (-1 + xr))/(
+ 128 \[Pi]^2), 0 -> (
+ 3 DpDph1 (-8 DhDphp3 + DpDph1^2) e^3 (-1 + xr))/(
+ 128 \[Pi]^2), 0 -> -((
+  3 (8 DhDphp1 DpDph1 - 8 DhDphp3 DpDph1 + 3 DpDph1^3 -
+     8 DpDph1 DpDphh4 - 4 DpDph1^2 DppDh1 + 16 DpDphh4 DppDh1 -
+     4 DpDph1^2 DppDh2 + 16 DpDphh4 DppDh2) e^3 (-1 + xr))/(
+  256 \[Pi]^2)), 0 -> -((
+  3 DpDph1 (-8 DhDphp3 + DpDph1^2) e^3 (-1 + xr))/(
+  256 \[Pi]^2)), 0 -> -1/(512 \[Pi]^2)
+    3 (16 DhDphp2 DpDph1 - 16 DhDphp3 DpDph1 + 16 DhDphp5 DpDph1 +
+      3 DpDph1^3 - 16 DpDph1 DpDphh3 - 4 DpDph1^2 DppDh1 +
+      32 DpDphh3 DppDh1 - 4 DpDph1^2 DppDh2 +
+      32 DpDphh3 DppDh2) e^3 (-1 + xr), 0 -> -((
+  3 DpDph1 (328 DpDph1^4 - 5 DpDph1^2 (1272 DpDphh3 + 497 DpDphh4) +
+     40 (366 DpDphh3^2 + 514 DpDphh3 DpDphh4 +
+        35 DpDphh4^2)) e^5 (-3 + 2 xr))/(
+  20992 \[Pi]^2)), 0 -> (
+ 3 DpDph1 (369 DpDph1^4 - 15 DpDph1^2 (376 DpDphh3 + 199 DpDphh4) +
+    160 (138 DpDphh3^2 + 95 DpDphh3 DpDphh4 +
+       30 DpDphh4^2)) e^5 (-3 + 2 xr))/(
+ 20992 \[Pi]^2), 0 -> -((
+  3 DpDph1 (246 DpDph1^4 + 5 DpDph1^2 (472 DpDphh3 - 551 DpDphh4) -
+     80 (153 DpDphh3^2 + 67 DpDphh3 DpDphh4 -
+        104 DpDphh4^2)) e^5 (-3 + 2 xr))/(
+  419840 \[Pi]^2)), kappah -> (DpDph1^3 e^3 (-1 + xr))/(
+ 768 \[Pi]^2), 0 -> (
+ DpDph1 (9061 DpDph1^4 - 10 DpDph1^2 (8544 DpDphh3 + 7993 DpDphh4) +
+    160 (591 DpDphh3^2 + 1939 DpDphh3 DpDphh4 +
+       772 DpDphh4^2)) e^5 (-3 + 2 xr))/(
+ 4198400 \[Pi]^2), 0 -> -((
+  DpDph1 (533 DpDph1^4 - 10 DpDph1^2 (32 DpDphh3 + 529 DpDphh4) +
+     10 (708 DpDphh3^2 - 108 DpDphh3 DpDphh4 +
+        1211 DpDphh4^2)) e^5 (-3 + 2 xr))/(
+  393600 \[Pi]^2)), 0 -> -((
+  DpDph1 (246 DpDph1^4 - 15 DpDph1^2 (616 DpDphh3 + 87 DpDphh4) +
+     20 (228 DpDphh3^2 + 1772 DpDphh3 DpDphh4 -
+        159 DpDphh4^2)) e^5 (-3 + 2 xr))/(
+  196800 \[Pi]^2)), 0 -> (
+ DpDph1 (164 DpDph1^4 - 5 DpDph1^2 (552 DpDphh3 + 259 DpDphh4) +
+    20 (132 DpDphh3^2 + 508 DpDphh3 DpDphh4 +
+       59 DpDphh4^2)) e^5 (-3 + 2 xr))/(
+ 65600 \[Pi]^2)
