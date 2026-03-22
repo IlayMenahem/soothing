@@ -1,4 +1,4 @@
-use soothing_linear::{evaluate, DagBuilder, EvalError, Q, VarId};
+use soothing_linear::{evaluate, Dag, DagBuilder, EvalError, Q, VarId};
 use std::collections::HashMap;
 
 #[test]
@@ -67,5 +67,42 @@ fn power_non_integer_exponent_errors() {
     assert_eq!(
         evaluate(&d, p, &m).unwrap_err(),
         EvalError::NonIntegerExponent
+    );
+}
+
+#[test]
+fn missing_variable_errors() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let y = VarId(1);
+    let vx = b.variable(x);
+    let vy = b.variable(y);
+    let e = b.add(vec![vx, vy]);
+    let d = b.build();
+    let mut m = HashMap::new();
+    m.insert(x, Q::new(1, 1));
+    assert_eq!(
+        evaluate(&d, e, &m).unwrap_err(),
+        EvalError::MissingVariable(y)
+    );
+}
+
+#[test]
+fn division_by_zero_constant() {
+    let (dag, root) = Dag::from_rational_string("1 / (1 - 1)").unwrap();
+    let m = HashMap::new();
+    assert_eq!(
+        evaluate(&dag, root, &m).unwrap_err(),
+        EvalError::DivisionByZero
+    );
+}
+
+#[test]
+fn zero_to_negative_integer_power_errors() {
+    let (dag, root) = Dag::from_rational_string("0 ^ -3").unwrap();
+    let m = HashMap::new();
+    assert_eq!(
+        evaluate(&dag, root, &m).unwrap_err(),
+        EvalError::DivisionByZero
     );
 }

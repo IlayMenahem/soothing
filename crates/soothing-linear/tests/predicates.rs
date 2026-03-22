@@ -46,6 +46,20 @@ fn linear_true() {
 }
 
 #[test]
+fn quadratic_in_x_not_linear_even_with_parameter_y() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let y = VarId(1);
+    let vx = b.variable(x);
+    let vy = b.variable(y);
+    let x2 = b.mul(vec![vx, vx]);
+    let e = b.add(vec![x2, vy]);
+    let d = b.build();
+    let cfg = SampleConfig::default();
+    assert!(!is_linear_in(&d, e, x, &[y], &cfg).unwrap());
+}
+
+#[test]
 fn linear_false() {
     let mut b = DagBuilder::new();
     let x = VarId(0);
@@ -54,6 +68,23 @@ fn linear_false() {
     let d = b.build();
     let cfg = SampleConfig::default();
     assert!(!is_linear_in(&d, e, x, &[], &cfg).unwrap());
+}
+
+#[test]
+fn recover_coeffs_rational_slope() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let y = VarId(1);
+    let xv = b.variable(x);
+    let half = b.constant(Q::new(1, 2));
+    let half_x = b.mul(vec![half, xv]);
+    let yv = b.variable(y);
+    let e = b.add(vec![half_x, yv]);
+    let d = b.build();
+    let base = assignment_seed(&[y], 0);
+    let coeffs = recover_linear_coeffs(&d, e, x, &base).unwrap();
+    assert_eq!(coeffs.a, Q::new(1, 2));
+    assert!(!coeffs.b.is_zero());
 }
 
 #[test]

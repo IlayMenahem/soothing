@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use soothing_linear::{evaluate, Dag, Q, VarId};
+use soothing_linear::{evaluate, Dag, DagParseError, Q, VarId};
 
 #[test]
 fn parse_roundtrip_format() {
@@ -41,5 +41,27 @@ fn parse_named_vars_and_eval() {
 #[test]
 fn parse_rejects_trailing_garbage() {
     let e = Dag::from_rational_string("1 + 2 )").unwrap_err();
-    assert!(matches!(e, soothing_linear::DagParseError::TrailingInput { .. }));
+    assert!(matches!(e, DagParseError::TrailingInput { .. }));
+}
+
+#[test]
+fn parse_unary_minus_and_precedence() {
+    let (dag, root) = Dag::from_rational_string("-v0 * v1 + 2").unwrap();
+    let mut assign = HashMap::new();
+    assign.insert(VarId(0), Q::new(3, 1));
+    assign.insert(VarId(1), Q::new(2, 1));
+    let q = evaluate(&dag, root, &assign).unwrap();
+    assert_eq!(q, Q::new(-4, 1));
+}
+
+#[test]
+fn parse_trailing_garbage_after_valid_prefix() {
+    let e = Dag::from_rational_string("1 @ 2").unwrap_err();
+    assert!(matches!(e, DagParseError::TrailingInput { .. }));
+}
+
+#[test]
+fn parse_unexpected_char_at_start() {
+    let e = Dag::from_rational_string("?").unwrap_err();
+    assert!(matches!(e, DagParseError::UnexpectedChar { ch: '?', pos: 0 }));
 }
