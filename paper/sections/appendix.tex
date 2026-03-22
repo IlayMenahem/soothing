@@ -17,3 +17,43 @@ To simplify an expression, we can use the following local simplifications:
     \item $x^1 \mapsto x$
     \item constant propagation
 \end{itemize}
+
+\subsection*{DFS for linear elimination order}
+
+In this setting, DFS means that we choose one available linear elimination, apply
+it, and continue recursively on the reduced system until no further linear
+elimination is possible. Only then do we backtrack and try a different
+elimination choice from an earlier step.
+
+\begin{algorithm}[H]
+\caption{DFS search for a linear elimination order}
+\label{alg:dfs-linear-elimination}
+\begin{algorithmic}[1]
+\Require Polynomial system $P$
+\Ensure A reduced system $Q$ together with a substitution map $\Sigma$
+\Function{DFSLinearElimination}{$P, \Sigma$}
+    \State $L \gets \{(p, x) \mid p \in P,\ p \text{ is linear in } x\}$
+    \If{$L = \emptyset$ or $P = \emptyset$}
+        \State \Return $(P, \Sigma)$
+    \EndIf
+    \State $B \gets (P, \Sigma)$
+    \ForAll{$(p, x) \in L$}
+        \State solve $p = 0$ for $x$ to obtain $x \gets f(\hat{x})$
+        \State $P' \gets P$ with $x \gets f(\hat{x})$ substituted in every equation
+        \State remove zero equations from $P'$
+        \State $\Sigma' \gets \Sigma \cup \{x \mapsto f(\hat{x})\}$
+        \State $R \gets \Call{DFSLinearElimination}{P', \Sigma'}$
+        \If{$R = (\emptyset, \Sigma'')$ for some $\Sigma''$}
+            \State \Return $R$
+        \EndIf
+        \If{$R$ is better than $B$}
+            \State $B \gets R$
+        \EndIf
+    \EndFor
+    \State \Return $B$
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+Here ``better'' means that the resulting system has fewer
+remaining equations, and if the number of remaining equations is the same, then we prefer the system with more free variables.
