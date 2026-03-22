@@ -88,6 +88,11 @@ fn simplify_dfs(
             let dd = simplify_dfs(b, source, *d, memo);
             b.div(nn, dd)
         }
+        Node::Pow(base, exp) => {
+            let bb = simplify_dfs(b, source, *base, memo);
+            let ee = simplify_dfs(b, source, *exp, memo);
+            b.pow(bb, ee)
+        }
     };
     memo.insert(id, mapped);
     mapped

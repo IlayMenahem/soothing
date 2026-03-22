@@ -29,24 +29,31 @@ fn main() {
     // monomial), affine in z. Two are linear.
     // VarId order: z < x < y so elimination tries z first (see `linear_elimination`: BTreeSet over
     // VarId). Then z is removed from x + z - 1 with constant denominator before touching x*y + z.
+    // Parser: `vN` is VarId(N); here v0=z, v1=x, v2=y.
     //   x + z - 1 = 0
     //   y - z = 0
     //   x*y + z = 0
-    let mut b = DagBuilder::new();
     let z = VarId(0);
     let x = VarId(1);
     let y = VarId(2);
-    let vz = b.variable(z);
-    let vx = b.variable(x);
-    let vy = b.variable(y);
-    let one = b.constant(Q::new(1, 1));
-    let neg_one = b.neg(one);
-    let neg_vz = b.neg(vz);
-    let xy = b.mul(vec![vx, vy]);
-    let eq_xy_z = b.add(vec![xy, vz]);
-    let eq_x_z = b.add(vec![vx, vz, neg_one]);
-    let eq_y_z = b.add(vec![vy, neg_vz]);
-    let sys = PolynomialSystem::new(b.build(), vec![eq_x_z, eq_y_z, eq_xy_z]);
+    let equation_strings = [
+        "v1 + v0 - 1", // x + z - 1
+        "v2 - v0",     // y - z
+        "v1 * v2 + v0", // x*y + z
+    ];
+    let mut b = DagBuilder::new();
+    let mut equation_roots = Vec::with_capacity(equation_strings.len());
+    for s in &equation_strings {
+        let (dag, root) = match Dag::from_rational_string(s) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("parse equation {s:?}: {e}");
+                std::process::exit(1);
+            }
+        };
+        equation_roots.push(b.merge_root(&dag, root));
+    }
+    let sys = PolynomialSystem::new(b.build(), equation_roots);
 
     println!("Initial: three equations");
     println!("  x + z - 1 = 0");

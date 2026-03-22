@@ -40,7 +40,7 @@ pub mod simplify;
 pub mod substitution;
 pub mod system;
 
-pub use dag::{Dag, DagBuilder, NodeId, VarId};
+pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 pub use elimination::{linear_elimination, EliminationError, EliminationResult};
 pub use eval::{evaluate, EvalError};
 pub use predicates::assignment_seed;

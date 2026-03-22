@@ -128,6 +128,10 @@ fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
                 stack.push(*n);
                 stack.push(*d);
             }
+            Node::Pow(b, e) => {
+                stack.push(*b);
+                stack.push(*e);
+            }
         }
     }
     out

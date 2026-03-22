@@ -40,6 +40,8 @@ pub enum PredicateError {
     MissingVariable(VarId),
     #[error("evaluation failed: division by zero")]
     DivisionByZero,
+    #[error("evaluation failed: exponent must be an integer in Q")]
+    NonIntegerExponent,
 }
 
 impl From<EvalError> for PredicateError {
@@ -47,6 +49,7 @@ impl From<EvalError> for PredicateError {
         match e {
             EvalError::MissingVariable(v) => PredicateError::MissingVariable(v),
             EvalError::DivisionByZero => PredicateError::DivisionByZero,
+            EvalError::NonIntegerExponent => PredicateError::NonIntegerExponent,
         }
     }
 }

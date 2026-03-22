@@ -144,6 +144,10 @@ fn vars_in_subgraph(
                 stack.push(*n);
                 stack.push(*d);
             }
+            Node::Pow(b, e) => {
+                stack.push(*b);
+                stack.push(*e);
+            }
         }
     }
     out

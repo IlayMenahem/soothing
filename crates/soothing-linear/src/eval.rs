@@ -11,6 +11,7 @@ use std::collections::HashSet;
 pub enum EvalError {
     MissingVariable(VarId),
     DivisionByZero,
+    NonIntegerExponent,
 }
 
 /// Evaluate the expression at `root` using `assignment` for variables.
@@ -63,7 +64,42 @@ fn eval_node(
             }
             Ok(num / den)
         }
+        Node::Pow(b, e) => {
+            let base = values[b.0].as_ref().expect("topo order");
+            let exp = values[e.0].as_ref().expect("topo order");
+            if *exp.denom() != 1 {
+                return Err(EvalError::NonIntegerExponent);
+            }
+            rational_int_pow(*base, *exp.numer())
+        }
     }
+}
+
+fn rational_int_pow(base: Q, exp: i64) -> Result<Q, EvalError> {
+    if exp >= i32::MIN as i64 && exp <= i32::MAX as i64 {
+        if exp < 0 && base.is_zero() {
+            return Err(EvalError::DivisionByZero);
+        }
+        return Ok(base.pow(exp as i32));
+    }
+    let mut acc = Q::one();
+    let mut b = base;
+    let mut e = exp.unsigned_abs();
+    let invert = exp < 0;
+    if invert {
+        if b.is_zero() {
+            return Err(EvalError::DivisionByZero);
+        }
+        b = Q::one() / b;
+    }
+    while e > 0 {
+        if e & 1 != 0 {
+            acc *= &b;
+        }
+        b = &b * &b;
+        e >>= 1;
+    }
+    Ok(acc)
 }
 
 /// Nodes reachable from `root` in reverse topological order (children before parents).
@@ -94,6 +130,10 @@ fn dfs_post(
         Node::Div(n, d) => {
             dfs_post(dag, *n, visited, out);
             dfs_post(dag, *d, visited, out);
+        }
+        Node::Pow(b, e) => {
+            dfs_post(dag, *b, visited, out);
+            dfs_post(dag, *e, visited, out);
         }
     }
     out.push(id);

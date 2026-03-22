@@ -1,4 +1,4 @@
-use soothing_linear::{evaluate, DagBuilder, Q, VarId};
+use soothing_linear::{evaluate, DagBuilder, EvalError, Q, VarId};
 use std::collections::HashMap;
 
 #[test]
@@ -39,4 +39,33 @@ fn multiplication_and_shared_nodes() {
     let mut m = HashMap::new();
     m.insert(x, Q::new(2, 1));
     assert_eq!(evaluate(&d, prod, &m).unwrap(), Q::new(9, 1));
+}
+
+#[test]
+fn power_integer_exponent() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let v = b.variable(x);
+    let three = b.constant(Q::new(3, 1));
+    let p = b.pow(v, three);
+    let d = b.build();
+    let mut m = HashMap::new();
+    m.insert(x, Q::new(2, 1));
+    assert_eq!(evaluate(&d, p, &m).unwrap(), Q::new(8, 1));
+}
+
+#[test]
+fn power_non_integer_exponent_errors() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let v = b.variable(x);
+    let half = b.constant(Q::new(1, 2));
+    let p = b.pow(v, half);
+    let d = b.build();
+    let mut m = HashMap::new();
+    m.insert(x, Q::new(4, 1));
+    assert_eq!(
+        evaluate(&d, p, &m).unwrap_err(),
+        EvalError::NonIntegerExponent
+    );
 }
