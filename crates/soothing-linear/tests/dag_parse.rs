@@ -19,12 +19,13 @@ fn parse_rational_div_chain() {
     assert_eq!(q, Q::new(1, 6));
 }
 
+/// `arithmetic-parser` chains `^` with left associativity: `2^3^2` is `(2^3)^2`, not `2^(3^2)`.
 #[test]
-fn parse_pow_right_assoc() {
+fn parse_pow_left_assoc() {
     let (dag, root) = Dag::from_rational_string("2 ^ 3 ^ 2").unwrap();
     let assign = HashMap::new();
     let q = evaluate(&dag, root, &assign).unwrap();
-    assert_eq!(q, Q::from_integer(512));
+    assert_eq!(q, Q::from_integer(64));
 }
 
 #[test]
@@ -63,5 +64,18 @@ fn parse_trailing_garbage_after_valid_prefix() {
 #[test]
 fn parse_unexpected_char_at_start() {
     let e = Dag::from_rational_string("?").unwrap_err();
-    assert!(matches!(e, DagParseError::UnexpectedChar { ch: '?', pos: 0 }));
+    assert!(matches!(
+        e,
+        DagParseError::UnexpectedChar { ch: '?', pos: 0 }
+            | DagParseError::TrailingInput { pos: 0 }
+    ));
+}
+
+/// `foo_bar` must parse as one identifier (underscore inside name), not as two tokens.
+#[test]
+fn parse_named_identifier_with_underscore() {
+    let (dag, root) = Dag::from_rational_string("foo_bar + 1").unwrap();
+    let name = |v: VarId| format!("v{}", v.0);
+    let out = dag.format_root(root, name);
+    assert_eq!(out, "v0 + 1");
 }

@@ -33,6 +33,7 @@
 //!   [`elimination::EliminationError::IllegitimateElimination`].
 
 pub mod dag;
+mod dag_parse;
 pub mod elimination;
 pub mod eval;
 pub mod field;
