@@ -1,11 +1,11 @@
 //! Predicate tests aligned with `tests/test_system_substitution.py` (`is_zero`, `is_linear_in_variable`).
 //! Rust predicates operate on DAGs (substitution is applied when building the DAG elsewhere).
 
+use num_traits::Zero;
 use soothing_linear::{
     assignment_seed, is_linear_in, is_zero, recover_linear_coeffs, Dag, DagBuilder, NodeId,
-    PredicateError, Q, SampleConfig, VarId,
+    PredicateError, SampleConfig, VarId, Q,
 };
-use num_traits::Zero;
 
 /// Stricter sampling than default for multivariate linearity checks (mirrors “many samples” intent).
 fn cfg_robust() -> SampleConfig {

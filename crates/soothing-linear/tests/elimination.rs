@@ -1,6 +1,4 @@
-use soothing_linear::{
-    linear_elimination, DagBuilder, PolynomialSystem, Q, SampleConfig, VarId,
-};
+use soothing_linear::{linear_elimination, DagBuilder, PolynomialSystem, SampleConfig, VarId, Q};
 
 #[test]
 fn single_step() {

@@ -15,18 +15,16 @@ pub enum EvalError {
 }
 
 /// Evaluate the expression at `root` using `assignment` for variables.
-pub fn evaluate(
-    dag: &Dag,
-    root: NodeId,
-    assignment: &HashMap<VarId, Q>,
-) -> Result<Q, EvalError> {
+pub fn evaluate(dag: &Dag, root: NodeId, assignment: &HashMap<VarId, Q>) -> Result<Q, EvalError> {
     let order = topological_order(dag, root);
     let mut values: Vec<Option<Q>> = vec![None; dag.len()];
     for &nid in &order {
         let v = eval_node(dag, nid, assignment, &values)?;
         values[nid.0] = Some(v);
     }
-    Ok(values[root.0].take().expect("root must appear in topological order"))
+    Ok(values[root.0]
+        .take()
+        .expect("root must appear in topological order"))
 }
 
 fn eval_node(
@@ -110,12 +108,7 @@ fn topological_order(dag: &Dag, root: NodeId) -> Vec<NodeId> {
     stack
 }
 
-fn dfs_post(
-    dag: &Dag,
-    id: NodeId,
-    visited: &mut HashSet<NodeId>,
-    out: &mut Vec<NodeId>,
-) {
+fn dfs_post(dag: &Dag, id: NodeId, visited: &mut HashSet<NodeId>, out: &mut Vec<NodeId>) {
     if !visited.insert(id) {
         return;
     }

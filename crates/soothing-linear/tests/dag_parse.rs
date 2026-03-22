@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use soothing_linear::{evaluate, Dag, DagParseError, Q, VarId};
+use soothing_linear::{evaluate, Dag, DagParseError, VarId, Q};
 
 #[test]
 fn parse_roundtrip_format() {
@@ -66,8 +66,7 @@ fn parse_unexpected_char_at_start() {
     let e = Dag::from_rational_string("?").unwrap_err();
     assert!(matches!(
         e,
-        DagParseError::UnexpectedChar { ch: '?', pos: 0 }
-            | DagParseError::TrailingInput { pos: 0 }
+        DagParseError::UnexpectedChar { ch: '?', pos: 0 } | DagParseError::TrailingInput { pos: 0 }
     ));
 }
 

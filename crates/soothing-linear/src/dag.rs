@@ -50,7 +50,12 @@ impl Dag {
         vars.into_iter().collect()
     }
 
-    fn collect_vars_dfs(&self, id: NodeId, seen_node: &mut HashSet<NodeId>, vars: &mut BTreeSet<VarId>) {
+    fn collect_vars_dfs(
+        &self,
+        id: NodeId,
+        seen_node: &mut HashSet<NodeId>,
+        vars: &mut BTreeSet<VarId>,
+    ) {
         if !seen_node.insert(id) {
             return;
         }
@@ -273,7 +278,12 @@ impl DagBuilder {
         self.merge_dfs(source, root, &mut memo)
     }
 
-    fn merge_dfs(&mut self, source: &Dag, id: NodeId, memo: &mut HashMap<NodeId, NodeId>) -> NodeId {
+    fn merge_dfs(
+        &mut self,
+        source: &Dag,
+        id: NodeId,
+        memo: &mut HashMap<NodeId, NodeId>,
+    ) -> NodeId {
         if let Some(&n) = memo.get(&id) {
             return n;
         }

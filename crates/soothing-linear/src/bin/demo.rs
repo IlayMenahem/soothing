@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 
 use soothing_linear::{
-    assignment_seed, evaluate, linear_elimination, Dag, DagBuilder, NodeId, PolynomialSystem, Q,
-    SampleConfig, VarId, simplify_once,
+    assignment_seed, evaluate, linear_elimination, simplify_once, Dag, DagBuilder, NodeId,
+    PolynomialSystem, SampleConfig, VarId, Q,
 };
 
 /// Fold local rewrites so [`Dag::format_root`] is readable (DAGs from elimination are not minimal).
@@ -37,8 +37,8 @@ fn main() {
     let x = VarId(1);
     let y = VarId(2);
     let equation_strings = [
-        "v1 + v0 - 1", // x + z - 1
-        "v2 - v0",     // y - z
+        "v1 + v0 - 1",  // x + z - 1
+        "v2 - v0",      // y - z
         "v1 * v2 + v0", // x*y + z
     ];
     let mut b = DagBuilder::new();

@@ -41,7 +41,8 @@ pub const RANDOM_Q_SAMPLE_ABS_MAX: i64 = 50_000;
 const SAMPLE_EVAL_RETRIES: usize = 64;
 
 fn mix_seed(base: u64, a: usize, b: u32) -> u64 {
-    base ^ (a as u64).wrapping_mul(0x9E37_79B9_1E35_1B03) ^ (b as u64).wrapping_mul(0xC6BC_2796_92B5_C323)
+    base ^ (a as u64).wrapping_mul(0x9E37_79B9_1E35_1B03)
+        ^ (b as u64).wrapping_mul(0xC6BC_2796_92B5_C323)
 }
 
 fn rng_for_zero(cfg: &SampleConfig, root: NodeId) -> StdRng {

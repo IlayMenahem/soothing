@@ -45,8 +45,8 @@ pub mod system;
 pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 pub use elimination::{linear_elimination, EliminationError, EliminationResult};
 pub use eval::{evaluate, EvalError};
-pub use predicates::assignment_seed;
 pub use field::Q;
+pub use predicates::assignment_seed;
 pub use predicates::{
     is_linear_in, is_zero, recover_linear_coeffs, LinearCoeffs, PredicateError, SampleConfig,
     RANDOM_Q_SAMPLE_ABS_MAX,

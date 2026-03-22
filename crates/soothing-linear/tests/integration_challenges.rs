@@ -3,8 +3,8 @@
 
 use num_traits::Zero;
 use soothing_linear::{
-    evaluate, linear_elimination, Dag, DagBuilder, EliminationError, PolynomialSystem, Q,
-    SampleConfig, VarId,
+    evaluate, linear_elimination, Dag, DagBuilder, EliminationError, PolynomialSystem,
+    SampleConfig, VarId, Q,
 };
 use std::collections::HashMap;
 

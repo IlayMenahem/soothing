@@ -33,9 +33,8 @@ pub fn linear_elimination(
         .map(|&r| b.merge_root(&system.dag, r))
         .collect();
     let mut subst = SubstitutionMap::new();
-    let mut remaining: BTreeSet<VarId> = collect_vars(&b.snapshot(), &eq_roots)
-        .into_iter()
-        .collect();
+    let mut remaining: BTreeSet<VarId> =
+        collect_vars(&b.snapshot(), &eq_roots).into_iter().collect();
 
     loop {
         let snap = b.snapshot();
@@ -93,9 +92,7 @@ pub fn linear_elimination(
                 Err(_) => true,
             }
         });
-        remaining = collect_vars(&b.snapshot(), &eq_roots)
-            .into_iter()
-            .collect();
+        remaining = collect_vars(&b.snapshot(), &eq_roots).into_iter().collect();
     }
 
     let final_dag = b.snapshot();

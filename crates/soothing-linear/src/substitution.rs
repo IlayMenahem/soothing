@@ -115,11 +115,7 @@ fn dfs_deps_first(
     Ok(())
 }
 
-fn vars_in_subgraph(
-    dag: &Dag,
-    root: NodeId,
-    bound: &HashMap<VarId, NodeId>,
-) -> HashSet<VarId> {
+fn vars_in_subgraph(dag: &Dag, root: NodeId, bound: &HashMap<VarId, NodeId>) -> HashSet<VarId> {
     let mut out = HashSet::new();
     let mut stack = vec![root];
     let mut seen = HashSet::new();

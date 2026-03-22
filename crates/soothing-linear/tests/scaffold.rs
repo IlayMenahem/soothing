@@ -1,4 +1,4 @@
-use soothing_linear::{DagBuilder, PolynomialSystem, Q, VarId};
+use soothing_linear::{DagBuilder, PolynomialSystem, VarId, Q};
 
 #[test]
 fn crate_smoke_rational_system_and_dag() {

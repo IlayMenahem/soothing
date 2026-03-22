@@ -1,4 +1,4 @@
-use soothing_linear::{evaluate, simplify_once, Dag, DagBuilder, Q, VarId};
+use soothing_linear::{evaluate, simplify_once, Dag, DagBuilder, VarId, Q};
 use std::collections::HashMap;
 
 #[test]

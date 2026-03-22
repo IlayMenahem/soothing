@@ -1,4 +1,4 @@
-use soothing_linear::{DagBuilder, Q, SubstitutionMap, VarId};
+use soothing_linear::{DagBuilder, SubstitutionMap, VarId, Q};
 
 #[test]
 fn single_binding() {
@@ -51,8 +51,8 @@ fn cycle_rejected() {
 
 #[test]
 fn sampled_consistency() {
-    use soothing_linear::{assignment_seed, evaluate};
     use num_traits::Zero;
+    use soothing_linear::{assignment_seed, evaluate};
 
     let mut b = DagBuilder::new();
     let x = VarId(0);
