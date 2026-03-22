@@ -26,8 +26,9 @@
 //!
 //! ## Implementation assumptions (beyond the paper)
 //!
-//! - Sample counts and point selection for predicates are chosen by the caller via
-//!   [`predicates::SampleConfig`].
+//! - Sample counts, [`predicates::RANDOM_Q_SAMPLE_ABS_MAX`], and [`predicates::SampleConfig::random_seed`]
+//!   control predicate sampling; non-`x` variables are drawn uniformly at random (see [`predicates::is_zero`],
+//!   [`predicates::is_linear_in`]).
 //! - Elimination with recovered coefficients `a = 0` and `b \neq 0` is rejected as
 //!   [`elimination::EliminationError::IllegitimateElimination`].
 
@@ -47,6 +48,7 @@ pub use predicates::assignment_seed;
 pub use field::Q;
 pub use predicates::{
     is_linear_in, is_zero, recover_linear_coeffs, LinearCoeffs, PredicateError, SampleConfig,
+    RANDOM_Q_SAMPLE_ABS_MAX,
 };
 pub use simplify::simplify_once;
 pub use substitution::SubstitutionMap;
