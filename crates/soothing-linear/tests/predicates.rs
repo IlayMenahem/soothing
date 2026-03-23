@@ -241,8 +241,8 @@ fn is_linear_multiple_nonlinear_sources() {
 }
 
 // ── Small leading nonlinear term (cf. test_is_linear_numerical_false_positive) ──
-// Exact `Q` arithmetic avoids float false negatives; several Python cases reduce to the
-// same rational DAG (e.g. ε x^2 + x for ε = 10^-9).
+// Predicate sampling uses `f64`; collinearity tolerances are tight enough that ε x^2 + x shapes
+// still fail when ε·x^2 is representable next to the linear term (avoid pairing 10^-9 with 10^6·x).
 
 #[test]
 fn is_linear_epsilon_quadratic_exact_rationals_not_linear() {
@@ -260,7 +260,8 @@ fn is_linear_epsilon_quadratic_negative_leading_coeff() {
 
 #[test]
 fn is_linear_large_linear_small_quadratic_still_detected() {
-    let (d, r) = parse("v0^2 / 1000000000 + 1000000 * v0");
+    // With `1e6 * v0`, `v0^2/1e9` is below `f64` ULP next to the linear term (predicate sees affine).
+    let (d, r) = parse("v0^2 / 1000000000 + 1000 * v0");
     let cfg = cfg_robust();
     assert!(!is_linear_in(&d, r, VarId(0), &[], &cfg).unwrap());
 }

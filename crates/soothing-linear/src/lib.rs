@@ -26,11 +26,12 @@
 //!
 //! ## Implementation assumptions (beyond the paper)
 //!
-//! - Sample counts, [`predicates::RANDOM_SAMPLE_ABS_MAX`], and [`predicates::SampleConfig::random_seed`]
-//!   control predicate sampling; non-`x` variables are drawn uniformly as `f64` (see [`predicates::is_zero`],
-//!   [`predicates::is_linear_in`]).
+//! - Sample counts, [`predicates::RANDOM_SAMPLE_ABS_MAX`], [`predicates::LINEARITY_X_SAMPLE_LOW`]
+//!   / [`predicates::LINEARITY_X_SAMPLE_HIGH`], and [`predicates::SampleConfig::random_seed`] control
+//!   predicate sampling (aligned with `soothing/system_substitution.py` ranges).
 //! - Elimination with recovered coefficients `a = 0` and `b \neq 0` is rejected as
-//!   [`elimination::EliminationError::IllegitimateElimination`].
+//!   [`elimination::EliminationError::IllegitimateElimination`]; a substitution RHS that never yields a
+//!   finite float at random samples is [`elimination::EliminationError::DegenerateSubstitution`].
 
 pub mod dag;
 mod dag_parse;
@@ -53,8 +54,9 @@ pub use eval::{evaluate, evaluate_f64, EvalError};
 pub use field::Q;
 pub use predicates::assignment_seed;
 pub use predicates::{
-    is_linear_in, is_zero, recover_linear_coeffs, LinearCoeffs, PredicateError, SampleConfig,
-    RANDOM_Q_SAMPLE_ABS_MAX, RANDOM_SAMPLE_ABS_MAX,
+    expr_finite_at_some_random_sample, is_linear_in, is_zero, recover_linear_coeffs, LinearCoeffs,
+    PredicateError, SampleConfig, LINEARITY_X_SAMPLE_HIGH, LINEARITY_X_SAMPLE_LOW,
+    RANDOM_Q_SAMPLE_ABS_MAX, RANDOM_SAMPLE_ABS_MAX, SUBSTITUTION_NUMERIC_CHECK_SAMPLES,
 };
 pub use simplify::simplify_once;
 pub use substitution::SubstitutionMap;

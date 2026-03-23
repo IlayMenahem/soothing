@@ -5,7 +5,7 @@
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
-use crate::predicates::{is_linear_in, is_zero, SampleConfig};
+use crate::predicates::{expr_finite_at_some_random_sample, is_linear_in, is_zero, SampleConfig};
 use crate::substitution::SubstitutionMap;
 use crate::system::PolynomialSystem;
 use std::collections::{BTreeSet, HashSet};
@@ -15,6 +15,8 @@ use thiserror::Error;
 pub enum EliminationError {
     #[error("illegitimate elimination: a=0 and b≠0 for variable {var:?}")]
     IllegitimateElimination { var: VarId },
+    #[error("degenerate substitution: RHS never evaluates to a finite float at random samples (variable {var:?})")]
+    DegenerateSubstitution { var: VarId },
     #[error(transparent)]
     Predicate(#[from] crate::predicates::PredicateError),
 }
@@ -78,7 +80,8 @@ pub fn linear_elimination(
 /// result with fewer remaining equations, breaking ties by more distinct variables in the residual.
 ///
 /// If some branch eliminates all equations, that result is returned immediately. Pairs that would
-/// be [`EliminationError::IllegitimateElimination`] are skipped (other branches are still tried).
+/// be [`EliminationError::IllegitimateElimination`] or [`EliminationError::DegenerateSubstitution`]
+/// are skipped (other branches are still tried).
 pub fn dfs_linear_elimination(
     system: PolynomialSystem,
     cfg: &SampleConfig,
@@ -137,7 +140,8 @@ fn dfs_linear_elimination_inner(
             cfg,
         ) {
             Ok(()) => {}
-            Err(EliminationError::IllegitimateElimination { .. }) => continue,
+            Err(EliminationError::IllegitimateElimination { .. })
+            | Err(EliminationError::DegenerateSubstitution { .. }) => continue,
             Err(e) => return Err(e),
         }
 
@@ -153,8 +157,8 @@ fn dfs_linear_elimination_inner(
     Ok(best)
 }
 
-/// Candidates where `is_linear_in` is true. Pairs for which the sampling predicate errors (e.g.
-/// division by zero on a sample) are omitted so enumeration stays robust when probing every
+/// Candidates where `is_linear_in` is true. Pairs for which the sampling predicate hard-errors
+/// (e.g. missing variable) are omitted so enumeration stays robust when probing every
 /// `(equation, variable)` — unlike greedy elimination, which stops at the first success per step.
 fn collect_linear_pairs(
     dag: &Dag,
@@ -213,7 +217,36 @@ fn apply_one_elimination(
     if is_zero(&snap2, den, &free, cfg)? && !is_zero(&snap2, p0, &free, cfg)? {
         return Err(EliminationError::IllegitimateElimination { var: x });
     }
+    // `a ≡ 0` and `b ≡ 0` (paper: discard the equation; no `x ↦ 0/0`).
+    if is_zero(&snap2, p0, &free, cfg)? && is_zero(&snap2, den, &free, cfg)? {
+        let mut new_eqs = Vec::with_capacity(eq_roots.len().saturating_sub(1));
+        for (j, &er) in eq_roots.iter().enumerate() {
+            if j != i {
+                new_eqs.push(er);
+            }
+        }
+        *eq_roots = new_eqs;
+        let snap_taut = b.snapshot();
+        eq_roots.retain(|&r| {
+            let vs: Vec<VarId> = collect_vars(&snap_taut, std::slice::from_ref(&r))
+                .into_iter()
+                .collect();
+            match is_zero(&snap_taut, r, &vs, cfg) {
+                Ok(true) => false,
+                Ok(false) => true,
+                Err(_) => true,
+            }
+        });
+        return Ok(());
+    }
+
     let x_sol = b.div(p0, den);
+
+    let snap_check = b.snapshot();
+    let x_sol_vars: Vec<VarId> = snap_check.vars_in_root(x_sol);
+    if !expr_finite_at_some_random_sample(&snap_check, x_sol, &x_sol_vars, cfg) {
+        return Err(EliminationError::DegenerateSubstitution { var: x });
+    }
 
     let snap3 = b.snapshot();
     subst.insert(x, &snap3, x_sol);
