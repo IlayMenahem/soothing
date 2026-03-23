@@ -68,7 +68,27 @@ pub(crate) fn parse_rational_expression(s: &str) -> Result<(Dag, NodeId), DagPar
     let mut builder = DagBuilder::new();
     let mut name_to_var = HashMap::new();
     let mut next_free = 0u32;
-    let root = lower_expr(&ret, &mut builder, &mut name_to_var, &mut next_free)?;
+    let root = lower_expr_allocating(&ret, &mut builder, &mut name_to_var, &mut next_free)?;
+    Ok((builder.build(), root))
+}
+
+/// Parse using a fixed variable name → [`VarId`] map (no fresh ids). Unknown identifiers error.
+pub fn parse_rational_expression_with_var_map(
+    s: &str,
+    var_map: &HashMap<String, VarId>,
+) -> Result<(Dag, NodeId), DagParseError> {
+    let block = RationalGrammar::parse_statements(s).map_err(|e| map_ap_error(s, e))?;
+    if !block.statements.is_empty() {
+        return Err(DagParseError::Unsupported {
+            reason: "only one expression is allowed (no semicolons or assignments)",
+            pos: 0,
+        });
+    }
+    let Some(ret) = block.return_value else {
+        return Err(DagParseError::UnexpectedEof);
+    };
+    let mut builder = DagBuilder::new();
+    let root = lower_expr_fixed_map(&ret, &mut builder, var_map)?;
     Ok((builder.build(), root))
 }
 
@@ -132,7 +152,7 @@ fn var_for_ident(
     Ok(id)
 }
 
-fn lower_expr(
+fn lower_expr_allocating(
     sp: &SpannedExpr<'_, Untyped<RationalGrammar>>,
     b: &mut DagBuilder,
     name_to_var: &mut HashMap<String, VarId>,
@@ -142,13 +162,13 @@ fn lower_expr(
     match &sp.extra {
         Expr::Literal(q) => Ok(b.constant(*q)),
         Expr::Variable => {
-            let name = sp.fragment();
+            let name: &str = *sp.fragment();
             let v = var_for_ident(name, name_to_var, next_free)?;
             Ok(b.variable(v))
         }
         Expr::Unary { op, inner } => match op.extra {
             UnaryOp::Neg => {
-                let x = lower_expr(inner, b, name_to_var, next_free)?;
+                let x = lower_expr_allocating(inner, b, name_to_var, next_free)?;
                 Ok(b.neg(x))
             }
             UnaryOp::Not => Err(DagParseError::Unsupported {
@@ -161,8 +181,74 @@ fn lower_expr(
             }),
         },
         Expr::Binary { lhs, op, rhs } => {
-            let l = lower_expr(lhs, b, name_to_var, next_free)?;
-            let r = lower_expr(rhs, b, name_to_var, next_free)?;
+            let l = lower_expr_allocating(lhs, b, name_to_var, next_free)?;
+            let r = lower_expr_allocating(rhs, b, name_to_var, next_free)?;
+            match op.extra {
+                BinaryOp::Add => Ok(b.add(vec![l, r])),
+                BinaryOp::Sub => {
+                    let nr = b.neg(r);
+                    Ok(b.add(vec![l, nr]))
+                }
+                BinaryOp::Mul => Ok(b.mul(vec![l, r])),
+                BinaryOp::Div => Ok(b.div(l, r)),
+                BinaryOp::Power => Ok(b.pow(l, r)),
+                _ => Err(DagParseError::Unsupported {
+                    reason: "only arithmetic operators are supported",
+                    pos: op.location_offset(),
+                }),
+            }
+        }
+        Expr::Function { .. }
+        | Expr::Method { .. }
+        | Expr::FieldAccess { .. }
+        | Expr::Tuple(_)
+        | Expr::Block(_)
+        | Expr::Object(_)
+        | Expr::FnDefinition(_)
+        | Expr::TypeCast { .. } => Err(DagParseError::Unsupported {
+            reason: "only literals, variables, and arithmetic operations are supported",
+            pos,
+        }),
+        _ => Err(DagParseError::Unsupported {
+            reason: "unsupported expression form",
+            pos,
+        }),
+    }
+}
+
+fn lower_expr_fixed_map(
+    sp: &SpannedExpr<'_, Untyped<RationalGrammar>>,
+    b: &mut DagBuilder,
+    var_map: &HashMap<String, VarId>,
+) -> Result<NodeId, DagParseError> {
+    let pos = sp.location_offset();
+    match &sp.extra {
+        Expr::Literal(q) => Ok(b.constant(*q)),
+        Expr::Variable => {
+            let name: &str = *sp.fragment();
+            let v = var_map.get(name).copied().ok_or_else(|| DagParseError::UnknownVariable {
+                name: name.to_string(),
+                pos,
+            })?;
+            Ok(b.variable(v))
+        }
+        Expr::Unary { op, inner } => match op.extra {
+            UnaryOp::Neg => {
+                let x = lower_expr_fixed_map(inner, b, var_map)?;
+                Ok(b.neg(x))
+            }
+            UnaryOp::Not => Err(DagParseError::Unsupported {
+                reason: "logical negation is not part of the polynomial fragment",
+                pos,
+            }),
+            _ => Err(DagParseError::Unsupported {
+                reason: "unsupported unary operator",
+                pos,
+            }),
+        },
+        Expr::Binary { lhs, op, rhs } => {
+            let l = lower_expr_fixed_map(lhs, b, var_map)?;
+            let r = lower_expr_fixed_map(rhs, b, var_map)?;
             match op.extra {
                 BinaryOp::Add => Ok(b.add(vec![l, r])),
                 BinaryOp::Sub => {

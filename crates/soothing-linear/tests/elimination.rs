@@ -1,4 +1,7 @@
-use soothing_linear::{linear_elimination, DagBuilder, PolynomialSystem, SampleConfig, VarId, Q};
+use soothing_linear::{
+    dfs_linear_elimination, linear_elimination, DagBuilder, PolynomialSystem, SampleConfig, VarId,
+    Q,
+};
 
 #[test]
 fn single_step() {
@@ -53,4 +56,31 @@ fn end_to_end() {
     let sys = PolynomialSystem::new(b.build(), vec![e]);
     let r = linear_elimination(sys, &SampleConfig::default()).unwrap();
     assert!(r.substitution.len() >= 1);
+}
+
+#[test]
+fn dfs_removes_zero_equations() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let vx = b.variable(x);
+    let nx = b.neg(vx);
+    let z = b.add(vec![vx, nx]);
+    let sys = PolynomialSystem::new(b.build(), vec![z]);
+    let r = dfs_linear_elimination(sys, &SampleConfig::default()).unwrap();
+    assert!(r.system.equations.is_empty());
+}
+
+#[test]
+fn dfs_not_worse_than_greedy_on_single_linear() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let y = VarId(1);
+    let vx = b.variable(x);
+    let vy = b.variable(y);
+    let e = b.add(vec![vx, vy]);
+    let sys = PolynomialSystem::new(b.build(), vec![e]);
+    let cfg = SampleConfig::default();
+    let g = linear_elimination(sys.clone(), &cfg).unwrap();
+    let d = dfs_linear_elimination(sys, &cfg).unwrap();
+    assert!(d.system.equations.len() <= g.system.equations.len());
 }

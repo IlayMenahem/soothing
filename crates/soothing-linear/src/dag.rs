@@ -174,6 +174,15 @@ impl Dag {
     pub fn from_rational_string(s: &str) -> Result<(Dag, NodeId), DagParseError> {
         crate::dag_parse::parse_rational_expression(s)
     }
+
+    /// Like [`from_rational_string`](Self::from_rational_string), but every identifier must appear in
+    /// `var_map` (including `v0`-style names if used).
+    pub fn from_rational_string_with_var_map(
+        s: &str,
+        var_map: &std::collections::HashMap<String, VarId>,
+    ) -> Result<(Dag, NodeId), DagParseError> {
+        crate::dag_parse::parse_rational_expression_with_var_map(s, var_map)
+    }
 }
 
 /// Error from [`Dag::from_rational_string`].
@@ -191,6 +200,8 @@ pub enum DagParseError {
     TrailingInput { pos: usize },
     #[error("unsupported expression at byte {pos}: {reason}")]
     Unsupported { reason: &'static str, pos: usize },
+    #[error("unknown variable {name:?} at byte {pos}")]
+    UnknownVariable { name: String, pos: usize },
 }
 
 /// Builds [`Dag`] expressions and interns identical subexpressions when possible.
