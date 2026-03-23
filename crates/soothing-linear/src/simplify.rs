@@ -1,4 +1,4 @@
-//! Local simplifications from the paper appendix (subset implemented in v1).
+//! Local algebraic simplifications on DAG nodes (single pass).
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero, Q};

@@ -1,4 +1,4 @@
-//! DAG representation of polynomial expressions (paper: unexpanded graph form).
+//! DAG representation of polynomial expressions (shared subexpressions, unexpanded form).
 
 use crate::field::Q;
 use std::collections::{BTreeSet, HashMap, HashSet};

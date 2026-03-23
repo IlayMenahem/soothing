@@ -1,7 +1,4 @@
-//! Iterative linear elimination (paper Algorithm “Linear elimination by substitution”).
-//!
-//! [`dfs_linear_elimination`] implements Appendix Algorithm “DFS search for a linear elimination
-//! order”.
+//! Iterative linear elimination by substitution; [`dfs_linear_elimination`] searches elimination orders.
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
@@ -21,16 +18,19 @@ pub enum EliminationError {
     Predicate(#[from] crate::predicates::PredicateError),
 }
 
+/// Residual polynomial system and substitution map produced by elimination.
 pub struct EliminationResult {
-    pub system: PolynomialSystem,
+    /// Equations remaining after elimination.
+    pub reduced_system: PolynomialSystem,
+    /// Map from eliminated variables to defining expressions.
     pub substitution: SubstitutionMap,
 }
 
 /// Run linear elimination until no equation is linear in any remaining variable.
 ///
-/// This is a greedy depth-first walk: at each step the first linear pair `(equation, variable)` in
-/// deterministic order is chosen. For exploration of all branches, see [`dfs_linear_elimination`].
-pub fn linear_elimination(
+/// At each step the **first** linear pair `(equation, variable)` in a fixed deterministic order is
+/// chosen (greedy). For search over orders, see [`dfs_linear_elimination`].
+pub fn linear_elimination_greedy(
     system: PolynomialSystem,
     cfg: &SampleConfig,
 ) -> Result<EliminationResult, EliminationError> {
@@ -48,7 +48,7 @@ pub fn linear_elimination(
         let snap = b.snapshot();
         let mut choice: Option<(VarId, usize)> = None;
         'search: for &x in &remaining {
-            let others: Vec<VarId> = remaining.iter().filter(|&&v| v != x).copied().collect();
+            let others = other_vars(&remaining, x);
             for (i, &eq) in eq_roots.iter().enumerate() {
                 match is_linear_in(&snap, eq, x, &others, cfg) {
                     Ok(true) => {
@@ -70,18 +70,22 @@ pub fn linear_elimination(
 
     let final_dag = b.snapshot();
     Ok(EliminationResult {
-        system: PolynomialSystem::new(final_dag, eq_roots),
+        reduced_system: PolynomialSystem::new(final_dag, eq_roots),
         substitution: subst,
     })
 }
 
-/// DFS over linear elimination choices (paper Appendix: “DFS search for a linear elimination
-/// order”). Explores every `(equation, variable)` pair that is linear at each step; prefers a
-/// result with fewer remaining equations, breaking ties by more distinct variables in the residual.
+/// Depth-first search over linear elimination choices: at each step, try every `(equation, variable)`
+/// pair that is linear; prefer fewer remaining equations.
 ///
-/// If some branch eliminates all equations, that result is returned immediately. Pairs that would
-/// be [`EliminationError::IllegitimateElimination`] or [`EliminationError::DegenerateSubstitution`]
-/// are skipped (other branches are still tried).
+/// **Tie-break:** same equation count → prefer more **distinct variables** appearing in the union
+/// of residual equation DAGs (not Jacobian rank or affine dimension).
+///
+/// **Early exit:** if any branch clears all equations, return that result immediately without trying
+/// further siblings at the same level.
+///
+/// Pairs that would be [`EliminationError::IllegitimateElimination`] or
+/// [`EliminationError::DegenerateSubstitution`] are skipped (other branches are still tried).
 pub fn dfs_linear_elimination(
     system: PolynomialSystem,
     cfg: &SampleConfig,
@@ -105,7 +109,7 @@ fn dfs_linear_elimination_inner(
     let snap = b.snapshot();
     if eq_roots.is_empty() {
         return Ok(EliminationResult {
-            system: PolynomialSystem::new(snap, eq_roots),
+            reduced_system: PolynomialSystem::new(snap, eq_roots),
             substitution: subst,
         });
     }
@@ -114,13 +118,13 @@ fn dfs_linear_elimination_inner(
     let pairs = collect_linear_pairs(&snap, &eq_roots, &remaining, cfg);
     if pairs.is_empty() {
         return Ok(EliminationResult {
-            system: PolynomialSystem::new(snap, eq_roots),
+            reduced_system: PolynomialSystem::new(snap, eq_roots),
             substitution: subst,
         });
     }
 
     let mut best = EliminationResult {
-        system: PolynomialSystem::new(snap, eq_roots.clone()),
+        reduced_system: PolynomialSystem::new(snap, eq_roots.clone()),
         substitution: subst.clone(),
     };
 
@@ -146,7 +150,7 @@ fn dfs_linear_elimination_inner(
         }
 
         let r = dfs_linear_elimination_inner(b_branch, eq_branch, subst_branch, cfg)?;
-        if r.system.equations.is_empty() {
+        if r.reduced_system.equations.is_empty() {
             return Ok(r);
         }
         if is_better_elimination(&r, &best) {
@@ -168,7 +172,7 @@ fn collect_linear_pairs(
 ) -> Vec<(VarId, usize)> {
     let mut out = Vec::new();
     for &x in remaining {
-        let others: Vec<VarId> = remaining.iter().filter(|&&v| v != x).copied().collect();
+        let others = other_vars(remaining, x);
         for (i, &eq) in eq_roots.iter().enumerate() {
             match is_linear_in(dag, eq, x, &others, cfg) {
                 Ok(true) => out.push((x, i)),
@@ -180,7 +184,9 @@ fn collect_linear_pairs(
     out
 }
 
-fn free_var_count(system: &PolynomialSystem) -> usize {
+/// Count of distinct variables that appear in **any** residual equation (union of subgraph vars).
+/// Used only as a DFS tie-break; not Jacobian rank or Hilbert dimension.
+fn distinct_var_count_across_equations(system: &PolynomialSystem) -> usize {
     let mut seen = HashSet::new();
     for &r in &system.equations {
         seen.extend(collect_vars(&system.dag, std::slice::from_ref(&r)));
@@ -189,12 +195,32 @@ fn free_var_count(system: &PolynomialSystem) -> usize {
 }
 
 fn is_better_elimination(a: &EliminationResult, b: &EliminationResult) -> bool {
-    let na = a.system.equations.len();
-    let nb = b.system.equations.len();
+    let na = a.reduced_system.equations.len();
+    let nb = b.reduced_system.equations.len();
     if na != nb {
         return na < nb;
     }
-    free_var_count(&a.system) > free_var_count(&b.system)
+    distinct_var_count_across_equations(&a.reduced_system)
+        > distinct_var_count_across_equations(&b.reduced_system)
+}
+
+fn other_vars(remaining: &BTreeSet<VarId>, x: VarId) -> Vec<VarId> {
+    remaining.iter().filter(|&&v| v != x).copied().collect()
+}
+
+/// Drop equations that the sampling predicate classifies as identically zero. On predicate error,
+/// keep the equation.
+fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleConfig) {
+    eq_roots.retain(|&r| {
+        let vs: Vec<VarId> = collect_vars(dag, std::slice::from_ref(&r))
+            .into_iter()
+            .collect();
+        match is_zero(dag, r, &vs, cfg) {
+            Ok(true) => false,
+            Ok(false) => true,
+            Err(_) => true,
+        }
+    });
 }
 
 fn apply_one_elimination(
@@ -213,11 +239,11 @@ fn apply_one_elimination(
     let neg_p1 = b.neg(p1);
     let den = b.add(vec![p0, neg_p1]);
     let snap2 = b.snapshot();
-    let free: Vec<VarId> = remaining.iter().filter(|&&v| v != x).copied().collect();
+    let free = other_vars(remaining, x);
     if is_zero(&snap2, den, &free, cfg)? && !is_zero(&snap2, p0, &free, cfg)? {
         return Err(EliminationError::IllegitimateElimination { var: x });
     }
-    // `a ≡ 0` and `b ≡ 0` (paper: discard the equation; no `x ↦ 0/0`).
+    // Both linear coefficients vanish: drop the equation (no solvable x).
     if is_zero(&snap2, p0, &free, cfg)? && is_zero(&snap2, den, &free, cfg)? {
         let mut new_eqs = Vec::with_capacity(eq_roots.len().saturating_sub(1));
         for (j, &er) in eq_roots.iter().enumerate() {
@@ -227,16 +253,7 @@ fn apply_one_elimination(
         }
         *eq_roots = new_eqs;
         let snap_taut = b.snapshot();
-        eq_roots.retain(|&r| {
-            let vs: Vec<VarId> = collect_vars(&snap_taut, std::slice::from_ref(&r))
-                .into_iter()
-                .collect();
-            match is_zero(&snap_taut, r, &vs, cfg) {
-                Ok(true) => false,
-                Ok(false) => true,
-                Err(_) => true,
-            }
-        });
+        retain_nonzero_equations(&snap_taut, eq_roots, cfg);
         return Ok(());
     }
 
@@ -261,16 +278,7 @@ fn apply_one_elimination(
     *eq_roots = new_eqs;
 
     let snap4 = b.snapshot();
-    eq_roots.retain(|&r| {
-        let vs: Vec<VarId> = collect_vars(&snap4, std::slice::from_ref(&r))
-            .into_iter()
-            .collect();
-        match is_zero(&snap4, r, &vs, cfg) {
-            Ok(true) => false,
-            Ok(false) => true,
-            Err(_) => true,
-        }
-    });
+    retain_nonzero_equations(&snap4, eq_roots, cfg);
     Ok(())
 }
 

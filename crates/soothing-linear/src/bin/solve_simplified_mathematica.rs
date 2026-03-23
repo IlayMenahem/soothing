@@ -54,10 +54,12 @@ fn main() {
     println!(
         "DFS linear elimination: {} substitution(s), {} remaining equation(s), {:?}",
         res.substitution.len(),
-        res.system.equations.len(),
+        res.reduced_system.equations.len(),
         elapsed
     );
-    if !res.system.equations.is_empty() {
+    if !res.reduced_system.equations.is_empty() {
         println!("Note: residual is non-empty (expected for highly nonlinear systems).");
     }
+
+    println!("Solution: {:?}", res.substitution);
 }

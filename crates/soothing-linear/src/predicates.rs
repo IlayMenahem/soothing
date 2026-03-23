@@ -1,4 +1,4 @@
-//! Sampling-based “is zero” and “is linear in `x`” predicates (paper).
+//! Sampling-based “is zero” and “is linear in `x`” predicates on DAG expressions.
 
 use crate::dag::{Dag, NodeId, VarId};
 use crate::eval::{evaluate, evaluate_f64, EvalError};
@@ -9,7 +9,7 @@ use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
 use thiserror::Error;
 
-/// How many samples to use for predicate checks (paper leaves this to implementation).
+/// How many samples to use for predicate checks.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SampleConfig {
     /// Number of full assignments for the zero test.
@@ -41,9 +41,6 @@ pub const RANDOM_SAMPLE_ABS_MAX: f64 = 2.0;
 /// Endpoints for the sweep of the linearity-test variable (matches Python `_VAR_RANGE`).
 pub const LINEARITY_X_SAMPLE_LOW: f64 = -10.0;
 pub const LINEARITY_X_SAMPLE_HIGH: f64 = 10.0;
-
-/// Predicate sampling uses [`RANDOM_SAMPLE_ABS_MAX`] (float). Kept as an `i64` alias for older call sites.
-pub const RANDOM_Q_SAMPLE_ABS_MAX: i64 = RANDOM_SAMPLE_ABS_MAX as i64;
 
 /// Samples for numeric finiteness check on a substitution RHS (like ruling out SymPy `nan`/`zoo`).
 pub const SUBSTITUTION_NUMERIC_CHECK_SAMPLES: usize = 8;

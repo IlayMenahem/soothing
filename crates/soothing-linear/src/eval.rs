@@ -1,4 +1,7 @@
-//! Topological evaluation of a DAG (paper: evaluate nodes in topological order).
+//! Topological evaluation of a DAG (children before parents).
+//!
+//! Node kinds: constant, variable, add, mul, neg, and also **`Div`** and **`Pow`** for rational
+//! expressions and integer powers.
 
 use crate::dag::{Dag, Node, NodeId, VarId};
 use crate::field::Q;

@@ -6,7 +6,7 @@
 //! `cargo run -p soothing-linear --bin dfs_demo`
 
 use soothing_linear::{
-    dfs_linear_elimination, linear_elimination, simplify_once, Dag, DagBuilder, NodeId,
+    dfs_linear_elimination, linear_elimination_greedy, simplify_once, Dag, DagBuilder, NodeId,
     PolynomialSystem, SampleConfig, SubstitutionMap, VarId,
 };
 
@@ -69,7 +69,7 @@ fn run_three_equation_demo(cfg: &SampleConfig) {
     println!("  x*y + z = 0");
     println!();
 
-    let greedy = linear_elimination(sys.clone(), cfg).unwrap_or_else(|e| {
+    let greedy = linear_elimination_greedy(sys.clone(), cfg).unwrap_or_else(|e| {
         eprintln!("greedy elimination failed: {e}");
         std::process::exit(1);
     });
@@ -81,7 +81,7 @@ fn run_three_equation_demo(cfg: &SampleConfig) {
     println!(
         "Greedy linear elimination:  {} substitution(s), {} remaining equation(s)",
         greedy.substitution.len(),
-        greedy.system.equations.len()
+        greedy.reduced_system.equations.len()
     );
     print_substitution_block("  bindings:", z, x, y, &greedy.substitution);
     println!();
@@ -89,11 +89,11 @@ fn run_three_equation_demo(cfg: &SampleConfig) {
     println!(
         "DFS linear elimination:     {} substitution(s), {} remaining equation(s)",
         dfs.substitution.len(),
-        dfs.system.equations.len()
+        dfs.reduced_system.equations.len()
     );
     print_substitution_block("  bindings:", z, x, y, &dfs.substitution);
 
-    if dfs.system.equations.len() < greedy.system.equations.len() {
+    if dfs.reduced_system.equations.len() < greedy.reduced_system.equations.len() {
         println!();
         println!("On this system, DFS left fewer residual equations than the greedy pass.");
     }
@@ -133,7 +133,7 @@ fn run_two_linear_equations_demo(cfg: &SampleConfig) {
     println!(
         "DFS result: {} substitution(s), {} remaining equation(s)",
         dfs.substitution.len(),
-        dfs.system.equations.len()
+        dfs.reduced_system.equations.len()
     );
     let dag = dfs.substitution.dag();
     let vn = |v: VarId| {

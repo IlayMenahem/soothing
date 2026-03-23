@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use soothing_linear::{
-    assignment_seed, evaluate, linear_elimination, simplify_once, Dag, DagBuilder, NodeId,
+    assignment_seed, evaluate, linear_elimination_greedy, simplify_once, Dag, DagBuilder, NodeId,
     PolynomialSystem, SampleConfig, VarId, Q,
 };
 
@@ -27,7 +27,7 @@ fn main() {
 
     // Three equations in x, y, z. One is nonlinear: monomial x*y (degree 2, two variables in one
     // monomial), affine in z. Two are linear.
-    // VarId order: z < x < y so elimination tries z first (see `linear_elimination`: BTreeSet over
+    // VarId order: z < x < y so elimination tries z first (see `linear_elimination_greedy`: BTreeSet over
     // VarId). Then z is removed from x + z - 1 with constant denominator before touching x*y + z.
     // Parser: `vN` is VarId(N); here v0=z, v1=x, v2=y.
     //   x + z - 1 = 0
@@ -61,7 +61,7 @@ fn main() {
     println!("  x*y + z = 0   (monomial x*y: degree 2, two variables)");
     println!("DAG nodes: {}\n", sys.dag.len());
 
-    let result = match linear_elimination(sys, &SampleConfig::default()) {
+    let result = match linear_elimination_greedy(sys, &SampleConfig::default()) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("elimination failed: {e}");
@@ -73,7 +73,7 @@ fn main() {
     println!(
         "After linear elimination: {} substitution(s), {} remaining equation root(s)",
         sub.len(),
-        result.system.equations.len()
+        result.reduced_system.equations.len()
     );
 
     let dag = sub.dag();
