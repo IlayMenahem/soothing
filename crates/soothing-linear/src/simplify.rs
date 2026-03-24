@@ -1,16 +1,58 @@
-//! Local algebraic simplifications on DAG nodes (single pass).
+//! Local algebraic simplifications on DAG nodes (bottom-up, memoized).
+//!
+//! Matches the appendix: [`Simplify`] with cache plus [`construct_*`] smart constructors
+//! in preference order (constant fold, flatten, identities, sign/fractions, affine/constants).
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero, Q};
 use num_traits::{One, Zero};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use thiserror::Error;
 
-/// Apply one pass of local rewrites: `-(-x)`, strip `+0`, `1·x`, `0·x`, affine `Add` folding,
-/// and `Div` of an affine form by a nonzero rational constant.
-pub fn simplify_once(builder: &mut DagBuilder, source: &Dag, root: NodeId) -> NodeId {
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum SimplifyError {
+    #[error("division by zero in constant fold")]
+    DivisionByZero,
+    #[error("non-integer exponent in constant power")]
+    NonIntegerExponent,
+    #[error("undefined power (e.g. 0 to a negative integer exponent)")]
+    UndefinedPower,
+}
+
+/// One bottom-up pass: copy `source` into `builder`, simplifying each shared subexpression once.
+pub fn simplify_once(
+    builder: &mut DagBuilder,
+    source: &Dag,
+    root: NodeId,
+) -> Result<NodeId, SimplifyError> {
     let mut memo = HashMap::new();
     simplify_dfs(builder, source, root, &mut memo)
+}
+
+fn try_const(b: &DagBuilder, id: NodeId) -> Option<Q> {
+    match b.node(id) {
+        Node::Const(c) => Some(*c),
+        _ => None,
+    }
+}
+
+fn flatten_add(b: &DagBuilder, ids: &[NodeId], out: &mut Vec<NodeId>) {
+    for &id in ids {
+        match b.node(id) {
+            Node::Add(cs) => flatten_add(b, cs, out),
+            _ => out.push(id),
+        }
+    }
+}
+
+fn flatten_mul(b: &DagBuilder, ids: &[NodeId], out: &mut Vec<NodeId>) {
+    for &id in ids {
+        match b.node(id) {
+            Node::Mul(cs) => flatten_mul(b, cs, out),
+            _ => out.push(id),
+        }
+    }
 }
 
 fn merge_coeff_maps(into: &mut BTreeMap<VarId, Q>, add: &BTreeMap<VarId, Q>) {
@@ -122,23 +164,222 @@ fn affine_div_by_const(
     affine_to_node(b, scaled, c)
 }
 
-fn simplify_dfs(
-    b: &mut DagBuilder,
-    source: &Dag,
-    id: NodeId,
-    memo: &mut HashMap<NodeId, NodeId>,
-) -> NodeId {
-    if let Some(&n) = memo.get(&id) {
-        return n;
+fn net_terms_after_neg_cancel(b: &DagBuilder, terms: &[NodeId]) -> HashMap<NodeId, i64> {
+    let mut m: HashMap<NodeId, i64> = HashMap::new();
+    for &t in terms {
+        if let Node::Neg(u) = b.node(t) {
+            *m.entry(*u).or_insert(0) -= 1;
+        } else {
+            *m.entry(t).or_insert(0) += 1;
+        }
     }
-    let mapped = match source.node(id) {
-        Node::Const(c) => b.constant(*c),
-        Node::Var(v) => b.variable(*v),
-        Node::Neg(x) => {
-            let y = simplify_dfs(b, source, *x, memo);
-            if let Node::Neg(inner) = b.node(y) {
-                *inner
-            } else if let Some((m, c)) = try_affine_linear(b, y) {
+    m
+}
+
+fn rebuild_add_terms(b: &mut DagBuilder, net: HashMap<NodeId, i64>) -> Vec<NodeId> {
+    let mut parts = Vec::new();
+    for (u, c) in net {
+        if c == 0 {
+            continue;
+        }
+        if c == 1 {
+            parts.push(u);
+        } else if c == -1 {
+            parts.push(b.neg(u));
+        } else {
+            let k = b.constant(Q::from_integer(c));
+            parts.push(b.mul(vec![k, u]));
+        }
+    }
+    parts
+}
+
+fn merge_const_summands(b: &mut DagBuilder, terms: Vec<NodeId>) -> Vec<NodeId> {
+    let mut csum = q_zero();
+    let mut out = Vec::new();
+    for t in terms {
+        if let Node::Const(c) = b.node(t) {
+            csum += *c;
+        } else {
+            out.push(t);
+        }
+    }
+    if !csum.is_zero() {
+        out.push(b.constant(csum));
+    }
+    out
+}
+
+/// Peel unary negation and negative rational constants; returns (core, parity flip).
+fn peel_sign_factor(b: &mut DagBuilder, mut id: NodeId) -> (NodeId, bool) {
+    let mut flip = false;
+    loop {
+        match b.node(id) {
+            Node::Neg(x) => {
+                flip ^= true;
+                id = *x;
+            }
+            Node::Const(c) => {
+                if c.is_zero() || *c == q_one() {
+                    return (id, flip);
+                }
+                if *c == -q_one() {
+                    flip ^= true;
+                    return (b.constant(q_one()), flip);
+                }
+                if *c < q_zero() {
+                    flip ^= true;
+                    return (b.constant(-*c), flip);
+                }
+                return (id, flip);
+            }
+            _ => return (id, flip),
+        }
+    }
+}
+
+fn rational_pow_i64(base: Q, exp: i64) -> Result<Q, SimplifyError> {
+    if exp >= i32::MIN as i64 && exp <= i32::MAX as i64 {
+        if exp < 0 && base.is_zero() {
+            return Err(SimplifyError::UndefinedPower);
+        }
+        return Ok(base.pow(exp as i32));
+    }
+    let mut acc = Q::one();
+    let mut b = base;
+    let mut e = exp.unsigned_abs();
+    let invert = exp < 0;
+    if invert {
+        if b.is_zero() {
+            return Err(SimplifyError::UndefinedPower);
+        }
+        b = Q::one() / b;
+    }
+    while e > 0 {
+        if e & 1 != 0 {
+            acc *= &b;
+        }
+        b = &b * &b;
+        e >>= 1;
+    }
+    Ok(acc)
+}
+
+fn fold_const_pow(base: Q, exp: Q) -> Result<Q, SimplifyError> {
+    if *exp.denom() != 1 {
+        return Err(SimplifyError::NonIntegerExponent);
+    }
+    rational_pow_i64(base, *exp.numer())
+}
+
+fn construct_add(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, SimplifyError> {
+    let mut flat = Vec::new();
+    flatten_add(b, &parts, &mut flat);
+
+    if flat.iter().all(|&id| matches!(b.node(id), Node::Const(_))) {
+        let s: Q = flat
+            .iter()
+            .map(|&id| match b.node(id) {
+                Node::Const(c) => *c,
+                _ => unreachable!(),
+            })
+            .sum();
+        return Ok(b.constant(s));
+    }
+
+    flat.retain(|&id| !matches!(b.node(id), Node::Const(c) if c.is_zero()));
+
+    let net = net_terms_after_neg_cancel(b, &flat);
+    let mut rebuilt = rebuild_add_terms(b, net);
+    rebuilt = merge_const_summands(b, rebuilt);
+
+    let out = match rebuilt.len() {
+        0 => return Ok(b.constant(q_zero())),
+        1 => return Ok(rebuilt[0]),
+        _ => rebuilt,
+    };
+
+    if let Some((coeffs, ct)) = try_affine_sum_parts(b, &out) {
+        return Ok(affine_to_node(b, coeffs, ct));
+    }
+
+    Ok(b.add(out))
+}
+
+fn construct_mul(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, SimplifyError> {
+    let mut flat = Vec::new();
+    flatten_mul(b, &parts, &mut flat);
+
+    if flat.iter().all(|&id| matches!(b.node(id), Node::Const(_))) {
+        let mut p = q_one();
+        for &id in &flat {
+            match b.node(id) {
+                Node::Const(c) => p *= *c,
+                _ => unreachable!(),
+            }
+        }
+        return Ok(b.constant(p));
+    }
+
+    if flat
+        .iter()
+        .any(|&id| matches!(b.node(id), Node::Const(c) if c.is_zero()))
+    {
+        return Ok(b.constant(q_zero()));
+    }
+
+    flat.retain(|&id| !matches!(b.node(id), Node::Const(c) if *c == q_one()));
+
+    let mut nums = Vec::new();
+    let mut dens = Vec::new();
+    let mut plain = Vec::new();
+    for &f in &flat {
+        match b.node(f) {
+            Node::Div(n, d) => {
+                nums.push(*n);
+                dens.push(*d);
+            }
+            _ => plain.push(f),
+        }
+    }
+
+    if !dens.is_empty() {
+        nums.extend(plain);
+        let n = construct_mul(b, nums)?;
+        let d = construct_mul(b, dens)?;
+        return construct_div(b, n, d);
+    }
+
+    let mut flip = false;
+    let mut cores = Vec::new();
+    for f in flat {
+        let (core, flp) = peel_sign_factor(b, f);
+        flip ^= flp;
+        if matches!(b.node(core), Node::Const(c) if *c == q_one()) {
+            continue;
+        }
+        cores.push(core);
+    }
+
+    cores.retain(|&id| !matches!(b.node(id), Node::Const(c) if *c == q_one()));
+
+    let mut r = match cores.len() {
+        0 => b.constant(q_one()),
+        1 => cores[0],
+        _ => b.mul(cores),
+    };
+    if flip {
+        r = b.neg(r);
+    }
+    Ok(r)
+}
+
+fn construct_neg(b: &mut DagBuilder, x: NodeId) -> Result<NodeId, SimplifyError> {
+    match b.node(x) {
+        Node::Const(c) => Ok(b.constant(-*c)),
+        Node::Neg(y) => Ok(*y),
+        _ => {
+            if let Some((m, c)) = try_affine_linear(b, x) {
                 let mut nm = BTreeMap::new();
                 for (k, v) in m {
                     let nv = -v;
@@ -146,88 +387,154 @@ fn simplify_dfs(
                         nm.insert(k, nv);
                     }
                 }
-                affine_to_node(b, nm, -c)
-            } else {
-                b.neg(y)
+                return Ok(affine_to_node(b, nm, -c));
             }
+            Ok(b.neg(x))
+        }
+    }
+}
+
+fn apply_div_sign(b: &mut DagBuilder, id: NodeId, flip: bool) -> NodeId {
+    if flip {
+        b.neg(id)
+    } else {
+        id
+    }
+}
+
+fn construct_div(b: &mut DagBuilder, nn: NodeId, dd: NodeId) -> Result<NodeId, SimplifyError> {
+    if let (Some(nc), Some(dc)) = (try_const(b, nn), try_const(b, dd)) {
+        if dc.is_zero() {
+            return Err(SimplifyError::DivisionByZero);
+        }
+        return Ok(b.constant(nc / dc));
+    }
+
+    if let Some(nc) = try_const(b, nn) {
+        if nc.is_zero() {
+            if let Some(dc) = try_const(b, dd) {
+                if dc.is_zero() {
+                    return Err(SimplifyError::DivisionByZero);
+                }
+                return Ok(b.constant(q_zero()));
+            }
+        }
+    }
+
+    if let Some(dc) = try_const(b, dd) {
+        if dc == q_one() {
+            return Ok(nn);
+        }
+    }
+
+    let (nn2, sn) = peel_sign_factor(b, nn);
+    let (dd2, sd) = peel_sign_factor(b, dd);
+    let sign_flip = sn ^ sd;
+    let nn = nn2;
+    let dd = dd2;
+
+    let nested_fracs = match (b.node(nn), b.node(dd)) {
+        (Node::Div(a, bn), Node::Div(c, dn)) => Some((*a, *bn, *c, *dn)),
+        _ => None,
+    };
+    if let Some((a, bn, c, dn)) = nested_fracs {
+        let num = construct_mul(b, vec![a, dn])?;
+        let den = construct_mul(b, vec![bn, c])?;
+        let r = construct_div(b, num, den)?;
+        return Ok(apply_div_sign(b, r, sign_flip));
+    }
+
+    if let (Some((an, cn)), Some((ad, cd))) = (try_affine_linear(b, nn), try_affine_linear(b, dd))
+    {
+        if ad.is_empty() && !cd.is_zero() {
+            let r = affine_div_by_const(b, an, cn, cd);
+            return Ok(apply_div_sign(b, r, sign_flip));
+        }
+    }
+
+    let r = b.div(nn, dd);
+    Ok(apply_div_sign(b, r, sign_flip))
+}
+
+fn construct_pow(b: &mut DagBuilder, base: NodeId, exp: NodeId) -> Result<NodeId, SimplifyError> {
+    if let (Some(bc), Some(ec)) = (try_const(b, base), try_const(b, exp)) {
+        return Ok(b.constant(fold_const_pow(bc, ec)?));
+    }
+
+    if let Some(bc) = try_const(b, base) {
+        if bc.is_zero() {
+            if let Some(ec) = try_const(b, exp) {
+                if *ec.denom() == 1 {
+                    let n = *ec.numer();
+                    if n > 0 {
+                        return Ok(b.constant(q_zero()));
+                    }
+                }
+            }
+        }
+        if bc == q_one() {
+            return Ok(b.constant(q_one()));
+        }
+    }
+
+    if let Some(ec) = try_const(b, exp) {
+        if ec == q_one() {
+            return Ok(base);
+        }
+        if ec.is_zero() {
+            if let Some(bc) = try_const(b, base) {
+                if bc.is_zero() {
+                    return Ok(b.constant(fold_const_pow(bc, ec)?));
+                }
+                return Ok(b.constant(q_one()));
+            }
+        }
+    }
+
+    Ok(b.pow(base, exp))
+}
+
+fn simplify_dfs(
+    b: &mut DagBuilder,
+    source: &Dag,
+    id: NodeId,
+    memo: &mut HashMap<NodeId, NodeId>,
+) -> Result<NodeId, SimplifyError> {
+    if let Some(&n) = memo.get(&id) {
+        return Ok(n);
+    }
+    let mapped = match source.node(id) {
+        Node::Const(c) => b.constant(*c),
+        Node::Var(v) => b.variable(*v),
+        Node::Neg(x) => {
+            let y = simplify_dfs(b, source, *x, memo)?;
+            construct_neg(b, y)?
         }
         Node::Add(cs) => {
             let parts: Vec<NodeId> = cs
                 .iter()
                 .map(|c| simplify_dfs(b, source, *c, memo))
-                .collect();
-            if let Some((coeffs, const_term)) = try_affine_sum_parts(b, &parts) {
-                affine_to_node(b, coeffs, const_term)
-            } else {
-                let parts: Vec<NodeId> = parts
-                    .into_iter()
-                    .filter(|&p| {
-                        if let Node::Const(c) = b.node(p) {
-                            !c.is_zero()
-                        } else {
-                            true
-                        }
-                    })
-                    .collect();
-                match parts.len() {
-                    0 => b.constant(q_zero()),
-                    1 => parts[0],
-                    _ => b.add(parts),
-                }
-            }
+                .collect::<Result<_, _>>()?;
+            construct_add(b, parts)?
         }
         Node::Mul(cs) => {
             let parts: Vec<NodeId> = cs
                 .iter()
                 .map(|c| simplify_dfs(b, source, *c, memo))
-                .collect();
-            if parts.iter().any(|&p| {
-                if let Node::Const(c) = b.node(p) {
-                    c.is_zero()
-                } else {
-                    false
-                }
-            }) {
-                b.constant(q_zero())
-            } else {
-                let parts: Vec<NodeId> = parts
-                    .into_iter()
-                    .filter(|&p| {
-                        if let Node::Const(c) = b.node(p) {
-                            c != &q_one()
-                        } else {
-                            true
-                        }
-                    })
-                    .collect();
-                match parts.len() {
-                    0 => b.constant(q_one()),
-                    1 => parts[0],
-                    _ => b.mul(parts),
-                }
-            }
+                .collect::<Result<_, _>>()?;
+            construct_mul(b, parts)?
         }
         Node::Div(n, d) => {
-            let nn = simplify_dfs(b, source, *n, memo);
-            let dd = simplify_dfs(b, source, *d, memo);
-            if let (Some((an, cn)), Some((ad, cd))) =
-                (try_affine_linear(b, nn), try_affine_linear(b, dd))
-            {
-                if ad.is_empty() && !cd.is_zero() {
-                    affine_div_by_const(b, an, cn, cd)
-                } else {
-                    b.div(nn, dd)
-                }
-            } else {
-                b.div(nn, dd)
-            }
+            let nn = simplify_dfs(b, source, *n, memo)?;
+            let dd = simplify_dfs(b, source, *d, memo)?;
+            construct_div(b, nn, dd)?
         }
         Node::Pow(base, exp) => {
-            let bb = simplify_dfs(b, source, *base, memo);
-            let ee = simplify_dfs(b, source, *exp, memo);
-            b.pow(bb, ee)
+            let bb = simplify_dfs(b, source, *base, memo)?;
+            let ee = simplify_dfs(b, source, *exp, memo)?;
+            construct_pow(b, bb, ee)?
         }
     };
     memo.insert(id, mapped);
-    mapped
+    Ok(mapped)
 }
