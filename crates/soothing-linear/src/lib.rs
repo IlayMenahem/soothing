@@ -37,30 +37,30 @@
 //!   [`elimination::EliminationError::IllegitimateElimination`]; a substitution RHS that never yields a
 //!   finite float at random samples is [`elimination::EliminationError::DegenerateSubstitution`].
 
+pub mod cli_display;
 pub mod dag;
 mod dag_parse;
 pub mod elimination;
-pub mod mathematica_system;
 pub mod eval;
 pub mod field;
+pub mod mathematica_system;
 pub mod predicates;
 pub mod simplify;
 pub mod substitution;
 pub mod system;
-pub mod cli_display;
 
 pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 pub use elimination::{
     dfs_linear_elimination, linear_elimination_greedy, EliminationError, EliminationResult,
     LinearEliminationOptions,
 };
+pub use eval::{evaluate, evaluate_f64, EvalError};
+pub use field::Q;
 pub use mathematica_system::{
     default_systems_dir_from_manifest, load_mathematica_system_from_path,
     load_mathematica_system_from_path_with_var_names, load_mathematica_system_from_str,
     load_mathematica_system_from_str_with_var_names, LoadedMathematicaSystem, MathematicaLoadError,
 };
-pub use eval::{evaluate, evaluate_f64, EvalError};
-pub use field::Q;
 pub use predicates::assignment_seed;
 pub use predicates::{
     expr_finite_at_some_random_sample, is_linear_in, is_zero, recover_linear_coeffs, LinearCoeffs,
@@ -68,10 +68,10 @@ pub use predicates::{
     RANDOM_SAMPLE_ABS_MAX, SUBSTITUTION_NUMERIC_CHECK_SAMPLES,
 };
 
-pub use predicates::is_zero as is_polynomial_zero;
-pub use predicates::is_linear_in as is_linear_in_variable;
-pub use predicates::recover_linear_coeffs as recover_linear_coefficients;
 pub use cli_display::{print_substitution_bindings, simplify_for_display};
+pub use predicates::is_linear_in as is_linear_in_variable;
+pub use predicates::is_zero as is_polynomial_zero;
+pub use predicates::recover_linear_coeffs as recover_linear_coefficients;
 pub use simplify::{simplify_once, SimplifyError};
 pub use substitution::SubstitutionMap;
 pub use system::PolynomialSystem;

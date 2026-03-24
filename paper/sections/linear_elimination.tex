@@ -22,6 +22,9 @@ even in the case of very large non linear polynomial systems of equations, it is
     \State clear $Q$ of zero equations
     \State $L \gets \{(x',p')\mid x'\in V,\ p'\in Q,\ p' \text{ is linear in } x'\}$
 \EndWhile
+\If{$Q = \emptyset$ and $\Sigma \neq \emptyset$}
+    \State \textbf{Validate:} back-substitute $\Sigma$ into each $p \in P$; each resulting polynomial must be identically zero (probabilistic zero test in the implementation)
+\EndIf
 \State \Return $(Q,\Sigma)$
 \end{algorithmic}
 \end{algorithm}

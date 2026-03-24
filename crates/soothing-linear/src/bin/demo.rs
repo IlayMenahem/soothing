@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 
 use soothing_linear::{
-    assignment_seed, evaluate, linear_elimination_greedy, print_substitution_bindings, simplify_for_display,
-    Dag, DagBuilder, PolynomialSystem, SampleConfig, VarId, Q,
+    assignment_seed, evaluate, linear_elimination_greedy, print_substitution_bindings,
+    simplify_for_display, Dag, DagBuilder, PolynomialSystem, SampleConfig, VarId, Q,
 };
 
 fn main() {
@@ -49,7 +49,8 @@ fn main() {
     println!("  x*y + z = 0   (monomial x*y: degree 2, two variables)");
     println!("DAG nodes: {}\n", sys.dag.len());
 
-    let result = match linear_elimination_greedy(sys, &SampleConfig::default(), Default::default()) {
+    let result = match linear_elimination_greedy(sys, &SampleConfig::default(), Default::default())
+    {
         Ok(r) => r,
         Err(e) => {
             eprintln!("elimination failed: {e}");

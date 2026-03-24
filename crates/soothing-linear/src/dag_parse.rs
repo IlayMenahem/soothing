@@ -163,6 +163,9 @@ fn lower_expr_allocating(
         Expr::Literal(q) => Ok(b.constant(*q)),
         Expr::Variable => {
             let name: &str = *sp.fragment();
+            if name == "pi" {
+                return Ok(b.const_pi());
+            }
             let v = var_for_ident(name, name_to_var, next_free)?;
             Ok(b.variable(v))
         }
@@ -226,10 +229,16 @@ fn lower_expr_fixed_map(
         Expr::Literal(q) => Ok(b.constant(*q)),
         Expr::Variable => {
             let name: &str = *sp.fragment();
-            let v = var_map.get(name).copied().ok_or_else(|| DagParseError::UnknownVariable {
-                name: name.to_string(),
-                pos,
-            })?;
+            if name == "pi" {
+                return Ok(b.const_pi());
+            }
+            let v = var_map
+                .get(name)
+                .copied()
+                .ok_or_else(|| DagParseError::UnknownVariable {
+                    name: name.to_string(),
+                    pos,
+                })?;
             Ok(b.variable(v))
         }
         Expr::Unary { op, inner } => match op.extra {

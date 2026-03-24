@@ -1,13 +1,9 @@
 //! Load Mathematica-style rule lists into [`PolynomialSystem`].
 //!
-//! Each rule `lhs -> rhs` becomes `(lhs) - (numerator(rhs)) = 0`, where `numerator(rhs)` is the part
-//! before the first `/` at nesting depth 0 in `rhs` (after stripping matching outer parentheses).
-//! This matches clearing denominators for `P/Q = 0` when `rhs` is a single top-level fraction.
-//! Denominators (e.g. containing `\[Pi]`) are not parsed.
-//!
-//! **Limitation:** if `rhs` is not a single fraction at the outer level (e.g. `A/B + C` with `+` at
-//! depth 0), taking the numerator slice is wrong. The simplified system file is assumed to match the
-//! one-fraction shape.
+//! Each rule `lhs -> rhs` (or `==`, `:>`) becomes `lhs - (rhs) = 0` after whitespace collapse,
+//! implicit multiplication, `\[Pi]` → `pi` (a dedicated constant in the DAG, not a [`VarId`]), and
+//! wrapping `integer/(` as `(integer)/(` so rational literals do not swallow parenthesized denominators.
+//! The full rational structure of `rhs` is preserved (no numerator-only rewriting).
 
 use crate::dag::{Dag, DagBuilder, DagParseError, VarId};
 use crate::system::PolynomialSystem;
@@ -112,13 +108,27 @@ fn collapse_ws(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Mathematica `FullForm`-style `\[Pi]` → parseable `pi` (lowers to `ConstPi` in the DAG).
+fn normalize_mathematica_symbols(s: &str) -> String {
+    s.replace(r"\[Pi]", "pi")
+}
+
 static IMPLICIT_MUL_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
     let patterns: &[(&str, &str)] = &[
+        // `pi` is two letters; run before `(\d)\s+([a-zA-Z])` which would break `256 pi`.
+        (r"(\d)\s+pi\b", r"${1}*pi"),
+        (r"\)\s+pi\b", r")*pi"),
+        (r"([a-zA-Z_][a-zA-Z0-9_]*)\s+pi\b", r"${1}*pi"),
         (r"\)\s+([a-zA-Z])", r")*$1"),
         (r"\)\s+(\d)", r")*$1"),
         (r"([a-zA-Z_][a-zA-Z0-9_]*)\s+\(", r"$1*("),
         (r"(\d)\s+\(", r"$1*("),
-        (r"([a-zA-Z_][a-zA-Z0-9_]*)\s+([a-zA-Z])", r"$1*$2"),
+        // Full identifier after identifier or digit (e.g. `DpDph1 e`, `2 xr`).
+        (
+            r"([a-zA-Z_][a-zA-Z0-9_]*)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+            r"$1*$2",
+        ),
+        (r"(\d)\s+([a-zA-Z_][a-zA-Z0-9_]*)", r"${1}*$2"),
         (r"(\d)\s+([a-zA-Z])", r"$1*$2"),
         (r"([a-zA-Z_][a-zA-Z0-9_]*)\s+(\d)", r"$1*$2"),
         (r"(\d)([a-zA-Z])", r"$1*$2"),
@@ -131,12 +141,7 @@ static IMPLICIT_MUL_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::n
     ];
     patterns
         .iter()
-        .map(|(p, r)| {
-            (
-                Regex::new(p).expect("implicit mul regex"),
-                *r,
-            )
-        })
+        .map(|(p, r)| (Regex::new(p).expect("implicit mul regex"), *r))
         .collect()
 });
 
@@ -148,145 +153,46 @@ fn apply_implicit_multiplication(s: &str) -> String {
     result
 }
 
-fn outer_parens_match(t: &str) -> bool {
-    let mut depth = 0i32;
-    for (i, ch) in t.char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 && i != t.len().saturating_sub(1) {
-                    return false;
+/// Integer `/` `(` must become `(integer)/(` or the rational literal grammar treats `1/` as part
+/// of a `Q` literal and rejects a parenthesized denominator (e.g. `1/(512*pi^2)`).
+fn wrap_int_numerator_paren_denominator(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len() + 16);
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i].is_ascii_digit() {
+            let start = i;
+            let mut j = i;
+            while j < chars.len() && chars[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j < chars.len() && chars[j] == '/' && j + 1 < chars.len() && chars[j + 1] == '(' {
+                out.push('(');
+                out.extend(chars[start..j].iter());
+                out.push(')');
+                out.push('/');
+                i = j + 1;
+                let mut depth = 0i32;
+                while i < chars.len() {
+                    let c = chars[i];
+                    if c == '(' {
+                        depth += 1;
+                    } else if c == ')' {
+                        depth -= 1;
+                    }
+                    out.push(c);
+                    i += 1;
+                    if depth == 0 {
+                        break;
+                    }
                 }
+                continue;
             }
-            _ => {}
         }
-    }
-    depth == 0
-}
-
-fn strip_outer_parens(mut s: &str) -> &str {
-    loop {
-        let t = s.trim();
-        if t.len() < 2 || !t.starts_with('(') || !t.ends_with(')') {
-            return t;
-        }
-        if !outer_parens_match(t) {
-            return t;
-        }
-        s = &t[1..t.len() - 1];
-    }
-}
-
-/// If `s` contains `/` at nesting depth 0, return `(numerator, denominator)` slices.
-fn split_fraction_depth_zero(s: &str) -> Option<(&str, &str)> {
-    let t = s.trim();
-    let mut depth = 0i32;
-    for (i, ch) in t.char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => depth = (depth - 1).max(0),
-            '/' if depth == 0 => {
-                let left = t[..i].trim();
-                let right = t[i + ch.len_utf8()..].trim();
-                return Some((left, right));
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-/// `s` starts with `(`; returns `(full_balanced_group, bytes_after_group)`.
-fn take_balanced_paren_group(s: &str) -> Option<(&str, &str)> {
-    let t = s.trim();
-    if !t.starts_with('(') {
-        return None;
-    }
-    let mut depth = 0i32;
-    for (i, ch) in t.char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    let end = i + ch.len_utf8();
-                    return Some((&t[..end], &t[end..]));
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn peel_negation_and_outer_parens(mut s: &str) -> (&str, bool) {
-    let mut neg = false;
-    loop {
-        s = strip_outer_parens(s.trim());
-        let t = s.trim();
-        if let Some(rest) = t.strip_prefix('-') {
-            neg = !neg;
-            s = rest.trim();
-            continue;
-        }
-        break;
-    }
-    (s, neg)
-}
-
-/// Clears a single outer fraction `lhs/den * tail` when `den` is a parenthesized group and `tail`
-/// continues the numerator (implicit or explicit `*`). Otherwise behaves like numerator-only of
-/// `lhs/den` when `tail` is empty.
-fn rhs_numerator_expression(rhs: &str) -> String {
-    let (t, neg) = peel_negation_and_outer_parens(rhs);
-    let Some((left, right)) = split_fraction_depth_zero(t) else {
-        let mut out = strip_outer_parens(t.trim()).trim().to_string();
-        if neg {
-            out = format!("-({out})");
-        }
-        return out;
-    };
-    let right = right.trim();
-    let Some((_den, rest)) = take_balanced_paren_group(right) else {
-        let mut out = strip_outer_parens(left.trim()).trim().to_string();
-        if neg {
-            out = format!("-({out})");
-        }
-        return out;
-    };
-    let rest = rest.trim();
-    if rest.is_empty() {
-        let mut out = strip_outer_parens(left.trim()).trim().to_string();
-        if neg {
-            out = format!("-({out})");
-        }
-        return out;
-    }
-    let tail = rest
-        .strip_prefix('*')
-        .map(str::trim)
-        .unwrap_or(rest);
-    if tail.is_empty() {
-        let mut out = strip_outer_parens(left.trim()).trim().to_string();
-        if neg {
-            out = format!("-({out})");
-        }
-        return out;
-    }
-    let left_t = left.trim();
-    let tail_c = collapse_ws(tail);
-    let tail_c = apply_implicit_multiplication(&tail_c);
-    let mut out = format!("({left_t})*({tail_c})");
-    if neg {
-        out = format!("-({out})");
+        out.push(chars[i]);
+        i += 1;
     }
     out
-}
-
-/// Numerator of `rhs` for building `lhs - num = 0` (denominator dropped).
-fn rhs_numerator(rhs: &str) -> String {
-    rhs_numerator_expression(rhs)
 }
 
 static IDENT_RE: LazyLock<Regex> =
@@ -296,6 +202,7 @@ fn collect_identifiers(expr: &str) -> Vec<String> {
     let mut out: Vec<String> = IDENT_RE
         .captures_iter(expr)
         .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
+        .filter(|n| n != "pi")
         .collect();
     out.sort();
     out.dedup();
@@ -324,14 +231,16 @@ fn equation_strings_from_mathematica(text: &str) -> Result<Vec<String>, Mathemat
             }
             return Err(MathematicaLoadError::NoRuleSeparator(segment));
         };
-        let lhs_c = collapse_ws(lhs);
+        let lhs_c = normalize_mathematica_symbols(lhs);
+        let lhs_c = collapse_ws(&lhs_c);
         let lhs_c = apply_implicit_multiplication(&lhs_c);
-        let rhs_c = collapse_ws(rhs);
+        let lhs_c = wrap_int_numerator_paren_denominator(&lhs_c);
+        let rhs_c = normalize_mathematica_symbols(rhs);
+        let rhs_c = collapse_ws(&rhs_c);
         let rhs_c = apply_implicit_multiplication(&rhs_c);
-        let num = rhs_numerator(&rhs_c);
-        let num = apply_implicit_multiplication(&num);
-        // Avoid `((kappah))-...`: lhs must be a primary expression, not wrapped in extra parens.
-        let eq = format!("{lhs_c}-({num})");
+        let rhs_c = wrap_int_numerator_paren_denominator(&rhs_c);
+        // Parenthesize rhs only; wrapping lhs as `(kappah)` is parsed as a variable named "(kappah)".
+        let eq = format!("{lhs_c}-({rhs_c})");
         equations.push(eq);
     }
     if equations.is_empty() {
@@ -374,7 +283,9 @@ pub fn load_mathematica_system_from_str_with_var_names(
 }
 
 /// Parse a Mathematica list of rules into a polynomial system (`equation = 0` for each rule).
-pub fn load_mathematica_system_from_str(text: &str) -> Result<PolynomialSystem, MathematicaLoadError> {
+pub fn load_mathematica_system_from_str(
+    text: &str,
+) -> Result<PolynomialSystem, MathematicaLoadError> {
     Ok(load_mathematica_system_from_str_with_var_names(text)?.system)
 }
 
@@ -387,7 +298,9 @@ pub fn load_mathematica_system_from_path_with_var_names(
 }
 
 /// Read UTF-8 from `path` and [`load_mathematica_system_from_str`].
-pub fn load_mathematica_system_from_path(path: &Path) -> Result<PolynomialSystem, MathematicaLoadError> {
+pub fn load_mathematica_system_from_path(
+    path: &Path,
+) -> Result<PolynomialSystem, MathematicaLoadError> {
     let text = std::fs::read_to_string(path)?;
     load_mathematica_system_from_str(&text)
 }
@@ -397,22 +310,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn top_level_numerator_takes_lhs_of_fraction() {
-        let rhs = "(a + b)/(c + d)";
-        assert_eq!(rhs_numerator(rhs), "a + b");
+    fn equation_is_lhs_minus_rhs_with_fraction() {
+        let s = "{0 -> (a + b)/(c + d)}";
+        let eqs = equation_strings_from_mathematica(s).unwrap();
+        assert_eq!(eqs.len(), 1);
+        let e = &eqs[0];
+        assert!(e.starts_with("0-("), "{e}");
+        assert!(
+            e.contains("a + b") || e.contains("a+b"),
+            "expected numerator a+b in {e}"
+        );
+        assert!(
+            e.contains("c + d") || e.contains("c+d"),
+            "expected denominator c+d in {e}"
+        );
     }
 
     #[test]
-    fn strip_parens_before_slash() {
-        let rhs = "((x + 1))/(y)";
-        assert_eq!(rhs_numerator(rhs), "x + 1");
+    fn pi_normalizes_in_equation_string() {
+        let s = "{0 -> 1/(256*pi^2)}";
+        let eqs = equation_strings_from_mathematica(s).unwrap();
+        assert_eq!(eqs[0], "0-((1)/(256*pi^2))");
     }
 
     #[test]
-    fn fraction_then_tail_folds_into_numerator() {
-        let rhs = "-1/(512*x)*3*(a+b)";
-        let n = rhs_numerator(rhs);
-        assert!(n.contains("3"), "{n}");
-        assert!(n.contains("a+b") || n.contains("a + b"), "{n}");
+    fn mathematica_pi_escape_normalizes() {
+        let s = r"{0 -> 1/(256 \[Pi]^2)}";
+        let eqs = equation_strings_from_mathematica(s).unwrap();
+        assert_eq!(eqs[0], "0-((1)/(256*pi^2))");
     }
 }

@@ -2,8 +2,8 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use soothing_linear::{
-    dfs_linear_elimination, default_systems_dir_from_manifest, load_mathematica_system_from_path,
-    load_mathematica_system_from_str, Dag, SampleConfig,
+    default_systems_dir_from_manifest, dfs_linear_elimination, load_mathematica_system_from_path,
+    load_mathematica_system_from_str, Dag, LinearEliminationOptions, SampleConfig,
 };
 
 #[test]
@@ -15,14 +15,14 @@ fn tiny_system_loads_and_dfs_runs() {
 }
 
 #[test]
-fn numerator_only_drops_denominator_variables() {
+fn full_rhs_keeps_denominator_variables() {
     let s = "{0 -> (a + b)/(c + d)}";
     let sys = load_mathematica_system_from_str(s).unwrap();
     assert_eq!(sys.equations.len(), 1);
     let &root = sys.equations.first().unwrap();
     let vars = Dag::vars_in_root(&sys.dag, root);
     let set: HashSet<_> = vars.into_iter().collect();
-    assert_eq!(set.len(), 2, "only a and b from numerator");
+    assert_eq!(set.len(), 4, "a, b, c, d from (lhs)-(full rhs)");
 }
 
 #[test]
@@ -37,7 +37,25 @@ fn default_systems_dir_points_at_repo_systems() {
 
 #[test]
 fn load_simplified_mathematica_file() {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../systems/simplified_mathematica_system.txt");
-    let sys = load_mathematica_system_from_path(&p).expect("parse simplified_mathematica_system.txt");
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../systems/simplified_mathematica_system.txt");
+    let sys =
+        load_mathematica_system_from_path(&p).expect("parse simplified_mathematica_system.txt");
     assert_eq!(sys.equations.len(), 27);
+}
+
+#[test]
+fn simplified_mathematica_dfs_does_not_panic() {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../systems/simplified_mathematica_system.txt");
+    let sys =
+        load_mathematica_system_from_path(&p).expect("parse simplified_mathematica_system.txt");
+    let _ = dfs_linear_elimination(
+        sys,
+        &SampleConfig::default(),
+        LinearEliminationOptions {
+            simplify_each_step: true,
+        },
+    )
+    .expect("dfs elimination");
 }

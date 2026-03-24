@@ -124,7 +124,7 @@ fn vars_in_subgraph(dag: &Dag, root: NodeId, bound: &HashMap<VarId, NodeId>) -> 
             continue;
         }
         match dag.node(id) {
-            Node::Const(_) => {}
+            Node::Const(_) | Node::ConstPi => {}
             Node::Var(x) => {
                 if bound.contains_key(x) {
                     out.insert(*x);

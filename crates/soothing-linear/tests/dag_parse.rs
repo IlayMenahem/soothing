@@ -46,6 +46,11 @@ fn parse_rejects_trailing_garbage() {
 }
 
 #[test]
+fn parse_zero_minus_neg_one() {
+    Dag::from_rational_string("(0)-(-1)").expect("(0)-(-1)");
+}
+
+#[test]
 fn parse_unary_minus_and_precedence() {
     let (dag, root) = Dag::from_rational_string("-v0 * v1 + 2").unwrap();
     let mut assign = HashMap::new();

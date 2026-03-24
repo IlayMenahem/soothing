@@ -446,8 +446,7 @@ fn construct_div(b: &mut DagBuilder, nn: NodeId, dd: NodeId) -> Result<NodeId, S
         return Ok(apply_div_sign(b, r, sign_flip));
     }
 
-    if let (Some((an, cn)), Some((ad, cd))) = (try_affine_linear(b, nn), try_affine_linear(b, dd))
-    {
+    if let (Some((an, cn)), Some((ad, cd))) = (try_affine_linear(b, nn), try_affine_linear(b, dd)) {
         if ad.is_empty() && !cd.is_zero() {
             let r = affine_div_by_const(b, an, cn, cd);
             return Ok(apply_div_sign(b, r, sign_flip));
@@ -507,6 +506,7 @@ fn simplify_dfs(
     }
     let mapped = match source.node(id) {
         Node::Const(c) => b.constant(*c),
+        Node::ConstPi => b.const_pi(),
         Node::Var(v) => b.variable(*v),
         Node::Neg(x) => {
             let y = simplify_dfs(b, source, *x, memo)?;

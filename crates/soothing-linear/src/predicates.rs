@@ -125,8 +125,7 @@ fn affine_points_collinear(_xs: &[f64], ys: &[f64]) -> bool {
             .max(ys[i + 1].abs())
             .max(ys[i + 2].abs())
             .max(1.0);
-        let tol =
-            COLLINEAR_SECOND_DIFF_EPS.max(COLLINEAR_SECOND_DIFF_RTOL * ymax);
+        let tol = COLLINEAR_SECOND_DIFF_EPS.max(COLLINEAR_SECOND_DIFF_RTOL * ymax);
         if d2.abs() > tol {
             return false;
         }
@@ -156,6 +155,8 @@ pub enum PredicateError {
     DivisionByZero,
     #[error("evaluation failed: exponent must be an integer in Q")]
     NonIntegerExponent,
+    #[error("evaluation failed: pi is not in Q")]
+    TranscendentalConstant,
 }
 
 impl From<EvalError> for PredicateError {
@@ -164,6 +165,7 @@ impl From<EvalError> for PredicateError {
             EvalError::MissingVariable(v) => PredicateError::MissingVariable(v),
             EvalError::DivisionByZero => PredicateError::DivisionByZero,
             EvalError::NonIntegerExponent => PredicateError::NonIntegerExponent,
+            EvalError::TranscendentalConstant => PredicateError::TranscendentalConstant,
         }
     }
 }

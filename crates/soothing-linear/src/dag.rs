@@ -15,6 +15,8 @@ pub struct NodeId(pub usize);
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum Node {
     Const(Q),
+    /// Mathematica `\[Pi]` / identifier `pi`; not a [`VarId`]. Floating evaluation uses `f64::consts::PI`.
+    ConstPi,
     Var(VarId),
     Add(Vec<NodeId>),
     Mul(Vec<NodeId>),
@@ -63,7 +65,7 @@ impl Dag {
             Node::Var(v) => {
                 vars.insert(*v);
             }
-            Node::Const(_) => {}
+            Node::Const(_) | Node::ConstPi => {}
             Node::Add(cs) | Node::Mul(cs) => {
                 for c in cs {
                     self.collect_vars_dfs(*c, seen_node, vars);
@@ -88,6 +90,7 @@ impl Dag {
     fn fmt_node(&self, id: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
         match self.node(id) {
             Node::Const(c) => format!("{}", c),
+            Node::ConstPi => "pi".to_string(),
             Node::Var(v) => var_name(*v),
             Node::Neg(x) => {
                 let inner = self.fmt_node(*x, var_name);
@@ -158,7 +161,7 @@ impl Dag {
     }
 
     fn is_atomic(&self, id: NodeId) -> bool {
-        matches!(self.node(id), Node::Const(_) | Node::Var(_))
+        matches!(self.node(id), Node::Const(_) | Node::ConstPi | Node::Var(_))
     }
 
     /// Parse a rational expression into a DAG and its root.
@@ -248,6 +251,10 @@ impl DagBuilder {
         self.intern_node(Node::Const(c))
     }
 
+    pub fn const_pi(&mut self) -> NodeId {
+        self.intern_node(Node::ConstPi)
+    }
+
     pub fn variable(&mut self, v: VarId) -> NodeId {
         self.intern_node(Node::Var(v))
     }
@@ -300,6 +307,7 @@ impl DagBuilder {
         }
         let mapped = match source.node(id) {
             Node::Const(c) => self.constant(*c),
+            Node::ConstPi => self.const_pi(),
             Node::Var(v) => self.variable(*v),
             Node::Add(cs) => {
                 let v: Vec<NodeId> = cs
@@ -372,6 +380,7 @@ impl DagBuilder {
         let mapped = match source.node(id) {
             Node::Var(v) if *v == var => repl,
             Node::Const(c) => self.constant(*c),
+            Node::ConstPi => self.const_pi(),
             Node::Var(v) => self.variable(*v),
             Node::Add(cs) => {
                 let v: Vec<NodeId> = cs

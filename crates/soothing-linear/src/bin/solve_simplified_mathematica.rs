@@ -8,8 +8,8 @@ use std::time::Instant;
 
 use soothing_linear::{
     default_systems_dir_from_manifest, dfs_linear_elimination,
-    load_mathematica_system_from_path_with_var_names, print_substitution_bindings, LinearEliminationOptions,
-    SampleConfig, VarId,
+    load_mathematica_system_from_path_with_var_names, print_substitution_bindings,
+    LinearEliminationOptions, SampleConfig, VarId,
 };
 
 fn main() {

@@ -6,7 +6,7 @@ use crate::predicates::{expr_finite_at_some_random_sample, is_linear_in, is_zero
 use crate::simplify::simplify_once;
 use crate::substitution::SubstitutionMap;
 use crate::system::PolynomialSystem;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use thiserror::Error;
 
 /// Options for [`linear_elimination_greedy`] and [`dfs_linear_elimination`].
@@ -37,6 +37,74 @@ pub struct EliminationResult {
     pub substitution: SubstitutionMap,
 }
 
+/// When the residual is empty and the substitution map is non-empty, require each original
+/// equation to vanish after applying [`SubstitutionMap::replay_order`] (aligned with
+/// `validate_substitution_map` in `soothing/system_substitution.py`). If equations remain, the
+/// substitution is only meaningful modulo the residual, so this static check is skipped.
+fn validate_elimination_result(
+    original: &PolynomialSystem,
+    result: &EliminationResult,
+    cfg: &SampleConfig,
+) {
+    if result.substitution.is_empty() || !result.reduced_system.equations.is_empty() {
+        return;
+    }
+    // `ConstPi` uses `f64` in predicates; replay validation is only wired for pure-`Q` systems.
+    if any_equation_contains_const_pi(original) {
+        return;
+    }
+
+    let order = result
+        .substitution
+        .replay_order()
+        .expect("elimination validation: cyclic substitution map");
+
+    let subst_dag = result.substitution.dag();
+    let mut b = DagBuilder::new();
+    let mut expanded_rhs: HashMap<VarId, NodeId> = HashMap::new();
+    for &v in &order {
+        let rhs = result
+            .substitution
+            .get(v)
+            .expect("elimination validation: missing binding for variable in replay order");
+        let mut node = b.merge_root(&subst_dag, rhs);
+        for &u in &order {
+            if u == v {
+                break;
+            }
+            if let Some(&u_root) = expanded_rhs.get(&u) {
+                let snap_inner = b.snapshot();
+                node = b.substitute_in_root(&snap_inner, node, u, u_root);
+            }
+        }
+        expanded_rhs.insert(v, node);
+    }
+
+    for (i, &eq_root) in original.equations.iter().enumerate() {
+        let mut r = b.merge_root(&original.dag, eq_root);
+        for &v in &order {
+            let repl = *expanded_rhs
+                .get(&v)
+                .expect("elimination validation: expanded binding missing");
+            let snap = b.snapshot();
+            r = b.substitute_in_root(&snap, r, v, repl);
+        }
+        let snap = b.snapshot();
+        let free_vars = snap.vars_in_root(r);
+        let ok = match is_zero(&snap, r, &free_vars, cfg) {
+            Ok(z) => z,
+            Err(e) => panic!(
+                "elimination validation: predicate error on original equation index {i}: {e}"
+            ),
+        };
+        if !ok {
+            panic!(
+                "elimination validation failed: original equation index {i} does not vanish under substitution"
+            );
+        }
+    }
+}
+
 /// Run linear elimination until no equation is linear in any remaining variable.
 ///
 /// At each step the **first** linear pair `(equation, variable)` in a fixed deterministic order is
@@ -46,6 +114,7 @@ pub fn linear_elimination_greedy(
     cfg: &SampleConfig,
     opts: LinearEliminationOptions,
 ) -> Result<EliminationResult, EliminationError> {
+    let original = system.clone();
     let mut b = DagBuilder::new();
     let mut eq_roots: Vec<NodeId> = system
         .equations
@@ -90,10 +159,12 @@ pub fn linear_elimination_greedy(
     }
 
     let final_dag = b.snapshot();
-    Ok(EliminationResult {
+    let result = EliminationResult {
         reduced_system: PolynomialSystem::new(final_dag, eq_roots),
         substitution: subst,
-    })
+    };
+    validate_elimination_result(&original, &result, cfg);
+    Ok(result)
 }
 
 /// Depth-first search over linear elimination choices: at each step, try every `(equation, variable)`
@@ -112,6 +183,7 @@ pub fn dfs_linear_elimination(
     cfg: &SampleConfig,
     opts: LinearEliminationOptions,
 ) -> Result<EliminationResult, EliminationError> {
+    let original = system.clone();
     let mut b = DagBuilder::new();
     let eq_roots: Vec<NodeId> = system
         .equations
@@ -119,7 +191,9 @@ pub fn dfs_linear_elimination(
         .map(|&r| b.merge_root(&system.dag, r))
         .collect();
     let subst = SubstitutionMap::new();
-    dfs_linear_elimination_inner(b, eq_roots, subst, cfg, opts)
+    let result = dfs_linear_elimination_inner(b, eq_roots, subst, cfg, opts)?;
+    validate_elimination_result(&original, &result, cfg);
+    Ok(result)
 }
 
 fn dfs_linear_elimination_inner(
@@ -155,8 +229,9 @@ fn dfs_linear_elimination_inner(
         let mut b_branch = b.clone();
         let mut eq_branch = eq_roots.clone();
         let mut subst_branch = subst.clone();
-        let remaining_branch: BTreeSet<VarId> =
-            collect_vars(&b_branch.snapshot(), &eq_branch).into_iter().collect();
+        let remaining_branch: BTreeSet<VarId> = collect_vars(&b_branch.snapshot(), &eq_branch)
+            .into_iter()
+            .collect();
         match apply_one_elimination(
             &mut b_branch,
             &mut eq_branch,
@@ -325,6 +400,43 @@ fn apply_one_elimination(
     Ok(())
 }
 
+fn any_equation_contains_const_pi(system: &PolynomialSystem) -> bool {
+    let dag = &system.dag;
+    system
+        .equations
+        .iter()
+        .any(|&r| subtree_contains_const_pi(dag, r))
+}
+
+fn subtree_contains_const_pi(dag: &Dag, root: NodeId) -> bool {
+    let mut stack = vec![root];
+    let mut seen = HashSet::new();
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        match dag.node(id) {
+            Node::ConstPi => return true,
+            Node::Const(_) | Node::Var(_) => {}
+            Node::Add(cs) | Node::Mul(cs) => {
+                for c in cs {
+                    stack.push(*c);
+                }
+            }
+            Node::Neg(x) => stack.push(*x),
+            Node::Div(n, d) => {
+                stack.push(*n);
+                stack.push(*d);
+            }
+            Node::Pow(b, e) => {
+                stack.push(*b);
+                stack.push(*e);
+            }
+        }
+    }
+    false
+}
+
 fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
     let mut out = HashSet::new();
     let mut stack: Vec<NodeId> = roots.to_vec();
@@ -337,7 +449,7 @@ fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
             Node::Var(v) => {
                 out.insert(*v);
             }
-            Node::Const(_) => {}
+            Node::Const(_) | Node::ConstPi => {}
             Node::Add(cs) | Node::Mul(cs) => {
                 for c in cs {
                     stack.push(*c);

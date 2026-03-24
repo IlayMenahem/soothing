@@ -15,6 +15,8 @@ pub enum EvalError {
     MissingVariable(VarId),
     DivisionByZero,
     NonIntegerExponent,
+    /// `pi` is not representable in [`Q`].
+    TranscendentalConstant,
 }
 
 /// Floating-point evaluation for predicate sampling (avoids `i64` overflow in [`crate::field::Q`]).
@@ -47,6 +49,7 @@ fn eval_node_f64(
 ) -> Result<f64, EvalError> {
     match dag.node(id) {
         Node::Const(c) => Ok(q_to_f64(c)),
+        Node::ConstPi => Ok(std::f64::consts::PI),
         Node::Var(x) => assignment
             .get(x)
             .copied()
@@ -116,6 +119,7 @@ fn eval_node(
 ) -> Result<Q, EvalError> {
     match dag.node(id) {
         Node::Const(c) => Ok(*c),
+        Node::ConstPi => Err(EvalError::TranscendentalConstant),
         Node::Var(x) => assignment
             .get(x)
             .copied()
@@ -194,7 +198,7 @@ fn dfs_post(dag: &Dag, id: NodeId, visited: &mut HashSet<NodeId>, out: &mut Vec<
         return;
     }
     match dag.node(id) {
-        Node::Const(_) | Node::Var(_) => {}
+        Node::Const(_) | Node::ConstPi | Node::Var(_) => {}
         Node::Add(cs) | Node::Mul(cs) => {
             for c in cs {
                 dfs_post(dag, *c, visited, out);

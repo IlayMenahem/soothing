@@ -1,6 +1,4 @@
-use soothing_linear::{
-    evaluate, simplify_once, Dag, DagBuilder, SimplifyError, VarId, Q,
-};
+use soothing_linear::{evaluate, simplify_once, Dag, DagBuilder, SimplifyError, VarId, Q};
 use std::collections::HashMap;
 
 #[test]
@@ -93,10 +91,7 @@ fn add_cancels_x_and_neg_x() {
     let mut bb = DagBuilder::new();
     let r = simplify_once(&mut bb, &d, sum).unwrap();
     let out = bb.snapshot();
-    assert_eq!(
-        evaluate(&out, r, &HashMap::new()).unwrap(),
-        Q::new(0, 1)
-    );
+    assert_eq!(evaluate(&out, r, &HashMap::new()).unwrap(), Q::new(0, 1));
 }
 
 #[test]
@@ -143,10 +138,7 @@ fn product_of_fractions_constant() {
     let mut bb = DagBuilder::new();
     let r = simplify_once(&mut bb, &d, root).unwrap();
     let out = bb.snapshot();
-    assert_eq!(
-        evaluate(&out, r, &HashMap::new()).unwrap(),
-        Q::new(1, 6)
-    );
+    assert_eq!(evaluate(&out, r, &HashMap::new()).unwrap(), Q::new(1, 6));
 }
 
 #[test]
@@ -155,10 +147,7 @@ fn nested_division_of_fractions() {
     let mut bb = DagBuilder::new();
     let r = simplify_once(&mut bb, &d, root).unwrap();
     let out = bb.snapshot();
-    assert_eq!(
-        evaluate(&out, r, &HashMap::new()).unwrap(),
-        Q::new(2, 3)
-    );
+    assert_eq!(evaluate(&out, r, &HashMap::new()).unwrap(), Q::new(2, 3));
 }
 
 #[test]
@@ -187,10 +176,7 @@ fn pow_one_to_n_is_one() {
     let mut bb = DagBuilder::new();
     let r = simplify_once(&mut bb, &d, root).unwrap();
     let out = bb.snapshot();
-    assert_eq!(
-        evaluate(&out, r, &HashMap::new()).unwrap(),
-        Q::new(1, 1)
-    );
+    assert_eq!(evaluate(&out, r, &HashMap::new()).unwrap(), Q::new(1, 1));
 }
 
 #[test]
