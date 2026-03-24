@@ -6,20 +6,9 @@
 //! `cargo run -p soothing-linear --bin dfs_demo`
 
 use soothing_linear::{
-    dfs_linear_elimination, linear_elimination_greedy, simplify_once, Dag, DagBuilder, NodeId,
+    dfs_linear_elimination, linear_elimination_greedy, print_substitution_bindings, Dag, DagBuilder,
     PolynomialSystem, SampleConfig, SubstitutionMap, VarId,
 };
-
-fn simplify_for_display(dag: &Dag, root: NodeId) -> (Dag, NodeId) {
-    let mut cur_dag = dag.clone();
-    let mut cur_root = root;
-    for _ in 0..16 {
-        let mut b = DagBuilder::new();
-        cur_root = simplify_once(&mut b, &cur_dag, cur_root);
-        cur_dag = b.snapshot();
-    }
-    (cur_dag, cur_root)
-}
 
 fn var_name(vid: VarId, z: VarId, x: VarId, y: VarId) -> String {
     if vid == z {
@@ -33,18 +22,10 @@ fn var_name(vid: VarId, z: VarId, x: VarId, y: VarId) -> String {
     }
 }
 
-fn print_substitution_block(label: &str, z: VarId, x: VarId, y: VarId, sub: &SubstitutionMap) {
-    println!("{label}");
-    let dag = sub.dag();
+fn print_substitution_section(z: VarId, x: VarId, y: VarId, sub: &SubstitutionMap) {
     let vn = |v: VarId| var_name(v, z, x, y);
-    for &v in sub.insertion_order() {
-        if let Some(root) = sub.get(v) {
-            let name = vn(v);
-            let (disp_dag, disp_root) = simplify_for_display(&dag, root);
-            let expr = disp_dag.format_root(disp_root, &vn);
-            println!("  {name} = {expr}");
-        }
-    }
+    println!("Substitutions:");
+    print_substitution_bindings(sub, &vn);
 }
 
 fn run_three_equation_demo(cfg: &SampleConfig) {
@@ -79,19 +60,19 @@ fn run_three_equation_demo(cfg: &SampleConfig) {
     });
 
     println!(
-        "Greedy linear elimination:  {} substitution(s), {} remaining equation(s)",
+        "Greedy linear elimination: {} substitution(s), {} remaining equation(s)",
         greedy.substitution.len(),
         greedy.reduced_system.equations.len()
     );
-    print_substitution_block("  bindings:", z, x, y, &greedy.substitution);
+    print_substitution_section(z, x, y, &greedy.substitution);
     println!();
 
     println!(
-        "DFS linear elimination:     {} substitution(s), {} remaining equation(s)",
+        "DFS linear elimination: {} substitution(s), {} remaining equation(s)",
         dfs.substitution.len(),
         dfs.reduced_system.equations.len()
     );
-    print_substitution_block("  bindings:", z, x, y, &dfs.substitution);
+    print_substitution_section(z, x, y, &dfs.substitution);
 
     if dfs.reduced_system.equations.len() < greedy.reduced_system.equations.len() {
         println!();
@@ -131,11 +112,10 @@ fn run_two_linear_equations_demo(cfg: &SampleConfig) {
         std::process::exit(1);
     });
     println!(
-        "DFS result: {} substitution(s), {} remaining equation(s)",
+        "DFS linear elimination: {} substitution(s), {} remaining equation(s)",
         dfs.substitution.len(),
         dfs.reduced_system.equations.len()
     );
-    let dag = dfs.substitution.dag();
     let vn = |v: VarId| {
         if v == x {
             "x".to_string()
@@ -145,13 +125,8 @@ fn run_two_linear_equations_demo(cfg: &SampleConfig) {
             format!("v{}", v.0)
         }
     };
-    for &v in dfs.substitution.insertion_order() {
-        if let Some(root) = dfs.substitution.get(v) {
-            let (disp_dag, disp_root) = simplify_for_display(&dag, root);
-            let expr = disp_dag.format_root(disp_root, &vn);
-            println!("  {} = {}", vn(v), expr);
-        }
-    }
+    println!("Substitutions:");
+    print_substitution_bindings(&dfs.substitution, &vn);
     println!();
 }
 

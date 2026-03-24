@@ -42,14 +42,16 @@ pub mod predicates;
 pub mod simplify;
 pub mod substitution;
 pub mod system;
+pub mod cli_display;
 
 pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 pub use elimination::{
     dfs_linear_elimination, linear_elimination_greedy, EliminationError, EliminationResult,
 };
 pub use mathematica_system::{
-    default_systems_dir_from_manifest, load_mathematica_system_from_path, load_mathematica_system_from_str,
-    MathematicaLoadError,
+    default_systems_dir_from_manifest, load_mathematica_system_from_path,
+    load_mathematica_system_from_path_with_var_names, load_mathematica_system_from_str,
+    load_mathematica_system_from_str_with_var_names, LoadedMathematicaSystem, MathematicaLoadError,
 };
 pub use eval::{evaluate, evaluate_f64, EvalError};
 pub use field::Q;
@@ -63,6 +65,7 @@ pub use predicates::{
 pub use predicates::is_zero as is_polynomial_zero;
 pub use predicates::is_linear_in as is_linear_in_variable;
 pub use predicates::recover_linear_coeffs as recover_linear_coefficients;
-pub use simplify::simplify_once;
+pub use cli_display::{print_substitution_bindings, simplify_for_display};
+pub use simplify::{simplify_once, SimplifyError};
 pub use substitution::SubstitutionMap;
 pub use system::PolynomialSystem;

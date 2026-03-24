@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use soothing_linear::{
-    default_systems_dir_from_manifest, dfs_linear_elimination, load_mathematica_system_from_path,
-    SampleConfig,
+    default_systems_dir_from_manifest, dfs_linear_elimination, load_mathematica_system_from_path_with_var_names,
+    print_substitution_bindings, SampleConfig, VarId,
 };
 
 fn main() {
@@ -19,14 +19,17 @@ fn main() {
             default_systems_dir_from_manifest().join("simplified_mathematica_system.txt")
         });
 
+    println!("soothing-linear — DFS elimination on Mathematica system\n");
     println!("Loading {}", path.display());
-    let sys = match load_mathematica_system_from_path(&path) {
+    let loaded = match load_mathematica_system_from_path_with_var_names(&path) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("load error: {e}");
             std::process::exit(1);
         }
     };
+    let sys = loaded.system;
+    let var_names = &loaded.var_names;
 
     let n_eq = sys.equations.len();
     let all_vars: std::collections::BTreeSet<_> = sys
@@ -52,7 +55,7 @@ fn main() {
     let elapsed = t0.elapsed();
 
     println!(
-        "DFS linear elimination: {} substitution(s), {} remaining equation(s), {:?}",
+        "DFS linear elimination: {} substitution(s), {} remaining equation(s), elapsed {:.2?}",
         res.substitution.len(),
         res.reduced_system.equations.len(),
         elapsed
@@ -61,5 +64,14 @@ fn main() {
         println!("Note: residual is non-empty (expected for highly nonlinear systems).");
     }
 
-    println!("Solution: {:?}", res.substitution);
+    println!("Substitutions:");
+    let vn = |v: VarId| {
+        var_names
+            .get(v.0 as usize)
+            .cloned()
+            .unwrap_or_else(|| format!("v{}", v.0))
+    };
+    print_substitution_bindings(&res.substitution, &vn);
+
+    println!("\nDone.");
 }

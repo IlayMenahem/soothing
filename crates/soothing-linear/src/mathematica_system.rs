@@ -340,8 +340,19 @@ fn equation_strings_from_mathematica(text: &str) -> Result<Vec<String>, Mathemat
     Ok(equations)
 }
 
-/// Parse a Mathematica list of rules into a polynomial system (`equation = 0` for each rule).
-pub fn load_mathematica_system_from_str(text: &str) -> Result<PolynomialSystem, MathematicaLoadError> {
+/// Result of loading a Mathematica rule list: system plus display names for [`VarId`] indices.
+///
+/// `var_names[i]` is the name for `VarId(i as u32)` (sorted, deduped identifier order).
+#[derive(Clone, Debug)]
+pub struct LoadedMathematicaSystem {
+    pub system: PolynomialSystem,
+    pub var_names: Vec<String>,
+}
+
+/// Parse a Mathematica list of rules into a polynomial system and variable names (`equation = 0` per rule).
+pub fn load_mathematica_system_from_str_with_var_names(
+    text: &str,
+) -> Result<LoadedMathematicaSystem, MathematicaLoadError> {
     let equations = equation_strings_from_mathematica(text)?;
     let mut all_names: Vec<String> = Vec::new();
     for eq in &equations {
@@ -356,7 +367,23 @@ pub fn load_mathematica_system_from_str(text: &str) -> Result<PolynomialSystem, 
         let (dag, root) = Dag::from_rational_string_with_var_map(&eq, &var_map)?;
         roots.push(b.merge_root(&dag, root));
     }
-    Ok(PolynomialSystem::new(b.build(), roots))
+    Ok(LoadedMathematicaSystem {
+        system: PolynomialSystem::new(b.build(), roots),
+        var_names: all_names,
+    })
+}
+
+/// Parse a Mathematica list of rules into a polynomial system (`equation = 0` for each rule).
+pub fn load_mathematica_system_from_str(text: &str) -> Result<PolynomialSystem, MathematicaLoadError> {
+    Ok(load_mathematica_system_from_str_with_var_names(text)?.system)
+}
+
+/// Read UTF-8 from `path` and [`load_mathematica_system_from_str_with_var_names`].
+pub fn load_mathematica_system_from_path_with_var_names(
+    path: &Path,
+) -> Result<LoadedMathematicaSystem, MathematicaLoadError> {
+    let text = std::fs::read_to_string(path)?;
+    load_mathematica_system_from_str_with_var_names(&text)
 }
 
 /// Read UTF-8 from `path` and [`load_mathematica_system_from_str`].

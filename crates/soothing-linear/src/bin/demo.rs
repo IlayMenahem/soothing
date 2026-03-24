@@ -6,24 +6,12 @@
 use std::collections::HashMap;
 
 use soothing_linear::{
-    assignment_seed, evaluate, linear_elimination_greedy, simplify_once, Dag, DagBuilder, NodeId,
-    PolynomialSystem, SampleConfig, VarId, Q,
+    assignment_seed, evaluate, linear_elimination_greedy, print_substitution_bindings, simplify_for_display,
+    Dag, DagBuilder, PolynomialSystem, SampleConfig, VarId, Q,
 };
 
-/// Fold local rewrites so [`Dag::format_root`] is readable (DAGs from elimination are not minimal).
-fn simplify_for_display(dag: &Dag, root: NodeId) -> (Dag, NodeId) {
-    let mut cur_dag = dag.clone();
-    let mut cur_root = root;
-    for _ in 0..16 {
-        let mut b = DagBuilder::new();
-        cur_root = simplify_once(&mut b, &cur_dag, cur_root);
-        cur_dag = b.snapshot();
-    }
-    (cur_dag, cur_root)
-}
-
 fn main() {
-    println!("soothing-linear demo\n");
+    println!("soothing-linear — linear elimination demo\n");
 
     // Three equations in x, y, z. One is nonlinear: monomial x*y (degree 2, two variables in one
     // monomial), affine in z. Two are linear.
@@ -55,7 +43,7 @@ fn main() {
     }
     let sys = PolynomialSystem::new(b.build(), equation_roots);
 
-    println!("Initial: three equations");
+    println!("Initial system:");
     println!("  x + z - 1 = 0");
     println!("  y - z = 0");
     println!("  x*y + z = 0   (monomial x*y: degree 2, two variables)");
@@ -71,12 +59,11 @@ fn main() {
 
     let sub = &result.substitution;
     println!(
-        "After linear elimination: {} substitution(s), {} remaining equation root(s)",
+        "After linear elimination: {} substitution(s), {} remaining equation(s)",
         sub.len(),
         result.reduced_system.equations.len()
     );
-
-    let dag = sub.dag();
+    println!("Substitutions:");
     let var_name = |vid: VarId| {
         if vid == z {
             "z".to_string()
@@ -88,7 +75,10 @@ fn main() {
             format!("v{}", vid.0)
         }
     };
+    print_substitution_bindings(sub, &var_name);
 
+    let dag = sub.dag();
+    println!("Evaluation:");
     for &v in sub.insertion_order() {
         if let Some(root) = sub.get(v) {
             let label = if v == x {
@@ -100,26 +90,23 @@ fn main() {
             } else {
                 "?"
             };
-            println!("  eliminated {label} (VarId({}))", v.0);
-
             let (disp_dag, disp_root) = simplify_for_display(&dag, root);
-            let expr = disp_dag.format_root(disp_root, &var_name);
-            println!("    expression: {} = {}", label, expr);
-
             let free: Vec<VarId> = disp_dag.vars_in_root(disp_root);
             if free.is_empty() {
                 let assign: HashMap<VarId, Q> = HashMap::new();
                 match evaluate(&disp_dag, disp_root, &assign) {
-                    Ok(q) => println!("    value (no free vars): {}", q),
-                    Err(e) => println!("    (eval: {e:?})"),
+                    Ok(q) => println!("  {}: value (no free vars): {}", label, q),
+                    Err(e) => println!("  {}: (eval: {e:?})", label),
                 }
             } else {
-                println!("    parametric evaluation (free vars: {}):", {
+                println!(
+                    "  {}: parametric (free: {})",
+                    label,
                     free.iter()
                         .map(|u| var_name(*u))
                         .collect::<Vec<_>>()
                         .join(", ")
-                });
+                );
                 for sample in 0..3 {
                     let assign = assignment_seed(&free, sample);
                     let binding: Vec<String> = free
@@ -127,8 +114,8 @@ fn main() {
                         .map(|u| format!("{}={}", var_name(*u), assign.get(u).copied().unwrap()))
                         .collect();
                     match evaluate(&disp_dag, disp_root, &assign) {
-                        Ok(q) => println!("      [{}]  {}", binding.join(", "), q),
-                        Err(e) => println!("      (sample {}: {:?})", sample, e),
+                        Ok(q) => println!("    [{}]  {}", binding.join(", "), q),
+                        Err(e) => println!("    (sample {}: {:?})", sample, e),
                     }
                 }
             }
