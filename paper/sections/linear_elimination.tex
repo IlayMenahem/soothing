@@ -41,4 +41,8 @@ It is also possible to use DFS or BFS to search on the order of elimination.
 \subsection*{Validation of the solution}
 
 After obtaining a solution, we can validate it by substituting the solution back into the original system and checking if it satisfies all the equations.
-To check weather the solution is of full dimension at certain points, we can check if the number of free variables is equal to $\text{rank}(A)$ 
+
+To check whether the solution is of full dimension at certain points, we can use the following theorem:
+\begin{theorem}[Gatilov et al. \cite{gatilov2014using}]
+    Given a continuously differentiable system $F\in C^1$ (possibly polynomial) with a solution point $p$, the dimension of the solution space in the neighborhood of $p$ is $n - \text{rank}(J_F(p))$, where $J_F$ is the Jacobian matrix of $F$ at point $p$.
+\end{theorem}
