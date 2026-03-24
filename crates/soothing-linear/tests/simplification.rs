@@ -4,6 +4,21 @@ use soothing_linear::{
 use std::collections::HashMap;
 
 #[test]
+fn zero_div_nonconst_denominator_folds_to_zero() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let v = b.variable(x);
+    let z = b.constant(Q::new(0, 1));
+    let frac = b.div(z, v);
+    let dag = b.build();
+    let mut bb = DagBuilder::new();
+    let r = simplify_once(&mut bb, &dag, frac).unwrap();
+    let out = bb.snapshot();
+    let empty = HashMap::new();
+    assert_eq!(evaluate(&out, r, &empty).unwrap(), Q::new(0, 1));
+}
+
+#[test]
 fn mul_by_zero_annihilates() {
     let mut b = DagBuilder::new();
     let x = VarId(0);

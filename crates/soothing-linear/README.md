@@ -30,6 +30,7 @@ let vx = b.variable(x);
 let vy = b.variable(y);
 let eq = b.add(vec![vx, vy]); // x + y = 0
 let sys = PolynomialSystem::new(b.build(), vec![eq]);
-let out = linear_elimination_greedy(sys, &SampleConfig::default()).expect("elimination");
+let out = linear_elimination_greedy(sys, &SampleConfig::default(), Default::default())
+    .expect("elimination");
 assert!(out.substitution.len() >= 1);
 ```

@@ -13,7 +13,12 @@
 //! let vy = b.variable(y);
 //! let eq = b.add(vec![vx, vy]);
 //! let sys = PolynomialSystem::new(b.build(), vec![eq]);
-//! let _ = linear_elimination_greedy(sys, &SampleConfig::default()).expect("ok");
+//! let _ = linear_elimination_greedy(
+//!     sys,
+//!     &SampleConfig::default(),
+//!     Default::default(),
+//! )
+//! .expect("ok");
 //! ```
 //!
 //! ## Scope (v1)
@@ -47,6 +52,7 @@ pub mod cli_display;
 pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 pub use elimination::{
     dfs_linear_elimination, linear_elimination_greedy, EliminationError, EliminationResult,
+    LinearEliminationOptions,
 };
 pub use mathematica_system::{
     default_systems_dir_from_manifest, load_mathematica_system_from_path,

@@ -50,11 +50,11 @@ fn run_three_equation_demo(cfg: &SampleConfig) {
     println!("  x*y + z = 0");
     println!();
 
-    let greedy = linear_elimination_greedy(sys.clone(), cfg).unwrap_or_else(|e| {
+    let greedy = linear_elimination_greedy(sys.clone(), cfg, Default::default()).unwrap_or_else(|e| {
         eprintln!("greedy elimination failed: {e}");
         std::process::exit(1);
     });
-    let dfs = dfs_linear_elimination(sys, cfg).unwrap_or_else(|e| {
+    let dfs = dfs_linear_elimination(sys, cfg, Default::default()).unwrap_or_else(|e| {
         eprintln!("DFS elimination failed: {e}");
         std::process::exit(1);
     });
@@ -107,7 +107,7 @@ fn run_two_linear_equations_demo(cfg: &SampleConfig) {
     };
     let sys = PolynomialSystem::new(b.build(), vec![e0, e1]);
 
-    let dfs = dfs_linear_elimination(sys, cfg).unwrap_or_else(|e| {
+    let dfs = dfs_linear_elimination(sys, cfg, Default::default()).unwrap_or_else(|e| {
         eprintln!("DFS elimination failed: {e}");
         std::process::exit(1);
     });

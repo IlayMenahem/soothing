@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use soothing_linear::{
-    default_systems_dir_from_manifest, dfs_linear_elimination, load_mathematica_system_from_path_with_var_names,
-    print_substitution_bindings, SampleConfig, VarId,
+    default_systems_dir_from_manifest, dfs_linear_elimination,
+    load_mathematica_system_from_path_with_var_names, print_substitution_bindings, LinearEliminationOptions,
+    SampleConfig, VarId,
 };
 
 fn main() {
@@ -45,7 +46,13 @@ fn main() {
 
     let cfg = SampleConfig::default();
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination(sys, &cfg) {
+    let res = match dfs_linear_elimination(
+        sys,
+        &cfg,
+        LinearEliminationOptions {
+            simplify_each_step: true,
+        },
+    ) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("dfs_linear_elimination error: {e}");

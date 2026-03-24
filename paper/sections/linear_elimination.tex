@@ -18,6 +18,7 @@ even in the case of very large non linear polynomial systems of equations, it is
     \State $\Sigma \gets \Sigma \cup \{x \mapsto f(\hat{x})\}$
     \State Substitute $x \gets f(\hat{x})$ in $Q$
     \State $V \gets V\setminus\{x\}$
+    \State Simplify the system $Q$ \Comment{Optional, but recommended}
     \State clear $Q$ of zero equations
     \State $L \gets \{(x',p')\mid x'\in V,\ p'\in Q,\ p' \text{ is linear in } x'\}$
 \EndWhile
@@ -33,3 +34,8 @@ we have the freedom to choose which linear variable to eliminate at each step. g
 \end{list}
 
 It is also possible to use DFS or BFS to search on the order of elimination.
+
+\subsection*{Validation of the solution}
+
+After obtaining a solution, we can validate it by substituting the solution back into the original system and checking if it satisfies all the equations.
+To check weather the solution is of full dimension at certain points, we can check if the number of free variables is equal to $\text{rank}(A)$ 

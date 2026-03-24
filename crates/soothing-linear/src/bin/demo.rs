@@ -49,7 +49,7 @@ fn main() {
     println!("  x*y + z = 0   (monomial x*y: degree 2, two variables)");
     println!("DAG nodes: {}\n", sys.dag.len());
 
-    let result = match linear_elimination_greedy(sys, &SampleConfig::default()) {
+    let result = match linear_elimination_greedy(sys, &SampleConfig::default(), Default::default()) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("elimination failed: {e}");

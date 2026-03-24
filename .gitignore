@@ -21,6 +21,7 @@ __pycache__/
 .cursor/
 .ruff_cache/
 .pytest_cache/
-.worktrees/
+
+target/
 
 .gitignore

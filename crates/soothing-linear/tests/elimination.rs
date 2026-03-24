@@ -1,6 +1,6 @@
 use soothing_linear::{
-    dfs_linear_elimination, linear_elimination_greedy, Dag, DagBuilder, PolynomialSystem,
-    SampleConfig, VarId, Q,
+    dfs_linear_elimination, linear_elimination_greedy, Dag, DagBuilder, LinearEliminationOptions,
+    PolynomialSystem, SampleConfig, VarId, Q,
 };
 
 #[test]
@@ -12,7 +12,27 @@ fn single_step() {
     let vy = b.variable(y);
     let e = b.add(vec![vx, vy]);
     let sys = PolynomialSystem::new(b.build(), vec![e]);
-    let r = linear_elimination_greedy(sys, &SampleConfig::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &SampleConfig::default(), Default::default()).unwrap();
+    assert!(r.substitution.contains(x) || r.substitution.contains(y));
+}
+
+#[test]
+fn optional_simplify_each_step_runs() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let y = VarId(1);
+    let vx = b.variable(x);
+    let vy = b.variable(y);
+    let e = b.add(vec![vx, vy]);
+    let sys = PolynomialSystem::new(b.build(), vec![e]);
+    let r = linear_elimination_greedy(
+        sys,
+        &SampleConfig::default(),
+        LinearEliminationOptions {
+            simplify_each_step: true,
+        },
+    )
+    .unwrap();
     assert!(r.substitution.contains(x) || r.substitution.contains(y));
 }
 
@@ -28,7 +48,7 @@ fn recomputes_candidates() {
     let c = b.constant(Q::new(1, 1));
     let e2 = b.add(vec![vx2, c]);
     let sys = PolynomialSystem::new(b.build(), vec![e1, e2]);
-    let r = linear_elimination_greedy(sys, &SampleConfig::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &SampleConfig::default(), Default::default()).unwrap();
     assert!(r.substitution.len() >= 1);
 }
 
@@ -40,7 +60,7 @@ fn removes_zero_equations() {
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
     let sys = PolynomialSystem::new(b.build(), vec![z]);
-    let r = linear_elimination_greedy(sys, &SampleConfig::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &SampleConfig::default(), Default::default()).unwrap();
     assert!(r.reduced_system.equations.is_empty());
 }
 
@@ -54,7 +74,7 @@ fn end_to_end() {
     let c = b.constant(Q::new(1, 1));
     let e = b.add(vec![vx, vy, c]);
     let sys = PolynomialSystem::new(b.build(), vec![e]);
-    let r = linear_elimination_greedy(sys, &SampleConfig::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &SampleConfig::default(), Default::default()).unwrap();
     assert!(r.substitution.len() >= 1);
 }
 
@@ -66,7 +86,7 @@ fn dfs_removes_zero_equations() {
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
     let sys = PolynomialSystem::new(b.build(), vec![z]);
-    let r = dfs_linear_elimination(sys, &SampleConfig::default()).unwrap();
+    let r = dfs_linear_elimination(sys, &SampleConfig::default(), Default::default()).unwrap();
     assert!(r.reduced_system.equations.is_empty());
 }
 
@@ -80,8 +100,8 @@ fn dfs_not_worse_than_greedy_on_single_linear() {
     let e = b.add(vec![vx, vy]);
     let sys = PolynomialSystem::new(b.build(), vec![e]);
     let cfg = SampleConfig::default();
-    let g = linear_elimination_greedy(sys.clone(), &cfg).unwrap();
-    let d = dfs_linear_elimination(sys, &cfg).unwrap();
+    let g = linear_elimination_greedy(sys.clone(), &cfg, Default::default()).unwrap();
+    let d = dfs_linear_elimination(sys, &cfg, Default::default()).unwrap();
     assert!(d.reduced_system.equations.len() <= g.reduced_system.equations.len());
 }
 
@@ -98,7 +118,7 @@ fn dfs_eliminates_fully_three_equation_demo_system() {
     }
     let sys = PolynomialSystem::new(b.build(), equation_roots);
     let cfg = SampleConfig::default();
-    let r = dfs_linear_elimination(sys, &cfg).unwrap();
+    let r = dfs_linear_elimination(sys, &cfg, Default::default()).unwrap();
     assert!(
         r.reduced_system.equations.is_empty(),
         "expected full elimination for z+x-1=0, y-z=0, x*y+z=0"

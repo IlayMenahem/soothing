@@ -3,10 +3,19 @@
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
 use crate::predicates::{expr_finite_at_some_random_sample, is_linear_in, is_zero, SampleConfig};
+use crate::simplify::simplify_once;
 use crate::substitution::SubstitutionMap;
 use crate::system::PolynomialSystem;
 use std::collections::{BTreeSet, HashSet};
 use thiserror::Error;
+
+/// Options for [`linear_elimination_greedy`] and [`dfs_linear_elimination`].
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LinearEliminationOptions {
+    /// After each substitution, run [`crate::simplify::simplify_once`] on every residual equation,
+    /// then drop zeros (paper: optional but recommended).
+    pub simplify_each_step: bool,
+}
 
 #[derive(Debug, Error)]
 pub enum EliminationError {
@@ -16,6 +25,8 @@ pub enum EliminationError {
     DegenerateSubstitution { var: VarId },
     #[error(transparent)]
     Predicate(#[from] crate::predicates::PredicateError),
+    #[error(transparent)]
+    Simplify(#[from] crate::simplify::SimplifyError),
 }
 
 /// Residual polynomial system and substitution map produced by elimination.
@@ -33,6 +44,7 @@ pub struct EliminationResult {
 pub fn linear_elimination_greedy(
     system: PolynomialSystem,
     cfg: &SampleConfig,
+    opts: LinearEliminationOptions,
 ) -> Result<EliminationResult, EliminationError> {
     let mut b = DagBuilder::new();
     let mut eq_roots: Vec<NodeId> = system
@@ -64,7 +76,16 @@ pub fn linear_elimination_greedy(
             break;
         };
 
-        apply_one_elimination(&mut b, &mut eq_roots, &mut subst, x, i, &remaining, cfg)?;
+        apply_one_elimination(
+            &mut b,
+            &mut eq_roots,
+            &mut subst,
+            x,
+            i,
+            &remaining,
+            cfg,
+            opts,
+        )?;
         remaining = collect_vars(&b.snapshot(), &eq_roots).into_iter().collect();
     }
 
@@ -89,6 +110,7 @@ pub fn linear_elimination_greedy(
 pub fn dfs_linear_elimination(
     system: PolynomialSystem,
     cfg: &SampleConfig,
+    opts: LinearEliminationOptions,
 ) -> Result<EliminationResult, EliminationError> {
     let mut b = DagBuilder::new();
     let eq_roots: Vec<NodeId> = system
@@ -97,7 +119,7 @@ pub fn dfs_linear_elimination(
         .map(|&r| b.merge_root(&system.dag, r))
         .collect();
     let subst = SubstitutionMap::new();
-    dfs_linear_elimination_inner(b, eq_roots, subst, cfg)
+    dfs_linear_elimination_inner(b, eq_roots, subst, cfg, opts)
 }
 
 fn dfs_linear_elimination_inner(
@@ -105,6 +127,7 @@ fn dfs_linear_elimination_inner(
     eq_roots: Vec<NodeId>,
     subst: SubstitutionMap,
     cfg: &SampleConfig,
+    opts: LinearEliminationOptions,
 ) -> Result<EliminationResult, EliminationError> {
     let snap = b.snapshot();
     if eq_roots.is_empty() {
@@ -142,6 +165,7 @@ fn dfs_linear_elimination_inner(
             i,
             &remaining_branch,
             cfg,
+            opts,
         ) {
             Ok(()) => {}
             Err(EliminationError::IllegitimateElimination { .. })
@@ -149,7 +173,7 @@ fn dfs_linear_elimination_inner(
             Err(e) => return Err(e),
         }
 
-        let r = dfs_linear_elimination_inner(b_branch, eq_branch, subst_branch, cfg)?;
+        let r = dfs_linear_elimination_inner(b_branch, eq_branch, subst_branch, cfg, opts)?;
         if r.reduced_system.equations.is_empty() {
             return Ok(r);
         }
@@ -208,6 +232,18 @@ fn other_vars(remaining: &BTreeSet<VarId>, x: VarId) -> Vec<VarId> {
     remaining.iter().filter(|&&v| v != x).copied().collect()
 }
 
+/// One [`simplify_once`] pass per equation root, reading from a fixed pre-simplify DAG snapshot.
+fn simplify_equation_roots(
+    b: &mut DagBuilder,
+    eq_roots: &mut Vec<NodeId>,
+) -> Result<(), crate::simplify::SimplifyError> {
+    let snap = b.snapshot();
+    for r in eq_roots.iter_mut() {
+        *r = simplify_once(b, &snap, *r)?;
+    }
+    Ok(())
+}
+
 /// Drop equations that the sampling predicate classifies as identically zero. On predicate error,
 /// keep the equation.
 fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleConfig) {
@@ -231,6 +267,7 @@ fn apply_one_elimination(
     i: usize,
     remaining: &BTreeSet<VarId>,
     cfg: &SampleConfig,
+    opts: LinearEliminationOptions,
 ) -> Result<(), EliminationError> {
     let snap = b.snapshot();
     let eq_root = eq_roots[i];
@@ -252,6 +289,9 @@ fn apply_one_elimination(
             }
         }
         *eq_roots = new_eqs;
+        if opts.simplify_each_step {
+            simplify_equation_roots(b, eq_roots)?;
+        }
         let snap_taut = b.snapshot();
         retain_nonzero_equations(&snap_taut, eq_roots, cfg);
         return Ok(());
@@ -277,6 +317,9 @@ fn apply_one_elimination(
     }
     *eq_roots = new_eqs;
 
+    if opts.simplify_each_step {
+        simplify_equation_roots(b, eq_roots)?;
+    }
     let snap4 = b.snapshot();
     retain_nonzero_equations(&snap4, eq_roots, cfg);
     Ok(())

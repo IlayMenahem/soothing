@@ -418,6 +418,8 @@ fn construct_div(b: &mut DagBuilder, nn: NodeId, dd: NodeId) -> Result<NodeId, S
                 }
                 return Ok(b.constant(q_zero()));
             }
+            // 0 / f with non-constant f: rational simplification to 0 (denominator not identically 0 as const).
+            return Ok(b.constant(q_zero()));
         }
     }
 

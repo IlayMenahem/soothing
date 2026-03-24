@@ -11,7 +11,7 @@ fn tiny_system_loads_and_dfs_runs() {
     let s = "{0 -> x + y, 0 -> x - 1}";
     let sys = load_mathematica_system_from_str(s).unwrap();
     assert_eq!(sys.equations.len(), 2);
-    let _ = dfs_linear_elimination(sys, &SampleConfig::default()).unwrap();
+    let _ = dfs_linear_elimination(sys, &SampleConfig::default(), Default::default()).unwrap();
 }
 
 #[test]
