@@ -1,9 +1,9 @@
 //! Load `systems/simplified_mathematica_system.txt` and run DFS linear elimination.
 //!
 //! From repo root: `cargo run -p soothing-linear --bin solve_simplified_mathematica`
-//! Optional: pass a path to another Mathematica rule list.
 
-use std::path::PathBuf;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use soothing_linear::{
@@ -12,16 +12,22 @@ use soothing_linear::{
     LinearEliminationOptions, SampleConfig, VarId,
 };
 
+/// Trace output path relative to the current working directory.
+const TRACE_LOG_FILE: &str = "elimination_trace.log";
+
 fn main() {
     let path: PathBuf = std::env::args()
         .nth(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            default_systems_dir_from_manifest().join("simplified_mathematica_system.txt")
+            default_systems_dir_from_manifest().join("system.txt")
         });
+
+    let trace_path = Path::new(TRACE_LOG_FILE);
 
     println!("soothing-linear — DFS elimination on Mathematica system\n");
     println!("Loading {}", path.display());
+    println!("Tracing elimination to {}", trace_path.display());
     let loaded = match load_mathematica_system_from_path_with_var_names(&path) {
         Ok(s) => s,
         Err(e) => {
@@ -45,14 +51,21 @@ fn main() {
     );
 
     let cfg = SampleConfig::default();
+    let opts = LinearEliminationOptions {
+        simplify_each_step: true,
+        ..Default::default()
+    };
+
+    let mut trace_file = match File::create(trace_path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("trace log {}: {e}", trace_path.display());
+            std::process::exit(1);
+        }
+    };
+
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination(
-        sys,
-        &cfg,
-        LinearEliminationOptions {
-            simplify_each_step: true,
-        },
-    ) {
+    let res = match dfs_linear_elimination(sys, &cfg, opts, Some(&mut trace_file)) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("dfs_linear_elimination error: {e}");

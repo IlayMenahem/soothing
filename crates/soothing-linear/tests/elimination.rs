@@ -30,6 +30,7 @@ fn optional_simplify_each_step_runs() {
         &SampleConfig::default(),
         LinearEliminationOptions {
             simplify_each_step: true,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -79,6 +80,29 @@ fn end_to_end() {
 }
 
 #[test]
+fn dfs_trace_writes_elapsed_lines() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let vx = b.variable(x);
+    let nx = b.neg(vx);
+    let z = b.add(vec![vx, nx]);
+    let sys = PolynomialSystem::new(b.build(), vec![z]);
+    let mut log = Vec::<u8>::new();
+    let _ = dfs_linear_elimination(
+        sys,
+        &SampleConfig::default(),
+        Default::default(),
+        Some(&mut log),
+    )
+    .unwrap();
+    let s = String::from_utf8(log).expect("utf8 trace");
+    assert!(
+        s.contains("elapsed:"),
+        "expected DFS timing line, got: {s:?}"
+    );
+}
+
+#[test]
 fn dfs_removes_zero_equations() {
     let mut b = DagBuilder::new();
     let x = VarId(0);
@@ -86,7 +110,7 @@ fn dfs_removes_zero_equations() {
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
     let sys = PolynomialSystem::new(b.build(), vec![z]);
-    let r = dfs_linear_elimination(sys, &SampleConfig::default(), Default::default()).unwrap();
+    let r = dfs_linear_elimination(sys, &SampleConfig::default(), Default::default(), None).unwrap();
     assert!(r.reduced_system.equations.is_empty());
 }
 
@@ -101,7 +125,7 @@ fn dfs_not_worse_than_greedy_on_single_linear() {
     let sys = PolynomialSystem::new(b.build(), vec![e]);
     let cfg = SampleConfig::default();
     let g = linear_elimination_greedy(sys.clone(), &cfg, Default::default()).unwrap();
-    let d = dfs_linear_elimination(sys, &cfg, Default::default()).unwrap();
+    let d = dfs_linear_elimination(sys, &cfg, Default::default(), None).unwrap();
     assert!(d.reduced_system.equations.len() <= g.reduced_system.equations.len());
 }
 
@@ -118,7 +142,7 @@ fn dfs_eliminates_fully_three_equation_demo_system() {
     }
     let sys = PolynomialSystem::new(b.build(), equation_roots);
     let cfg = SampleConfig::default();
-    let r = dfs_linear_elimination(sys, &cfg, Default::default()).unwrap();
+    let r = dfs_linear_elimination(sys, &cfg, Default::default(), None).unwrap();
     assert!(
         r.reduced_system.equations.is_empty(),
         "expected full elimination for z+x-1=0, y-z=0, x*y+z=0"

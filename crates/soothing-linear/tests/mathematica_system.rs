@@ -11,7 +11,7 @@ fn tiny_system_loads_and_dfs_runs() {
     let s = "{0 -> x + y, 0 -> x - 1}";
     let sys = load_mathematica_system_from_str(s).unwrap();
     assert_eq!(sys.equations.len(), 2);
-    let _ = dfs_linear_elimination(sys, &SampleConfig::default(), Default::default()).unwrap();
+    let _ = dfs_linear_elimination(sys, &SampleConfig::default(), Default::default(), None).unwrap();
 }
 
 #[test]
@@ -55,7 +55,9 @@ fn simplified_mathematica_dfs_does_not_panic() {
         &SampleConfig::default(),
         LinearEliminationOptions {
             simplify_each_step: true,
+            ..Default::default()
         },
+        None,
     )
     .expect("dfs elimination");
 }
