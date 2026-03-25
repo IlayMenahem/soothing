@@ -15,7 +15,7 @@ use thiserror::Error;
 
 /// Repo `systems/` directory when built from `crates/soothing-linear` (same layout as Python `systems.py`).
 pub fn default_systems_dir_from_manifest() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../systems")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../systems")
 }
 
 #[derive(Debug, Error)]

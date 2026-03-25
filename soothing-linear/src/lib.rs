@@ -40,6 +40,7 @@
 pub mod cli_display;
 pub mod dag;
 mod dag_parse;
+mod debug_session;
 pub mod elimination;
 pub mod eval;
 pub mod field;
@@ -51,8 +52,8 @@ pub mod system;
 
 pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 pub use elimination::{
-    dfs_linear_elimination, linear_elimination_greedy, EliminationError, EliminationResult,
-    LinearEliminationOptions,
+    default_is_solution, dfs_linear_elimination, is_solution_nonzero_kappah,
+    linear_elimination_greedy, EliminationError, EliminationResult, LinearEliminationOptions,
 };
 pub use eval::{evaluate, evaluate_f64, EvalError};
 pub use field::Q;

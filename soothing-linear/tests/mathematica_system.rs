@@ -2,8 +2,9 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use soothing_linear::{
-    default_systems_dir_from_manifest, dfs_linear_elimination, load_mathematica_system_from_path,
-    load_mathematica_system_from_str, Dag, LinearEliminationOptions, SampleConfig,
+    default_is_solution, default_systems_dir_from_manifest, dfs_linear_elimination,
+    load_mathematica_system_from_path, load_mathematica_system_from_str, Dag,
+    LinearEliminationOptions, SampleConfig,
 };
 
 #[test]
@@ -11,7 +12,14 @@ fn tiny_system_loads_and_dfs_runs() {
     let s = "{0 -> x + y, 0 -> x - 1}";
     let sys = load_mathematica_system_from_str(s).unwrap();
     assert_eq!(sys.equations.len(), 2);
-    let _ = dfs_linear_elimination(sys, &SampleConfig::default(), Default::default(), None).unwrap();
+    let _ = dfs_linear_elimination(
+        sys,
+        &SampleConfig::default(),
+        Default::default(),
+        None,
+        default_is_solution,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -58,6 +66,7 @@ fn simplified_mathematica_dfs_does_not_panic() {
             ..Default::default()
         },
         None,
+        default_is_solution,
     )
     .expect("dfs elimination");
 }

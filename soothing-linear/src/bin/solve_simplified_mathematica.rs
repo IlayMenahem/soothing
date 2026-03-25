@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use soothing_linear::{
-    default_systems_dir_from_manifest, dfs_linear_elimination,
-    load_mathematica_system_from_path_with_var_names, print_substitution_bindings,
-    LinearEliminationOptions, SampleConfig, VarId,
+    default_is_solution, default_systems_dir_from_manifest, dfs_linear_elimination,
+    is_solution_nonzero_kappah, load_mathematica_system_from_path_with_var_names,
+    print_substitution_bindings, LinearEliminationOptions, SampleConfig, VarId,
 };
 
 /// Trace output path relative to the current working directory.
@@ -20,7 +20,7 @@ fn main() {
         .nth(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            default_systems_dir_from_manifest().join("system.txt")
+            default_systems_dir_from_manifest().join("simplified_mathematica_system.txt")
         });
 
     let trace_path = Path::new(TRACE_LOG_FILE);
@@ -64,8 +64,20 @@ fn main() {
         }
     };
 
+    let kappah = var_names
+        .iter()
+        .position(|n| n == "kappah")
+        .map(|i| VarId(i as u32));
+    if kappah.is_none() {
+        eprintln!("warning: no variable named \"kappah\" in system; using default solution predicate (empty residual only).");
+    }
+
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination(sys, &cfg, opts, Some(&mut trace_file)) {
+    let res = match dfs_linear_elimination(sys, &cfg, opts, Some(&mut trace_file), |r| match kappah
+    {
+        Some(k) => is_solution_nonzero_kappah(r, k, &cfg),
+        None => default_is_solution(r),
+    }) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("dfs_linear_elimination error: {e}");

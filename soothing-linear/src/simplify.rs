@@ -404,7 +404,44 @@ fn apply_div_sign(b: &mut DagBuilder, id: NodeId, flip: bool) -> NodeId {
 
 fn construct_div(b: &mut DagBuilder, nn: NodeId, dd: NodeId) -> Result<NodeId, SimplifyError> {
     if let (Some(nc), Some(dc)) = (try_const(b, nn), try_const(b, dd)) {
+        if nc.is_zero() && dc.is_zero() {
+            // #region agent log
+            let dag = b.snapshot();
+            let nf = dag.format_root(nn, |v| format!("v{}", v.0));
+            let df = dag.format_root(dd, |v| format!("v{}", v.0));
+            crate::debug_session::log_ndjson(
+                "simplify.rs:construct_div",
+                "DivisionByZero: 0/0 after const fold (indeterminate)",
+                "H2",
+                &[
+                    ("branch", "zero_over_zero_const"),
+                    ("numerator_Q", &format!("{nc}")),
+                    ("denominator_Q", &format!("{dc}")),
+                    ("numerator_node", &nf),
+                    ("denominator_node", &df),
+                ],
+            );
+            // #endregion
+            return Err(SimplifyError::DivisionByZero);
+        }
         if dc.is_zero() {
+            // #region agent log
+            let dag = b.snapshot();
+            let nf = dag.format_root(nn, |v| format!("v{}", v.0));
+            let df = dag.format_root(dd, |v| format!("v{}", v.0));
+            crate::debug_session::log_ndjson(
+                "simplify.rs:construct_div",
+                "DivisionByZero: nonzero/0 after const fold",
+                "H1",
+                &[
+                    ("branch", "nonzero_over_zero_const"),
+                    ("numerator_Q", &format!("{nc}")),
+                    ("denominator_Q", &format!("{dc}")),
+                    ("numerator_node", &nf),
+                    ("denominator_node", &df),
+                ],
+            );
+            // #endregion
             return Err(SimplifyError::DivisionByZero);
         }
         return Ok(b.constant(nc / dc));
@@ -412,12 +449,6 @@ fn construct_div(b: &mut DagBuilder, nn: NodeId, dd: NodeId) -> Result<NodeId, S
 
     if let Some(nc) = try_const(b, nn) {
         if nc.is_zero() {
-            if let Some(dc) = try_const(b, dd) {
-                if dc.is_zero() {
-                    return Err(SimplifyError::DivisionByZero);
-                }
-                return Ok(b.constant(q_zero()));
-            }
             // 0 / f with non-constant f: rational simplification to 0 (denominator not identically 0 as const).
             return Ok(b.constant(q_zero()));
         }
