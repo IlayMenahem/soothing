@@ -3,8 +3,7 @@ use std::path::Path;
 
 use soothing_linear::{
     default_is_solution, default_systems_dir_from_manifest, dfs_linear_elimination,
-    load_mathematica_system_from_path, load_mathematica_system_from_str, Dag,
-    LinearEliminationOptions, SampleConfig,
+    load_mathematica_system_from_path, load_mathematica_system_from_str, Dag, SampleConfig,
 };
 
 #[test]
@@ -12,13 +11,7 @@ fn tiny_system_loads_and_dfs_runs() {
     let s = "{0 -> x + y, 0 -> x - 1}";
     let sys = load_mathematica_system_from_str(s).unwrap();
     assert_eq!(sys.equations.len(), 2);
-    let _ = dfs_linear_elimination(
-        sys,
-        &SampleConfig::default(),
-        Default::default(),
-        None,
-        default_is_solution,
-    )
+    let _ = dfs_linear_elimination(sys, &SampleConfig::default(), None, default_is_solution)
     .unwrap();
 }
 
@@ -58,15 +51,6 @@ fn simplified_mathematica_dfs_does_not_panic() {
         .join("../../systems/simplified_mathematica_system.txt");
     let sys =
         load_mathematica_system_from_path(&p).expect("parse simplified_mathematica_system.txt");
-    let _ = dfs_linear_elimination(
-        sys,
-        &SampleConfig::default(),
-        LinearEliminationOptions {
-            simplify_each_step: true,
-            ..Default::default()
-        },
-        None,
-        default_is_solution,
-    )
+    let _ = dfs_linear_elimination(sys, &SampleConfig::default(), None, default_is_solution)
     .expect("dfs elimination");
 }

@@ -13,12 +13,7 @@
 //! let vy = b.variable(y);
 //! let eq = b.add(vec![vx, vy]);
 //! let sys = PolynomialSystem::new(b.build(), vec![eq]);
-//! let _ = linear_elimination_greedy(
-//!     sys,
-//!     &SampleConfig::default(),
-//!     Default::default(),
-//! )
-//! .expect("ok");
+//! let _ = linear_elimination_greedy(sys, &SampleConfig::default()).expect("ok");
 //! ```
 //!
 //! ## Scope (v1)
@@ -53,7 +48,7 @@ pub mod system;
 pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 pub use elimination::{
     default_is_solution, dfs_linear_elimination, is_solution_nonzero_kappah,
-    linear_elimination_greedy, EliminationError, EliminationResult, LinearEliminationOptions,
+    linear_elimination_greedy, EliminationError, EliminationResult,
 };
 pub use eval::{evaluate, evaluate_f64, EvalError};
 pub use field::Q;

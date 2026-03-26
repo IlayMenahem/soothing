@@ -3,7 +3,6 @@
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
 use crate::predicates::{expr_finite_at_some_random_sample, is_linear_in, is_zero, SampleConfig};
-use crate::simplify::simplify_once;
 use crate::substitution::SubstitutionMap;
 use crate::system::PolynomialSystem;
 use std::cell::RefCell;
@@ -11,14 +10,6 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Write;
 use std::time::Instant;
 use thiserror::Error;
-
-/// Options for [`linear_elimination_greedy`] and [`dfs_linear_elimination`].
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct LinearEliminationOptions {
-    /// After each substitution, run [`crate::simplify::simplify_once`] on every residual equation,
-    /// then drop zeros (paper: optional but recommended).
-    pub simplify_each_step: bool,
-}
 
 #[derive(Debug, Error)]
 pub enum EliminationError {
@@ -30,8 +21,6 @@ pub enum EliminationError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Predicate(#[from] crate::predicates::PredicateError),
-    #[error(transparent)]
-    Simplify(#[from] crate::simplify::SimplifyError),
 }
 
 #[derive(Default)]
@@ -152,7 +141,6 @@ fn validate_elimination_result(
 pub fn linear_elimination_greedy(
     system: PolynomialSystem,
     cfg: &SampleConfig,
-    opts: LinearEliminationOptions,
 ) -> Result<EliminationResult, EliminationError> {
     let original = system.clone();
     let mut b = DagBuilder::new();
@@ -185,17 +173,7 @@ pub fn linear_elimination_greedy(
             break;
         };
 
-        apply_one_elimination(
-            &mut b,
-            &mut eq_roots,
-            &mut subst,
-            x,
-            i,
-            &remaining,
-            cfg,
-            opts,
-            None,
-        )?;
+        apply_one_elimination(&mut b, &mut eq_roots, &mut subst, x, i, &remaining, cfg)?;
         remaining = collect_vars(&b.snapshot(), &eq_roots).into_iter().collect();
     }
 
@@ -220,15 +198,14 @@ pub fn linear_elimination_greedy(
 /// Pairs that would be [`EliminationError::IllegitimateElimination`] or
 /// [`EliminationError::DegenerateSubstitution`] are skipped (other branches are still tried).
 ///
-/// When `trace_writer` is `Some`, each DFS node and each simplification pass append lines to the
-/// writer (flushed after every line) for performance diagnosis.
+/// When `trace_writer` is `Some`, each DFS node appends timing lines to the writer (flushed after
+/// every line) for performance diagnosis.
 ///
 /// `is_solution` decides when a leaf counts as a successful terminal state for early exit; use
 /// [`default_is_solution`] unless you need a stricter condition (e.g. [`is_solution_nonzero_kappah`]).
 pub fn dfs_linear_elimination<F>(
     system: PolynomialSystem,
     cfg: &SampleConfig,
-    opts: LinearEliminationOptions,
     trace_writer: Option<&mut dyn Write>,
     is_solution: F,
 ) -> Result<EliminationResult, EliminationError>
@@ -244,9 +221,7 @@ where
         .collect();
     let subst = SubstitutionMap::new();
     let result = match trace_writer {
-        None => {
-            dfs_linear_elimination_inner(b, eq_roots, subst, cfg, opts, None, None, &is_solution)?
-        }
+        None => dfs_linear_elimination_inner(b, eq_roots, subst, cfg, None, None, &is_solution)?,
         Some(w) => {
             let trace_w = RefCell::new(w);
             let trace_st = RefCell::new(EliminationTraceState::default());
@@ -255,7 +230,6 @@ where
                 eq_roots,
                 subst,
                 cfg,
-                opts,
                 Some(&trace_w),
                 Some(&trace_st),
                 &is_solution,
@@ -271,7 +245,6 @@ fn dfs_linear_elimination_inner<F>(
     eq_roots: Vec<NodeId>,
     subst: SubstitutionMap,
     cfg: &SampleConfig,
-    opts: LinearEliminationOptions,
     trace_w: Option<&RefCell<&mut dyn Write>>,
     trace_st: Option<&RefCell<EliminationTraceState>>,
     is_solution: &F,
@@ -335,8 +308,6 @@ where
             i,
             &remaining_branch,
             cfg,
-            opts,
-            trace_w,
         ) {
             Ok(()) => {}
             Err(EliminationError::IllegitimateElimination { .. })
@@ -362,7 +333,6 @@ where
             eq_branch,
             subst_branch,
             cfg,
-            opts,
             trace_w,
             trace_st,
             is_solution,
@@ -425,61 +395,6 @@ fn other_vars(remaining: &BTreeSet<VarId>, x: VarId) -> Vec<VarId> {
     remaining.iter().filter(|&&v| v != x).copied().collect()
 }
 
-/// One [`simplify_once`] pass per equation root, reading from a fixed pre-simplify DAG snapshot.
-fn simplify_equation_roots(
-    b: &mut DagBuilder,
-    eq_roots: &mut Vec<NodeId>,
-) -> Result<(), crate::simplify::SimplifyError> {
-    let snap = b.snapshot();
-    for (eq_idx, r) in eq_roots.iter_mut().enumerate() {
-        let root_before = *r;
-        *r = match simplify_once(b, &snap, root_before) {
-            Ok(x) => x,
-            Err(e) => {
-                // #region agent log
-                let preview = snap.format_root(root_before, |v| format!("v{}", v.0));
-                crate::debug_session::log_ndjson(
-                    "elimination.rs:simplify_equation_roots",
-                    "simplify_once failed for residual equation",
-                    "H3",
-                    &[
-                        ("equation_index", &eq_idx.to_string()),
-                        ("error", &format!("{e}")),
-                        ("equation_root_before_simplify", &preview),
-                    ],
-                );
-                // #endregion
-                return Err(e);
-            }
-        };
-    }
-    Ok(())
-}
-
-fn simplify_equation_roots_maybe_traced(
-    b: &mut DagBuilder,
-    eq_roots: &mut Vec<NodeId>,
-    trace_w: Option<&RefCell<&mut dyn Write>>,
-) -> Result<(), EliminationError> {
-    match trace_w {
-        None => simplify_equation_roots(b, eq_roots).map_err(EliminationError::Simplify),
-        Some(cw) => {
-            let n = eq_roots.len();
-            let t0 = Instant::now();
-            simplify_equation_roots(b, eq_roots).map_err(EliminationError::Simplify)?;
-            let dt = t0.elapsed();
-            let mut out = cw.borrow_mut();
-            writeln!(
-                &mut *out,
-                "simplify_pass eq_count={n} took {:.6}s",
-                dt.as_secs_f64()
-            )?;
-            out.flush()?;
-            Ok(())
-        }
-    }
-}
-
 /// Drop equations that the sampling predicate classifies as identically zero. On predicate error,
 /// keep the equation.
 fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleConfig) {
@@ -495,36 +410,6 @@ fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleC
     });
 }
 
-fn log_simplify_failure_elimination_step(
-    x: VarId,
-    eq_index: usize,
-    stage: &str,
-    err: &EliminationError,
-    trace_w: Option<&RefCell<&mut dyn Write>>,
-) {
-    // #region agent log
-    crate::debug_session::log_ndjson(
-        "elimination.rs:apply_one_elimination",
-        "simplify step failed during linear elimination",
-        "H4",
-        &[
-            ("eliminating_var", &format!("{x:?}")),
-            ("equation_index", &eq_index.to_string()),
-            ("stage", stage),
-            ("error", &format!("{err}")),
-        ],
-    );
-    // #endregion
-    if let Some(cw) = trace_w {
-        let mut out = cw.borrow_mut();
-        let _ = writeln!(
-            &mut *out,
-            "SIMPLIFY_ERROR elim_var={x:?} eq_index={eq_index} stage={stage} err={err}"
-        );
-        let _ = out.flush();
-    }
-}
-
 fn apply_one_elimination(
     b: &mut DagBuilder,
     eq_roots: &mut Vec<NodeId>,
@@ -533,8 +418,6 @@ fn apply_one_elimination(
     i: usize,
     remaining: &BTreeSet<VarId>,
     cfg: &SampleConfig,
-    opts: LinearEliminationOptions,
-    trace_w: Option<&RefCell<&mut dyn Write>>,
 ) -> Result<(), EliminationError> {
     let snap = b.snapshot();
     let eq_root = eq_roots[i];
@@ -556,12 +439,6 @@ fn apply_one_elimination(
             }
         }
         *eq_roots = new_eqs;
-        if opts.simplify_each_step {
-            if let Err(e) = simplify_equation_roots_maybe_traced(b, eq_roots, trace_w) {
-                log_simplify_failure_elimination_step(x, i, "drop_vanishing_linear", &e, trace_w);
-                return Err(e);
-            }
-        }
         let snap_taut = b.snapshot();
         retain_nonzero_equations(&snap_taut, eq_roots, cfg);
         return Ok(());
@@ -587,18 +464,6 @@ fn apply_one_elimination(
     }
     *eq_roots = new_eqs;
 
-    if opts.simplify_each_step {
-        if let Err(e) = simplify_equation_roots_maybe_traced(b, eq_roots, trace_w) {
-            log_simplify_failure_elimination_step(
-                x,
-                i,
-                "substitute_remaining_equations",
-                &e,
-                trace_w,
-            );
-            return Err(e);
-        }
-    }
     let snap4 = b.snapshot();
     retain_nonzero_equations(&snap4, eq_roots, cfg);
     Ok(())

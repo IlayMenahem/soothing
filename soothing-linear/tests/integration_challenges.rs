@@ -23,7 +23,7 @@ fn empty_system_no_work() {
     let _ = b.constant(Q::new(0, 1));
     let d = b.build();
     let sys = PolynomialSystem::new(d, vec![]);
-    let r = linear_elimination_greedy(sys, &default_cfg(), Default::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &default_cfg()).unwrap();
     assert!(r.reduced_system.equations.is_empty());
     assert!(r.substitution.is_empty());
 }
@@ -44,7 +44,7 @@ fn four_variable_linear_chain_eliminates_all() {
     let e2 = b.add(vec![vz, vw]);
     let d = b.build();
     let sys = PolynomialSystem::new(d, vec![e0, e1, e2]);
-    let r = linear_elimination_greedy(sys, &default_cfg(), Default::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &default_cfg()).unwrap();
     assert!(r.reduced_system.equations.is_empty());
     assert_eq!(r.substitution.len(), 3);
 }
@@ -67,7 +67,7 @@ fn partial_system_keeps_quadratic() {
     let quad = b.add(vec![sum, neg_c1]);
     let d = b.build();
     let sys = PolynomialSystem::new(d, vec![linear, quad]);
-    let r = linear_elimination_greedy(sys, &default_cfg(), Default::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &default_cfg()).unwrap();
     assert_eq!(r.substitution.len(), 1);
     assert_eq!(r.reduced_system.equations.len(), 1);
 }
@@ -84,7 +84,7 @@ fn quadratic_systems_stall_without_linearities() {
     let e0 = b.add(vec![x2, neg_one]);
     let d = b.build();
     let sys = PolynomialSystem::new(d, vec![e0]);
-    let r = linear_elimination_greedy(sys, &default_cfg(), Default::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &default_cfg()).unwrap();
     assert!(r.substitution.is_empty());
     assert_eq!(r.reduced_system.equations.len(), 1);
 
@@ -101,7 +101,7 @@ fn quadratic_systems_stall_without_linearities() {
     let diff = b.add(vec![x2, neg_y2]);
     let d = b.build();
     let sys = PolynomialSystem::new(d, vec![e0, diff]);
-    let r = linear_elimination_greedy(sys, &default_cfg(), Default::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &default_cfg()).unwrap();
     assert!(r.substitution.is_empty());
     assert_eq!(r.reduced_system.equations.len(), 2);
 }
@@ -119,7 +119,7 @@ fn illegitimate_elimination_when_equation_independent_of_target() {
     let e1 = b.add(vec![vx, vz]);
     let d = b.build();
     let sys = PolynomialSystem::new(d, vec![e0, e1]);
-    let res = linear_elimination_greedy(sys, &default_cfg(), Default::default());
+    let res = linear_elimination_greedy(sys, &default_cfg());
     assert!(matches!(
         res,
         Err(EliminationError::IllegitimateElimination { var: VarId(0) })
@@ -138,7 +138,7 @@ fn substitution_residuals_vanish_for_single_linear_equation() {
     let eq = b.add(vec![vx, two_y]);
     let d = b.build();
     let sys = PolynomialSystem::new(d, vec![eq]);
-    let r = linear_elimination_greedy(sys, &default_cfg(), Default::default()).unwrap();
+    let r = linear_elimination_greedy(sys, &default_cfg()).unwrap();
     assert_eq!(r.substitution.len(), 1);
     let sub_dag = r.substitution.dag();
     let order = r.substitution.replay_order().unwrap();

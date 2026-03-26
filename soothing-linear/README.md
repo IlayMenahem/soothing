@@ -8,7 +8,7 @@ Standalone Rust implementation of **linear elimination by substitution** for pol
 - DAG-stored expressions, topological evaluation, sampling-based zero/linearity predicates.
 - Substitution map with dependency-aware replay order.
 - Iterative elimination until no remaining equation is linear in any remaining variable.
-- Optional local simplifications (appendix-style).
+- Separate [`simplify_once`] helper for ad-hoc DAG cleanup (not used during elimination).
 - **Not implemented:** the “handling systems without linearities” heuristic (paper section only names `grevlex`).
 
 ## Build / test
@@ -30,7 +30,7 @@ let vx = b.variable(x);
 let vy = b.variable(y);
 let eq = b.add(vec![vx, vy]); // x + y = 0
 let sys = PolynomialSystem::new(b.build(), vec![eq]);
-let out = linear_elimination_greedy(sys, &SampleConfig::default(), Default::default())
+let out = linear_elimination_greedy(sys, &SampleConfig::default())
     .expect("elimination");
 assert!(out.substitution.len() >= 1);
 ```

@@ -9,7 +9,7 @@ use std::time::Instant;
 use soothing_linear::{
     default_is_solution, default_systems_dir_from_manifest, dfs_linear_elimination,
     is_solution_nonzero_kappah, load_mathematica_system_from_path_with_var_names,
-    print_substitution_bindings, LinearEliminationOptions, SampleConfig, VarId,
+    print_substitution_bindings, SampleConfig, VarId,
 };
 
 /// Trace output path relative to the current working directory.
@@ -51,10 +51,6 @@ fn main() {
     );
 
     let cfg = SampleConfig::default();
-    let opts = LinearEliminationOptions {
-        simplify_each_step: true,
-        ..Default::default()
-    };
 
     let mut trace_file = match File::create(trace_path) {
         Ok(f) => f,
@@ -73,7 +69,7 @@ fn main() {
     }
 
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination(sys, &cfg, opts, Some(&mut trace_file), |r| match kappah
+    let res = match dfs_linear_elimination(sys, &cfg, Some(&mut trace_file), |r| match kappah
     {
         Some(k) => is_solution_nonzero_kappah(r, k, &cfg),
         None => default_is_solution(r),
