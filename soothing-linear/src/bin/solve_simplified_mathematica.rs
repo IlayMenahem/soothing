@@ -69,8 +69,7 @@ fn main() {
     }
 
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination(sys, &cfg, Some(&mut trace_file), |r| match kappah
-    {
+    let res = match dfs_linear_elimination(sys, &cfg, Some(&mut trace_file), |r| match kappah {
         Some(k) => is_solution_nonzero_kappah(r, k, &cfg),
         None => default_is_solution(r),
     }) {

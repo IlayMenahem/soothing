@@ -116,8 +116,8 @@ fn dfs_removes_zero_equations() {
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
     let sys = PolynomialSystem::new(b.build(), vec![z]);
-    let r = dfs_linear_elimination(sys, &SampleConfig::default(), None, default_is_solution)
-    .unwrap();
+    let r =
+        dfs_linear_elimination(sys, &SampleConfig::default(), None, default_is_solution).unwrap();
     assert!(r.reduced_system.equations.is_empty());
 }
 

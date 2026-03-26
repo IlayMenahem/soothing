@@ -6,6 +6,7 @@ use crate::field::Q;
 use num_traits::{One, Zero};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -256,16 +257,21 @@ fn points_on_one_affine_line(
     if xs.len() < 2 {
         return false;
     }
-    let mut ys = Vec::with_capacity(num_x);
-    for xv in &xs {
-        let mut m = base.clone();
-        m.insert(x, *xv);
-        let y = match evaluate_f64(dag, root, &m) {
-            Ok(y) if y.is_finite() => y,
-            _ => return false,
-        };
-        ys.push(y);
-    }
+    let parts: Vec<Option<f64>> = (0..xs.len())
+        .into_par_iter()
+        .map(|i| {
+            let mut m = base.clone();
+            m.insert(x, xs[i]);
+            match evaluate_f64(dag, root, &m) {
+                Ok(y) if y.is_finite() => Some(y),
+                _ => None,
+            }
+        })
+        .collect();
+    let ys: Vec<f64> = match parts.into_iter().collect::<Option<Vec<_>>>() {
+        Some(v) => v,
+        None => return false,
+    };
     affine_points_collinear(&xs, &ys)
 }
 

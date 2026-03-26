@@ -11,8 +11,8 @@ fn tiny_system_loads_and_dfs_runs() {
     let s = "{0 -> x + y, 0 -> x - 1}";
     let sys = load_mathematica_system_from_str(s).unwrap();
     assert_eq!(sys.equations.len(), 2);
-    let _ = dfs_linear_elimination(sys, &SampleConfig::default(), None, default_is_solution)
-    .unwrap();
+    let _ =
+        dfs_linear_elimination(sys, &SampleConfig::default(), None, default_is_solution).unwrap();
 }
 
 #[test]
@@ -38,8 +38,8 @@ fn default_systems_dir_points_at_repo_systems() {
 
 #[test]
 fn load_simplified_mathematica_file() {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../systems/simplified_mathematica_system.txt");
+    let p =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../systems/simplified_mathematica_system.txt");
     let sys =
         load_mathematica_system_from_path(&p).expect("parse simplified_mathematica_system.txt");
     assert_eq!(sys.equations.len(), 27);
@@ -47,10 +47,10 @@ fn load_simplified_mathematica_file() {
 
 #[test]
 fn simplified_mathematica_dfs_does_not_panic() {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../systems/simplified_mathematica_system.txt");
+    let p =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../systems/simplified_mathematica_system.txt");
     let sys =
         load_mathematica_system_from_path(&p).expect("parse simplified_mathematica_system.txt");
     let _ = dfs_linear_elimination(sys, &SampleConfig::default(), None, default_is_solution)
-    .expect("dfs elimination");
+        .expect("dfs elimination");
 }

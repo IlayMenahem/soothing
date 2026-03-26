@@ -2,9 +2,12 @@
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
-use crate::predicates::{expr_finite_at_some_random_sample, is_linear_in, is_zero, SampleConfig};
+use crate::predicates::{
+    expr_finite_at_some_random_sample, is_linear_in, is_zero, PredicateError, SampleConfig,
+};
 use crate::substitution::{SubstitutionError, SubstitutionMap};
 use crate::system::PolynomialSystem;
+use rayon::prelude::*;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Write;
@@ -175,8 +178,12 @@ pub fn linear_elimination_greedy(
         let mut choice: Option<(VarId, usize)> = None;
         'search: for &x in &remaining {
             let others = other_vars(&remaining, x);
-            for (i, &eq) in eq_roots.iter().enumerate() {
-                match is_linear_in(&snap, eq, x, &others, cfg) {
+            let results: Vec<Result<bool, PredicateError>> = (0..eq_roots.len())
+                .into_par_iter()
+                .map(|i| is_linear_in(&snap, eq_roots[i], x, &others, cfg))
+                .collect();
+            for (i, res) in results.into_iter().enumerate() {
+                match res {
                     Ok(true) => {
                         choice = Some((x, i));
                         break 'search;
@@ -377,11 +384,16 @@ fn collect_linear_pairs(
     let mut out = Vec::new();
     for &x in remaining {
         let others = other_vars(remaining, x);
-        for (i, &eq) in eq_roots.iter().enumerate() {
-            match is_linear_in(dag, eq, x, &others, cfg) {
-                Ok(true) => out.push((x, i)),
-                Ok(false) => {}
-                Err(_) => {}
+        let linear: Vec<bool> = (0..eq_roots.len())
+            .into_par_iter()
+            .map(|i| match is_linear_in(dag, eq_roots[i], x, &others, cfg) {
+                Ok(true) => true,
+                Ok(false) | Err(_) => false,
+            })
+            .collect();
+        for i in 0..linear.len() {
+            if linear[i] {
+                out.push((x, i));
             }
         }
     }
