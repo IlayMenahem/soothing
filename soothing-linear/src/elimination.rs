@@ -3,7 +3,7 @@
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
 use crate::predicates::{expr_finite_at_some_random_sample, is_linear_in, is_zero, SampleConfig};
-use crate::substitution::SubstitutionMap;
+use crate::substitution::{SubstitutionError, SubstitutionMap};
 use crate::system::PolynomialSystem;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -43,8 +43,9 @@ pub fn default_is_solution(r: &EliminationResult) -> bool {
 }
 
 /// Full elimination with κ ≠ 0: same as [`default_is_solution`], but if `kappah` appears in the
-/// substitution map, reject when its RHS is identically zero (aligned with
-/// `soothing/linear_substitution_order.py` `_is_accepted_solution` / `_is_kappah_zero`).
+/// substitution map, reject when its **fully expanded** RHS (after applying other bindings in
+/// [`SubstitutionMap::replay_order`]) is identically zero — matching SymPy’s
+/// `substitution_map[kappah] == 0` in `soothing/linear_substitution_order.py` (`_is_kappah_zero`).
 pub fn is_solution_nonzero_kappah(
     r: &EliminationResult,
     kappah: VarId,
@@ -53,17 +54,56 @@ pub fn is_solution_nonzero_kappah(
     if !default_is_solution(r) {
         return false;
     }
-    let Some(root) = r.substitution.get(kappah) else {
+    if !r.substitution.contains(kappah) {
         return true;
-    };
-    let dag = r.substitution.dag();
-    let vs: Vec<VarId> = collect_vars(&dag, std::slice::from_ref(&root))
-        .into_iter()
-        .collect();
-    match is_zero(&dag, root, &vs, cfg) {
-        Ok(z) => !z,
-        Err(_) => true,
     }
+    let expanded_zero = match expand_substitution_bindings(r) {
+        Ok((_order, b, expanded_rhs)) => {
+            let Some(&expanded_root) = expanded_rhs.get(&kappah) else {
+                return false;
+            };
+            let snap = b.snapshot();
+            let vs: Vec<VarId> = collect_vars(&snap, std::slice::from_ref(&expanded_root))
+                .into_iter()
+                .collect();
+            match is_zero(&snap, expanded_root, &vs, cfg) {
+                Ok(z) => z,
+                Err(_) => false,
+            }
+        }
+        Err(SubstitutionError::Cycle) => return false,
+    };
+
+    !expanded_zero
+}
+
+/// Expand each substituted RHS by applying earlier bindings in [`SubstitutionMap::replay_order`]
+/// (same construction as elimination validation).
+fn expand_substitution_bindings(
+    result: &EliminationResult,
+) -> Result<(Vec<VarId>, DagBuilder, HashMap<VarId, NodeId>), SubstitutionError> {
+    let order = result.substitution.replay_order()?;
+    let subst_dag = result.substitution.dag();
+    let mut b = DagBuilder::new();
+    let mut expanded_rhs: HashMap<VarId, NodeId> = HashMap::new();
+    for &v in &order {
+        let rhs = result
+            .substitution
+            .get(v)
+            .expect("expand_substitution_bindings: missing binding for variable in replay order");
+        let mut node = b.merge_root(&subst_dag, rhs);
+        for &u in &order {
+            if u == v {
+                break;
+            }
+            if let Some(&u_root) = expanded_rhs.get(&u) {
+                let snap_inner = b.snapshot();
+                node = b.substitute_in_root(&snap_inner, node, u, u_root);
+            }
+        }
+        expanded_rhs.insert(v, node);
+    }
+    Ok((order, b, expanded_rhs))
 }
 
 /// When the residual is empty and the substitution map is non-empty, require each original
@@ -83,31 +123,8 @@ fn validate_elimination_result(
         return;
     }
 
-    let order = result
-        .substitution
-        .replay_order()
+    let (order, mut b, expanded_rhs) = expand_substitution_bindings(result)
         .expect("elimination validation: cyclic substitution map");
-
-    let subst_dag = result.substitution.dag();
-    let mut b = DagBuilder::new();
-    let mut expanded_rhs: HashMap<VarId, NodeId> = HashMap::new();
-    for &v in &order {
-        let rhs = result
-            .substitution
-            .get(v)
-            .expect("elimination validation: missing binding for variable in replay order");
-        let mut node = b.merge_root(&subst_dag, rhs);
-        for &u in &order {
-            if u == v {
-                break;
-            }
-            if let Some(&u_root) = expanded_rhs.get(&u) {
-                let snap_inner = b.snapshot();
-                node = b.substitute_in_root(&snap_inner, node, u, u_root);
-            }
-        }
-        expanded_rhs.insert(v, node);
-    }
 
     for (i, &eq_root) in original.equations.iter().enumerate() {
         let mut r = b.merge_root(&original.dag, eq_root);

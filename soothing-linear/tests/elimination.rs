@@ -1,7 +1,34 @@
 use soothing_linear::{
-    default_is_solution, dfs_linear_elimination, linear_elimination_greedy, Dag, DagBuilder,
-    PolynomialSystem, SampleConfig, VarId, Q,
+    default_is_solution, dfs_linear_elimination, is_solution_nonzero_kappah,
+    linear_elimination_greedy, Dag, DagBuilder, EliminationResult, PolynomialSystem, SampleConfig,
+    SubstitutionMap, VarId, Q,
 };
+
+#[test]
+fn nonzero_kappah_rejects_degenerate_expanded_kappah() {
+    let d = VarId(0);
+    let k = VarId(1);
+    let mut subst = SubstitutionMap::new();
+    let mut b0 = DagBuilder::new();
+    let zero = b0.constant(Q::new(0, 1));
+    let d_dag = b0.build();
+    subst.insert(d, &d_dag, zero);
+    let mut b1 = DagBuilder::new();
+    let vd1 = b1.variable(d);
+    let k_rhs = b1.mul(vec![vd1, vd1]);
+    let k_dag = b1.build();
+    subst.insert(k, &k_dag, k_rhs);
+
+    let empty = DagBuilder::new().build();
+    let r = EliminationResult {
+        reduced_system: PolynomialSystem::new(empty, vec![]),
+        substitution: subst,
+    };
+    assert!(
+        !is_solution_nonzero_kappah(&r, k, &SampleConfig::default()),
+        "kappah -> d^2 with d -> 0 must be rejected (expanded kappah is 0)"
+    );
+}
 
 #[test]
 fn single_step() {

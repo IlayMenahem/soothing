@@ -35,7 +35,6 @@
 pub mod cli_display;
 pub mod dag;
 mod dag_parse;
-mod debug_session;
 pub mod elimination;
 pub mod eval;
 pub mod field;

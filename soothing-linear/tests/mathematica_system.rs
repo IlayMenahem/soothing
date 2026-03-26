@@ -39,7 +39,7 @@ fn default_systems_dir_points_at_repo_systems() {
 #[test]
 fn load_simplified_mathematica_file() {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../systems/simplified_mathematica_system.txt");
+        .join("../systems/simplified_mathematica_system.txt");
     let sys =
         load_mathematica_system_from_path(&p).expect("parse simplified_mathematica_system.txt");
     assert_eq!(sys.equations.len(), 27);
@@ -48,7 +48,7 @@ fn load_simplified_mathematica_file() {
 #[test]
 fn simplified_mathematica_dfs_does_not_panic() {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../systems/simplified_mathematica_system.txt");
+        .join("../systems/simplified_mathematica_system.txt");
     let sys =
         load_mathematica_system_from_path(&p).expect("parse simplified_mathematica_system.txt");
     let _ = dfs_linear_elimination(sys, &SampleConfig::default(), None, default_is_solution)
