@@ -11,34 +11,7 @@ To prevent an exponential blowup in the size of the equations, we store the curr
 
 Once the system is stored in this form, linearity and vanishing can no longer be decided from the top-level syntax alone. Instead, the required operations are phrased in terms of evaluation of the polynomial represented by the DAG.
 
-For the operation ``is polynomial zero'', we evaluate the represented expression at sampled points of its remaining free variables. If every sampled value is zero, we treat the equation as zero and discard it from the active system.
-
-\begin{lemma}
-    If we sample $n$ points from a polynomial $p(x)$ and all the sampled values are zero, then $p(x) \equiv 0$ with probability 1.
-\end{lemma}
-\begin{proof}
-    --- To be added ---
-\end{proof}
-
-For the operation ``is polynomial linear in a variable'', let $p$ be one of the remaining equations and let $x$ be a variable that has not yet been eliminated. The represented polynomial is viewed as a function of $x$ and of the other still-free variables. To determine whether it is linear in $x$, we fix the other variables and evaluate the expression at several values of $x$. If the sampled values lie on a single affine line, then the represented expression behaves as $a x + b$ in the variable $x$, and $x$ is a valid candidate for linear elimination.
-
-\begin{lemma}
-    If we sample $n$ points from a polynomial $p(x)$ and the sampled values lie on a single affine line, then $p(x) = a x + b$ for some constants $a$ and $b$ with probability 1.
-\end{lemma}
-\begin{proof}
-    --- To be added ---
-\end{proof}
-
-
-For the operation ``linearly eliminate a variable from a polynomial'', suppose that the represented equation is linear in $x$, so it can be written as
-\[
-a x + b = 0,
-\]
-where $x$ is the variable to be eliminated. Since the equation is linear in $x$, both $a$ and $b$ may depend on the other variables but not on $x$. These coefficients can be recovered by evaluation: $b = p(0)$ and $a = p(1) - p(0)$. If $a = 0$ and $b \neq 0$, then the attempted elimination step is illegitimate, because the equation cannot be solved for $x$, if $b = 0$ we discard the equation. Otherwise, the elimination step solves for $x$ and records the resulting expression as part of the unexpanded system:
-\[
-x \mapsto -\frac{b}{a} = \frac{p(0)}{p(0) - p(1)}.
-\]
-The original equation is then removed from the remaining system, while the solved form is retained as a DAG-represented expression rather than applied eagerly to every other equation.
+The techniques outlined here can be immediately extended to rational functions.
 
 \subsection*{Evaluating a DAG-represented expression}
 
@@ -67,3 +40,77 @@ Let $G$ be a DAG representing a polynomial expression, and let $\alpha$ be an as
 \end{algorithm}
 
 Because the expression is represented as a DAG rather than a tree, a shared subexpression appears as a single node and is evaluated only once. The values computed at intermediate nodes can therefore be reused wherever that subexpression occurs, which makes repeated evaluations efficient and supports the tests for linearity and vanishing described above.
+
+\subsection*{Sampling points}
+For quick evaluation of polynomials, we will sample the random rational numbers $\frac{p}{q}$ such that $|p|, |q| < n$.
+
+\begin{lemma}
+    The number of destinct rational numbers we sample from is $4(\sum_{i=1}^{n} \phi(i)) - 1$, where $\phi(i)$ is the Euler's totient function. Asymptotically, this is $\frac{12}{\pi^2} n^2 + O(n \log n)$.
+\end{lemma}
+
+\begin{proof}
+    Consider the positive rational numbers $\frac{p}{q}$ in lowest terms (i.e., $\gcd(p, q) = 1$) such that $1 \le p, q \le n$. We can partition these into two sets: those where $p \le q$ and those where $p \ge q$. 
+    For a fixed denominator $q$, the number of numerators $p \le q$ coprime to $q$ is exactly Euler's totient function $\phi(q)$. Summing over all possible denominators $1 \le q \le n$, the number of fractions with $p \le q$ is $\sum_{i=1}^{n} \phi(i)$.
+    By symmetry, the number of fractions with $q \le p$ is also $\sum_{i=1}^{n} \phi(i)$. The only fraction counted twice is $\frac{1}{1}$, so the total number of strictly positive rational numbers is $2\sum_{i=1}^{n} \phi(i) - 1$.
+    
+    Since we can independently choose the sign of the rational number, there is an equal number of strictly negative rational numbers. Adding the single case of $0$ (represented as $\frac{0}{1}$), the total number of distinct rational numbers is:
+    \[
+    2 \left( 2\sum_{i=1}^{n} \phi(i) - 1 \right) + 1 = 4\sum_{i=1}^{n} \phi(i) - 1.
+    \]
+    
+    For the asymptotic bound, it is a well-known result in number theory \cite{hardy2008introduction} that the summatory totient function grows as:
+    \[
+    \sum_{i=1}^{n} \phi(i) = \frac{3}{\pi^2} n^2 + O(n \log n).
+    \]
+    Multiplying this by 4 yields the final asymptotic bound of $\frac{12}{\pi^2} n^2 + O(n \log n)$.
+\end{proof}
+
+If a polynomial has $m$ free variables, then the number of points we can sample from is $|S| = (4(\sum_{i=1}^{n} \phi(i)) - 1)^m$.
+
+\subsection*{Is polynomial zero}
+For the operation ``is polynomial zero'' we will use Schwartz-Zippel Lemma. We evaluate the represented expression at $c$ sampled points of its remaining free variables. If every sampled value is zero, we treat the equation as zero.
+The likelihood of a polynomial $p \neq 0$ evaluating to zero at $c$ sampled points is $(\frac{d}{|S|})^c$, where $d$ is the degree of the polynomial \cite{schwartz1980fast, zippel1979probabilistic}.
+
+\subsection*{Is polynomial linear in a variable}
+The operation ``is polynomial linear in a variable'' can be viewed as determining if a polynomial is zero. let $p$ be a polynomial and without the loss of generality let $x_1$ be a variable, we will run the zero test on the following polynomial:
+\begin{align*}
+q(u, v, w, x_2, \dots, x_n) &= (p(w, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (v - u) \\
+&\quad - (p(v, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (w - u)
+\end{align*}
+
+\begin{lemma}
+    The polynomial $q$ is zero if and only if $p$ is linear in $x_1$.
+\end{lemma}
+\begin{proof}
+    If $p$ is linear in $x_1$, then there are $a, b$ constant in $x_1$ such that $p(x_1, x_2, \dots, x_n) = a x_1 + b$. Then 
+    \begin{align*}
+    q(u, v, w, x_2, \dots, x_n) &= (a w + b - (a u + b)) (v - u) - (a v + b - (a u + b)) (w - u) \\
+    &= a (w - u) (v - u) - a (v - u) (w - u) \\
+    &= 0.
+    \end{align*}
+
+    Conversely, assume $q$ is zero, then for all $u, v, w, x_2, \dots, x_n$, we have
+    \begin{align*}
+        0 &= q(u, v, w, x_2, \dots, x_n) \\
+        &= (p(w, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (v - u) \\
+        &\quad - (p(v, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (w - u)
+    \end{align*}
+    Thus we have
+    \begin{align*}
+        \frac{p(w, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)}{w - u} = \frac{p(v, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)}{v - u}
+    \end{align*}
+    We get that there are $a, b$ constant in $x_1$ such that $p(x_1, x_2, \dots, x_n) = a x_1 + b$, and we get that $p$ is linear in $x_1$.
+\end{proof}
+
+\subsection*{Linearly eliminate a variable from a polynomial}
+For the operation ``linearly eliminate a variable from a polynomial'', suppose that the represented equation is linear in $x_1$, so it can be written as
+\[
+a x_1 + b = 0,
+\]
+where $x$ is the variable to be eliminated. Since the equation is linear in $x$, both $a$ and $b$ may depend on the other variables but not on $x$. These coefficients can be recovered by evaluation: $b = p(0, x_2, \dots, x_n)$ and $a = p(1, x_2, \dots, x_n) - p(0, x_2, \dots, x_n)$. 
+The substitution of $x$ will be divided into cases
+\begin{itemize}
+    \item $b = 0$ we discard the equation
+    \item $a, b \neq 0$ we discard the equation and substitute $x \mapsto -\frac{b}{a}$ without expanding the expression.
+    \item $a = 0$ and $b \neq 0$ This is an illegal step, because the equation cannot be solved for $x$
+\end{itemize}
