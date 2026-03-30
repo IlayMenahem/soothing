@@ -21,7 +21,7 @@ pub enum EliminationError {
     MissingKappah,
     #[error("illegitimate elimination: a=0 and b≠0 for variable {var:?}")]
     IllegitimateElimination { var: VarId },
-    #[error("degenerate substitution: RHS never evaluates to a finite float at random samples (variable {var:?})")]
+    #[error("degenerate substitution: RHS never evaluates successfully at random exact samples (variable {var:?})")]
     DegenerateSubstitution { var: VarId },
     #[error(transparent)]
     Io(#[from] std::io::Error),

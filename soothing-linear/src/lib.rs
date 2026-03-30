@@ -1,7 +1,7 @@
 //! Linear elimination by substitution for polynomial systems over `\mathbb{Q}`.
 //!
-//! DAG-stored expressions, sampling-based zero/linearity checks, substitution maps, and greedy or
-//! DFS elimination.
+//! DAG-stored expressions, exact rational evaluation, sampled zero/linearity checks, substitution
+//! maps, and greedy or DFS elimination.
 //!
 //! ```
 //! use soothing_linear::{linear_elimination_greedy, DagBuilder, PolynomialSystem, SampleConfig, VarId};
@@ -19,17 +19,19 @@
 //! ## Scope (v1)
 //!
 //! - **Field:** exact rationals [`field::Q`] only. Other fields are future work.
-//! - **Predicates:** configurable sampling for “is zero” and “is linear in `x`”.
+//! - **Predicates:** configurable sampled checks for “is zero” and “is linear in `x`”, evaluated
+//!   exactly over [`field::Q`].
 //! - **Unsupported:** no heuristic for systems with no linear eliminations (only the
 //!   linear-elimination pipeline).
 //!
 //! ## Implementation assumptions
 //!
-//! - Sample counts, [`RANDOM_SAMPLE_ABS_MAX`], and [`SampleConfig::random_seed`] control predicate
-//!   sampling (aligned with `soothing/system_substitution.py` ranges).
+//! - Sample counts, [`RANDOM_SAMPLE_ABS_MAX`], and [`SampleConfig::random_seed`] control exact
+//!   rational predicate sampling.
 //! - Elimination with recovered coefficients `a = 0` and `b \neq 0` is rejected as
 //!   [`elimination::EliminationError::IllegitimateElimination`]; a substitution RHS that never yields a
-//!   finite float at random samples is [`elimination::EliminationError::DegenerateSubstitution`].
+//!   well-defined exact value at random samples is
+//!   [`elimination::EliminationError::DegenerateSubstitution`].
 
 pub mod cli_display;
 pub mod dag;
@@ -48,7 +50,7 @@ pub use elimination::{
     default_is_solution, dfs_linear_elimination, dfs_linear_elimination_solving_symbolic,
     is_solution_nonzero_kappah, linear_elimination_greedy, EliminationError, EliminationResult,
 };
-pub use eval::{evaluate, evaluate_f64, EvalError};
+pub use eval::{evaluate, EvalError};
 pub use field::Q;
 pub use mathematica_system::{
     default_systems_dir_from_manifest, load_mathematica_system_from_path,

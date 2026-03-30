@@ -1,7 +1,12 @@
-//! Sampling-based “is zero” and “is linear in `x`” predicates on DAG expressions.
+//! Sampled “is zero” and “is linear in `x`” predicates on DAG expressions, evaluated exactly in
+//! [`Q`].
+//!
+//! For polynomial inputs, these predicates implement the paper's evaluation-based tests. The public
+//! APIs also accept the crate's broader expression DAGs, so rational expressions are tolerated by
+//! skipping sampled assignments that hit a division-by-zero pole.
 
 use crate::dag::{Dag, DagBuilder, NodeId, VarId};
-use crate::eval::{evaluate, evaluate_f64, EvalError};
+use crate::eval::{evaluate, EvalError};
 use crate::field::Q;
 use num_traits::{One, Zero};
 use rand::rngs::StdRng;
@@ -35,12 +40,13 @@ impl Default for SampleConfig {
     }
 }
 
-/// Half-width of the uniform range for random **floating-point** samples in [`is_zero`] and
-/// [`is_linear_in`] “other” variables (matches `soothing/system_substitution.py` `_RANDOM_VALUE_RANGE`).
-pub const RANDOM_SAMPLE_ABS_MAX: f64 = 2.0;
+/// Half-width of the bounded rational sample set for exact samples in [`is_zero`] and
+/// [`is_linear_in`] “other” variables.
+pub const RANDOM_SAMPLE_ABS_MAX: i64 = 2;
 
-/// Samples for numeric finiteness check on a substitution RHS (like ruling out SymPy `nan`/`zoo`).
+/// Samples for exact evaluability checks on a substitution RHS.
 pub const SUBSTITUTION_NUMERIC_CHECK_SAMPLES: usize = 8;
+const ZERO_TEST_ATTEMPT_MULTIPLIER: usize = 8;
 
 fn mix_seed(base: u64, a: usize, b: u32) -> u64 {
     base ^ (a as u64).wrapping_mul(0x9E37_79B9_1E35_1B03)
@@ -55,12 +61,15 @@ fn rng_for_linearity_q(cfg: &SampleConfig, q_root: NodeId, x: VarId) -> StdRng {
     StdRng::seed_from_u64(mix_seed(cfg.random_seed, q_root.0, x.0))
 }
 
-fn random_assignment_f64(vars: &[VarId], rng: &mut StdRng) -> HashMap<VarId, f64> {
+fn random_sample_q(rng: &mut StdRng) -> Q {
+    let numer = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
+    let denom = rng.gen_range(1..=RANDOM_SAMPLE_ABS_MAX);
+    Q::new(numer, denom)
+}
+
+fn random_assignment_q(vars: &[VarId], rng: &mut StdRng) -> HashMap<VarId, Q> {
     vars.iter()
-        .map(|&v| {
-            let x: f64 = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
-            (v, x)
-        })
+        .map(|&v| (v, random_sample_q(rng)))
         .collect()
 }
 
@@ -105,7 +114,6 @@ fn build_linearity_q_polynomial(
 }
 
 /// If `v=u` or `w=u`, the auxiliary polynomial vanishes at that point for every `p`; resample `u,v,w`.
-const MIN_LINEARITY_UV_SEP: f64 = 1e-6;
 const UVW_RESAMPLE_CAP: u32 = 128;
 
 fn random_assignment_with_nondegenerate_uvw(
@@ -114,27 +122,29 @@ fn random_assignment_with_nondegenerate_uvw(
     v_id: VarId,
     w_id: VarId,
     rng: &mut StdRng,
-) -> HashMap<VarId, f64> {
-    let mut m = random_assignment_f64(other_vars, rng);
+) -> HashMap<VarId, Q> {
+    let mut m = random_assignment_q(other_vars, rng);
     for _ in 0..UVW_RESAMPLE_CAP {
-        let u = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
-        let v = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
-        let w = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
-        if (v - u).abs() >= MIN_LINEARITY_UV_SEP && (w - u).abs() >= MIN_LINEARITY_UV_SEP {
+        let u = random_sample_q(rng);
+        let v = random_sample_q(rng);
+        let w = random_sample_q(rng);
+        if v != u && w != u {
             m.insert(u_id, u);
             m.insert(v_id, v);
             m.insert(w_id, w);
             return m;
         }
     }
-    m.insert(u_id, 0.0);
-    m.insert(v_id, 1.0);
-    m.insert(w_id, -1.0);
+    m.insert(u_id, Q::zero());
+    m.insert(v_id, Q::one());
+    m.insert(w_id, -Q::one());
     m
 }
 
-/// True if at least one random assignment yields a finite [`evaluate_f64`] value (numeric analogue
-/// of rejecting `nan` / invalid rationals on a substitution RHS).
+/// True if at least one random exact assignment yields a well-defined [`evaluate`] value.
+///
+/// This uses a bounded retry budget so expressions that are defined only on a tiny subset of the
+/// sample space can still report `false`.
 pub fn expr_finite_at_some_random_sample(
     dag: &Dag,
     root: NodeId,
@@ -142,24 +152,15 @@ pub fn expr_finite_at_some_random_sample(
     cfg: &SampleConfig,
 ) -> bool {
     let mut rng = rng_for_zero(cfg, root);
-    for _ in 0..SUBSTITUTION_NUMERIC_CHECK_SAMPLES {
-        let a = random_assignment_f64(free_vars, &mut rng);
-        if let Ok(v) = evaluate_f64(dag, root, &a) {
-            if v.is_finite() {
-                return true;
-            }
+    let max_attempts = SUBSTITUTION_NUMERIC_CHECK_SAMPLES.saturating_mul(ZERO_TEST_ATTEMPT_MULTIPLIER);
+    for _ in 0..max_attempts {
+        let a = random_assignment_q(free_vars, &mut rng);
+        if evaluate(dag, root, &a).is_ok() {
+            return true;
         }
     }
     false
 }
-
-/// “Is zero” under floating-point evaluation (see [`is_zero`]).
-fn is_effectively_zero(v: f64) -> bool {
-    v.is_finite() && v.abs() <= PREDICATE_ZERO_EPS
-}
-
-/// Absolute tolerance for reporting “zero” in [`is_zero`] (matches Python `_ZERO_TOL`).
-const PREDICATE_ZERO_EPS: f64 = 1e-9;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum PredicateError {
@@ -189,8 +190,12 @@ impl From<EvalError> for PredicateError {
 
 /// `free_vars`: all variables that may appear in the expression (caller supplies).
 ///
-/// One random draw per sample (same spirit as `soothing/system_substitution.py` `_is_zero_probabilistic`):
-/// division, non-finite values, or `|v| \ge` tolerance ⇒ [`Ok(false)`] (does not abort elimination).
+/// One exact random draw per sample.
+///
+/// For polynomial inputs, this is the paper's sampled zero test. For the crate's broader DAGs,
+/// division failures are skipped so the same API can probe rational expressions without turning a
+/// sampled pole into a hard predicate error. If too many samples are undefined the predicate
+/// reports [`Ok(false)`].
 pub fn is_zero(
     dag: &Dag,
     root: NodeId,
@@ -202,7 +207,7 @@ pub fn is_zero(
     }
     let mut rng = rng_for_zero(cfg, root);
     probabilistic_zero_on_assignments(dag, root, cfg, &mut rng, |rng| {
-        random_assignment_f64(free_vars, rng)
+        random_assignment_q(free_vars, rng)
     })
 }
 
@@ -211,25 +216,31 @@ fn probabilistic_zero_on_assignments(
     root: NodeId,
     cfg: &SampleConfig,
     rng: &mut StdRng,
-    mut next_assignment: impl FnMut(&mut StdRng) -> HashMap<VarId, f64>,
+    mut next_assignment: impl FnMut(&mut StdRng) -> HashMap<VarId, Q>,
 ) -> Result<bool, PredicateError> {
-    for _ in 0..cfg.zero_samples {
+    let mut successes = 0usize;
+    let max_attempts = cfg.zero_samples.saturating_mul(ZERO_TEST_ATTEMPT_MULTIPLIER);
+    for _ in 0..max_attempts {
         let assignment = next_assignment(rng);
-        let v = match evaluate_f64(dag, root, &assignment) {
-            Ok(val) if val.is_finite() => val,
-            Ok(_) => return Ok(false),
-            Err(EvalError::DivisionByZero) => return Ok(false),
+        let v = match evaluate(dag, root, &assignment) {
+            Ok(val) => val,
+            Err(EvalError::DivisionByZero) => continue,
             Err(e) => return Err(e.into()),
         };
-        if !is_effectively_zero(v) {
+        if !v.is_zero() {
             return Ok(false);
         }
+        successes += 1;
+        if successes == cfg.zero_samples {
+            return Ok(true);
+        }
     }
-    Ok(true)
+    Ok(false)
 }
 
 /// Whether `p` is affine in `x`: builds the paper’s auxiliary polynomial `q` and runs the same
-/// probabilistic zero test as [`is_zero`] on `q` (see repository `paper/sections/substitution_map.tex`).
+/// sampled exact zero test as [`is_zero`] on `q` (see repository
+/// `paper/sections/substitution_map.tex`).
 pub fn is_linear_in(
     dag: &Dag,
     root: NodeId,

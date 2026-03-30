@@ -3,8 +3,8 @@
 
 use num_traits::Zero;
 use soothing_linear::{
-    assignment_seed, is_linear_in, is_zero, recover_linear_coeffs, Dag, DagBuilder, NodeId,
-    PredicateError, SampleConfig, VarId, Q,
+    assignment_seed, expr_finite_at_some_random_sample, is_linear_in, is_zero,
+    recover_linear_coeffs, Dag, DagBuilder, NodeId, PredicateError, SampleConfig, VarId, Q,
 };
 
 /// Stricter [`zero_samples`] than default for multivariate checks (`linear_*` fields are unused by
@@ -67,6 +67,13 @@ fn is_zero_constant_nonzero() {
 }
 
 #[test]
+fn is_zero_tiny_nonzero_rational_is_not_zero() {
+    let (d, r) = parse("1 / 10000000000");
+    let cfg = cfg_robust();
+    assert!(!is_zero(&d, r, &[], &cfg).unwrap());
+}
+
+#[test]
 fn is_zero_strictly_positive_polynomial_never_zero_on_samples() {
     // `v0 + v1` can vanish when `v1 = -v0` under random sampling; use a sum of squares + 1.
     let (d, r) = parse("v0^2 + v1^2 + 1");
@@ -77,6 +84,20 @@ fn is_zero_strictly_positive_polynomial_never_zero_on_samples() {
 #[test]
 fn is_zero_polynomial_identically_zero() {
     let (d, r) = parse("v0 - v0");
+    let cfg = cfg_robust();
+    assert!(is_zero(&d, r, &[VarId(0)], &cfg).unwrap());
+}
+
+#[test]
+fn is_zero_nonzero_polynomial_not_fooled_by_small_integer_grid() {
+    let (d, r) = parse("v0 * (v0 - 1) * (v0 - 2) * (v0 + 1) * (v0 + 2)");
+    let cfg = cfg_robust();
+    assert!(!is_zero(&d, r, &[VarId(0)], &cfg).unwrap());
+}
+
+#[test]
+fn is_zero_ignores_removable_zero_over_denominator_singularity() {
+    let (d, r) = parse("0 / (v0 + 1)");
     let cfg = cfg_robust();
     assert!(is_zero(&d, r, &[VarId(0)], &cfg).unwrap());
 }
@@ -242,8 +263,8 @@ fn is_linear_multiple_nonlinear_sources() {
 }
 
 // ── Small leading nonlinear term (cf. test_is_linear_numerical_false_positive) ──
-// Predicate sampling uses `f64`; collinearity tolerances are tight enough that ε x^2 + x shapes
-// still fail when ε·x^2 is representable next to the linear term (avoid pairing 10^-9 with 10^6·x).
+// Predicate sampling is still Monte Carlo, but evaluation is exact in `Q`, so even tiny rational
+// nonlinear terms should remain detectable as long as sampling hits a witness point.
 
 #[test]
 fn is_linear_epsilon_quadratic_exact_rationals_not_linear() {
@@ -261,8 +282,14 @@ fn is_linear_epsilon_quadratic_negative_leading_coeff() {
 
 #[test]
 fn is_linear_large_linear_small_quadratic_still_detected() {
-    // With `1e6 * v0`, `v0^2/1e9` is below `f64` ULP next to the linear term (predicate sees affine).
     let (d, r) = parse("v0^2 / 1000000000 + 1000 * v0");
+    let cfg = cfg_robust();
+    assert!(!is_linear_in(&d, r, VarId(0), &[], &cfg).unwrap());
+}
+
+#[test]
+fn is_linear_exact_q_rejects_quadratic_hidden_by_large_scale() {
+    let (d, r) = parse("v0^2 / 1000000000 + 1000000 * v0");
     let cfg = cfg_robust();
     assert!(!is_linear_in(&d, r, VarId(0), &[], &cfg).unwrap());
 }
@@ -349,4 +376,25 @@ fn is_linear_in_rejects_zero_zero_samples() {
     };
     let err = is_linear_in(&d, r, VarId(0), &[VarId(1)], &cfg).unwrap_err();
     assert!(matches!(err, PredicateError::InsufficientSamples));
+}
+
+#[test]
+fn exact_substitution_definedness_accepts_some_valid_sample() {
+    let (d, r) = parse("1 / v0");
+    let cfg = cfg_robust();
+    assert!(expr_finite_at_some_random_sample(&d, r, &[VarId(0)], &cfg));
+}
+
+#[test]
+fn exact_substitution_definedness_rejects_always_invalid_expr() {
+    let (d, r) = parse("1 / 0");
+    let cfg = cfg_robust();
+    assert!(!expr_finite_at_some_random_sample(&d, r, &[], &cfg));
+}
+
+#[test]
+fn is_linear_ignores_removable_zero_over_denominator_singularity() {
+    let (d, r) = parse("v0 + (0 / (v0 + 1)) - 1");
+    let cfg = cfg_robust();
+    assert!(is_linear_in(&d, r, VarId(0), &[], &cfg).unwrap());
 }
