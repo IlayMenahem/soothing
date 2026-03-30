@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
+use num_traits::Zero;
 use soothing_linear::{
-    default_is_solution, dfs_linear_elimination, is_solution_nonzero_kappah,
+    default_is_solution, dfs_linear_elimination, evaluate, is_solution_nonzero_kappah,
     linear_elimination_greedy, Dag, DagBuilder, EliminationResult, PolynomialSystem, SampleConfig,
     SubstitutionMap, VarId, Q,
 };
@@ -69,6 +72,49 @@ fn removes_zero_equations() {
     let sys = PolynomialSystem::new(b.build(), vec![z]);
     let r = linear_elimination_greedy(sys, &SampleConfig::default()).unwrap();
     assert!(r.reduced_system.equations.is_empty());
+}
+
+/// Paper case \(a=b=0\) for affine \(a x + b\): identically zero linear equation is dropped, not solved.
+#[test]
+fn affine_tautology_drops_equation_without_substitution() {
+    let mut b = DagBuilder::new();
+    let x = VarId(0);
+    let vx = b.variable(x);
+    let nx = b.neg(vx);
+    let z = b.add(vec![vx, nx]);
+    let sys = PolynomialSystem::new(b.build(), vec![z]);
+    let r = linear_elimination_greedy(sys, &SampleConfig::default()).unwrap();
+    assert!(r.reduced_system.equations.is_empty());
+    assert!(
+        r.substitution.is_empty(),
+        "no binding when the equation imposes no constraint on x"
+    );
+}
+
+/// Paper case \(a \neq 0\): substitute \(x \mapsto -b/a\) (here \(3 v_0 + v_1 = 0 \Rightarrow v_0 = -v_1/3\) when \(v_0\) is eliminated first).
+#[test]
+fn nonzero_slope_substitution_satisfies_original_linear_equation() {
+    let (dag, root) = Dag::from_rational_string("3 * v0 + v1").unwrap();
+    let mut b = DagBuilder::new();
+    let merged = b.merge_root(&dag, root);
+    let sys = PolynomialSystem::new(b.build(), vec![merged]);
+    let r = linear_elimination_greedy(sys, &SampleConfig::default()).unwrap();
+    assert_eq!(r.substitution.len(), 1);
+    let sub_dag = r.substitution.dag();
+    let order = r.substitution.replay_order().unwrap();
+    for seed in 0usize..8 {
+        let mut a = HashMap::new();
+        a.insert(VarId(1), Q::new((seed as i64) + 1, 1));
+        for &v in &order {
+            if let Some(sub_root) = r.substitution.get(v) {
+                let val = evaluate(&sub_dag, sub_root, &a).unwrap();
+                a.insert(v, val);
+            }
+        }
+        let v0 = *a.get(&VarId(0)).unwrap();
+        let v1 = *a.get(&VarId(1)).unwrap();
+        assert_eq!(Q::new(3, 1) * v0 + v1, Q::zero());
+    }
 }
 
 #[test]

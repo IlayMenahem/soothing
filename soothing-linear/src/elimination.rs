@@ -48,8 +48,11 @@ pub fn default_is_solution(r: &EliminationResult) -> bool {
     r.reduced_system.equations.is_empty()
 }
 
-/// Full elimination with κ ≠ 0: same as [`default_is_solution`], but if `kappah` appears in the
-/// substitution map, reject when its **fully expanded** RHS (after applying other bindings in
+/// Specialized symbolic acceptance predicate used to mirror the Python / SymPy solving stack.
+///
+/// This is an implementation-specific extension, not part of the paper's default elimination
+/// contract. It behaves like [`default_is_solution`], but if `kappah` appears in the substitution
+/// map, reject when its **fully expanded** RHS (after applying other bindings in
 /// [`SubstitutionMap::replay_order`]) is identically zero — matching SymPy’s
 /// `substitution_map[kappah] == 0` in `soothing/linear_substitution_order.py` (`_is_kappah_zero`).
 pub fn is_solution_nonzero_kappah(
@@ -211,8 +214,8 @@ pub fn linear_elimination_greedy(
 /// Depth-first search over linear elimination choices: at each step, try every `(equation, variable)`
 /// pair that is linear; prefer fewer remaining equations.
 ///
-/// **Tie-break:** same residual equation count → prefer a **larger substitution map** (same as
-/// Python `linear_substitution_order._state_priority`).
+/// **Tie-break:** same residual equation count → prefer **more free variables** in the residual
+/// system, matching the appendix.
 ///
 /// **Early exit:** if any branch satisfies the solution predicate (default: no residual equations),
 /// return that result immediately without trying further siblings at the same level.
@@ -266,9 +269,10 @@ where
 }
 
 /// [`dfs_linear_elimination`] configured like `python/scripts/solving_symbolic.py` and
-/// `tests/python_reference_simplified_mathematica.rs`: Python-aligned DFS candidate order (equation
-/// index, then variables by [`VarId`]), [`SampleConfig`] as given, and acceptance via
-/// [`is_solution_nonzero_kappah`] for variable `kappah` (must appear in `loaded.var_names`).
+/// `tests/python_reference_simplified_mathematica.rs`.
+///
+/// This entry point is kept for symbolic parity with the Python stack; it is not the paper's
+/// default elimination API.
 pub fn dfs_linear_elimination_solving_symbolic(
     loaded: LoadedMathematicaSystem,
     cfg: &SampleConfig,
@@ -429,11 +433,9 @@ fn is_better_elimination(a: &EliminationResult, b: &EliminationResult) -> bool {
     if na != nb {
         return na < nb;
     }
-    // Tie-break aligned with Python `linear_substitution_order._state_priority`:
-    // minimize `(len(remaining_equations), -len(substitution_map))`.
-    let sa = a.substitution.len();
-    let sb = b.substitution.len();
-    sa > sb
+    let free_a = collect_vars(&a.reduced_system.dag, &a.reduced_system.equations).len();
+    let free_b = collect_vars(&b.reduced_system.dag, &b.reduced_system.equations).len();
+    free_a > free_b
 }
 
 fn other_vars(remaining: &BTreeSet<VarId>, x: VarId) -> Vec<VarId> {
@@ -456,7 +458,7 @@ fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleC
 }
 
 fn apply_one_elimination(
-    b: &mut DagBuilder,
+    builder: &mut DagBuilder,
     eq_roots: &mut Vec<NodeId>,
     subst: &mut SubstitutionMap,
     x: VarId,
@@ -464,19 +466,23 @@ fn apply_one_elimination(
     remaining: &BTreeSet<VarId>,
     cfg: &SampleConfig,
 ) -> Result<(), EliminationError> {
-    let snap = b.snapshot();
+    let snap = builder.snapshot();
     let eq_root = eq_roots[i];
-    let p0 = b.substitute_var_with_const(&snap, eq_root, x, q_zero());
-    let p1 = b.substitute_var_with_const(&snap, eq_root, x, q_one());
-    let neg_p1 = b.neg(p1);
-    let den = b.add(vec![p0, neg_p1]);
-    let snap2 = b.snapshot();
+    // Affine in x: p = a*x + b with a,b constant in x. Paper: b = p|_{x=0}, a = p|_{x=1} - p|_{x=0}.
+    let b_coeff = builder.substitute_var_with_const(&snap, eq_root, x, q_zero());
+    let p_at_one = builder.substitute_var_with_const(&snap, eq_root, x, q_one());
+    let neg_b = builder.neg(b_coeff);
+    let a_coeff = builder.add(vec![p_at_one, neg_b]);
+    let snap2 = builder.snapshot();
     let free = other_vars(remaining, x);
-    if is_zero(&snap2, den, &free, cfg)? && !is_zero(&snap2, p0, &free, cfg)? {
+    let a_is_zero = is_zero(&snap2, a_coeff, &free, cfg)?;
+    let b_is_zero = is_zero(&snap2, b_coeff, &free, cfg)?;
+    // a = 0, b ≠ 0: cannot solve for x.
+    if a_is_zero && !b_is_zero {
         return Err(EliminationError::IllegitimateElimination { var: x });
     }
-    // Both linear coefficients vanish: drop the equation (no solvable x).
-    if is_zero(&snap2, p0, &free, cfg)? && is_zero(&snap2, den, &free, cfg)? {
+    // a = 0, b = 0: tautology; drop this equation.
+    if a_is_zero && b_is_zero {
         let mut new_eqs = Vec::with_capacity(eq_roots.len().saturating_sub(1));
         for (j, &er) in eq_roots.iter().enumerate() {
             if j != i {
@@ -484,20 +490,22 @@ fn apply_one_elimination(
             }
         }
         *eq_roots = new_eqs;
-        let snap_taut = b.snapshot();
+        let snap_taut = builder.snapshot();
         retain_nonzero_equations(&snap_taut, eq_roots, cfg);
         return Ok(());
     }
 
-    let x_sol = b.div(p0, den);
+    // a ≠ 0: x ↦ -b/a = b_coeff / (-a_coeff).
+    let neg_a = builder.neg(a_coeff);
+    let x_sol = builder.div(b_coeff, neg_a);
 
-    let snap_check = b.snapshot();
+    let snap_check = builder.snapshot();
     let x_sol_vars: Vec<VarId> = snap_check.vars_in_root(x_sol);
     if !expr_finite_at_some_random_sample(&snap_check, x_sol, &x_sol_vars, cfg) {
         return Err(EliminationError::DegenerateSubstitution { var: x });
     }
 
-    let snap3 = b.snapshot();
+    let snap3 = builder.snapshot();
     subst.insert(x, &snap3, x_sol);
 
     let mut new_eqs = Vec::with_capacity(eq_roots.len().saturating_sub(1));
@@ -505,11 +513,11 @@ fn apply_one_elimination(
         if j == i {
             continue;
         }
-        new_eqs.push(b.substitute_in_root(&snap3, er, x, x_sol));
+        new_eqs.push(builder.substitute_in_root(&snap3, er, x, x_sol));
     }
     *eq_roots = new_eqs;
 
-    let snap4 = b.snapshot();
+    let snap4 = builder.snapshot();
     retain_nonzero_equations(&snap4, eq_roots, cfg);
     Ok(())
 }
@@ -544,4 +552,51 @@ fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_better_elimination;
+    use crate::dag::DagBuilder;
+    use crate::system::PolynomialSystem;
+    use crate::substitution::SubstitutionMap;
+    use crate::{EliminationResult, VarId};
+
+    #[test]
+    fn dfs_tie_break_prefers_more_free_variables() {
+        let mut left_builder = DagBuilder::new();
+        let x = VarId(0);
+        let y = VarId(1);
+        let left_x = left_builder.variable(x);
+        let left_y = left_builder.variable(y);
+        let left_eq = left_builder.add(vec![left_x, left_y]);
+        let left_system = PolynomialSystem::new(left_builder.build(), vec![left_eq]);
+
+        let mut right_builder = DagBuilder::new();
+        let right_x0 = right_builder.variable(x);
+        let right_x1 = right_builder.variable(x);
+        let right_eq = right_builder.mul(vec![right_x0, right_x1]);
+        let right_system = PolynomialSystem::new(right_builder.build(), vec![right_eq]);
+
+        let mut right_subst = SubstitutionMap::new();
+        let mut subst_builder = DagBuilder::new();
+        let zero = subst_builder.constant(crate::Q::from_integer(0));
+        let subst_dag = subst_builder.build();
+        right_subst.insert(x, &subst_dag, zero);
+        right_subst.insert(y, &subst_dag, zero);
+
+        let left = EliminationResult {
+            reduced_system: left_system,
+            substitution: SubstitutionMap::new(),
+        };
+        let right = EliminationResult {
+            reduced_system: right_system,
+            substitution: right_subst,
+        };
+
+        assert!(
+            is_better_elimination(&left, &right),
+            "with the same residual equation count, DFS should prefer the state with more free variables"
+        );
+    }
 }

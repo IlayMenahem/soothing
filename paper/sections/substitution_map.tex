@@ -110,7 +110,7 @@ a x_1 + b = 0,
 where $x$ is the variable to be eliminated. Since the equation is linear in $x$, both $a$ and $b$ may depend on the other variables but not on $x$. These coefficients can be recovered by evaluation: $b = p(0, x_2, \dots, x_n)$ and $a = p(1, x_2, \dots, x_n) - p(0, x_2, \dots, x_n)$. 
 The substitution of $x$ will be divided into cases
 \begin{itemize}
-    \item $b = 0$ we discard the equation
-    \item $a, b \neq 0$ we discard the equation and substitute $x \mapsto -\frac{b}{a}$ without expanding the expression.
+    \item $a, b = 0$ we discard the equation
     \item $a = 0$ and $b \neq 0$ This is an illegal step, because the equation cannot be solved for $x$
+    \item $a \neq 0$ we discard the equation and substitute $x \mapsto -\frac{b}{a}$ without expanding the expression.
 \end{itemize}
