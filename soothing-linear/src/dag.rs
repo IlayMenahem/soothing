@@ -15,7 +15,7 @@ pub struct NodeId(pub usize);
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum Node {
     Const(Q),
-    /// Mathematica `\[Pi]` / identifier `pi`; not a [`VarId`]. Floating evaluation uses `f64::consts::PI`.
+    /// Mathematica `\[Pi]` / identifier `pi`; not a [`VarId`]. Evaluates as pi ≈ 355/113.
     ConstPi,
     Var(VarId),
     Add(Vec<NodeId>),

@@ -1,5 +1,9 @@
 //! Load `systems/simplified_mathematica_system.txt` and run DFS linear elimination.
 //!
+//! Uses [`soothing_linear::dfs_linear_elimination_solving_symbolic`] — same stack as
+//! `python/scripts/solving_symbolic.py` and `tests/python_reference_simplified_mathematica.rs`
+//! (Python-aligned DFS order, `SampleConfig::default()`, κ≠0 acceptance).
+//!
 //! From repo root: `cargo run -p soothing-linear --bin solve_simplified_mathematica`
 
 use std::fs::File;
@@ -7,9 +11,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use soothing_linear::{
-    default_is_solution, default_systems_dir_from_manifest, dfs_linear_elimination,
-    is_solution_nonzero_kappah, load_mathematica_system_from_path_with_var_names,
-    print_substitution_bindings, SampleConfig, VarId,
+    default_systems_dir_from_manifest, dfs_linear_elimination_solving_symbolic,
+    load_mathematica_system_from_path_with_var_names, print_substitution_bindings, SampleConfig,
+    VarId,
 };
 
 /// Trace output path relative to the current working directory.
@@ -35,15 +39,15 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let sys = loaded.system;
-    let var_names = &loaded.var_names;
 
-    let n_eq = sys.equations.len();
-    let all_vars: std::collections::BTreeSet<_> = sys
+    let n_eq = loaded.system.equations.len();
+    let all_vars: std::collections::BTreeSet<_> = loaded
+        .system
         .equations
         .iter()
-        .flat_map(|&r| soothing_linear::Dag::vars_in_root(&sys.dag, r))
+        .flat_map(|&r| soothing_linear::Dag::vars_in_root(&loaded.system.dag, r))
         .collect();
+    let var_names = loaded.var_names.clone();
     println!(
         "Parsed: {} equations, {} distinct variables across system",
         n_eq,
@@ -60,22 +64,11 @@ fn main() {
         }
     };
 
-    let kappah = var_names
-        .iter()
-        .position(|n| n == "kappah")
-        .map(|i| VarId(i as u32));
-    if kappah.is_none() {
-        eprintln!("warning: no variable named \"kappah\" in system; using default solution predicate (empty residual only).");
-    }
-
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination(sys, &cfg, Some(&mut trace_file), |r| match kappah {
-        Some(k) => is_solution_nonzero_kappah(r, k, &cfg),
-        None => default_is_solution(r),
-    }) {
+    let res = match dfs_linear_elimination_solving_symbolic(loaded, &cfg, Some(&mut trace_file)) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("dfs_linear_elimination error: {e}");
+            eprintln!("dfs_linear_elimination_solving_symbolic error: {e}");
             std::process::exit(1);
         }
     };

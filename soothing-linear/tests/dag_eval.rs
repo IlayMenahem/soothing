@@ -2,6 +2,15 @@ use soothing_linear::{evaluate, Dag, DagBuilder, EvalError, VarId, Q};
 use std::collections::HashMap;
 
 #[test]
+fn pi_is_rational_approximation() {
+    let mut b = DagBuilder::new();
+    let p = b.const_pi();
+    let d = b.build();
+    let m = HashMap::new();
+    assert_eq!(evaluate(&d, p, &m).unwrap(), Q::new(355, 113));
+}
+
+#[test]
 fn constant_and_variable() {
     let mut b = DagBuilder::new();
     let x = VarId(0);

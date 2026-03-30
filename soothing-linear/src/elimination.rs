@@ -2,6 +2,7 @@
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
+use crate::mathematica_system::LoadedMathematicaSystem;
 use crate::predicates::{
     expr_finite_at_some_random_sample, is_linear_in, is_zero, PredicateError, SampleConfig,
 };
@@ -16,6 +17,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EliminationError {
+    #[error("missing variable \"kappah\" in loaded system (required for solving_symbolic-style elimination)")]
+    MissingKappah,
     #[error("illegitimate elimination: a=0 and b≠0 for variable {var:?}")]
     IllegitimateElimination { var: VarId },
     #[error("degenerate substitution: RHS never evaluates to a finite float at random samples (variable {var:?})")]
@@ -121,11 +124,6 @@ fn validate_elimination_result(
     if result.substitution.is_empty() || !result.reduced_system.equations.is_empty() {
         return;
     }
-    // `ConstPi` uses `f64` in predicates; replay validation is only wired for pure-`Q` systems.
-    if any_equation_contains_const_pi(original) {
-        return;
-    }
-
     let (order, mut b, expanded_rhs) = expand_substitution_bindings(result)
         .expect("elimination validation: cyclic substitution map");
 
@@ -213,8 +211,8 @@ pub fn linear_elimination_greedy(
 /// Depth-first search over linear elimination choices: at each step, try every `(equation, variable)`
 /// pair that is linear; prefer fewer remaining equations.
 ///
-/// **Tie-break:** same equation count → prefer more **distinct variables** appearing in the union
-/// of residual equation DAGs (not Jacobian rank or affine dimension).
+/// **Tie-break:** same residual equation count → prefer a **larger substitution map** (same as
+/// Python `linear_substitution_order._state_priority`).
 ///
 /// **Early exit:** if any branch satisfies the solution predicate (default: no residual equations),
 /// return that result immediately without trying further siblings at the same level.
@@ -227,6 +225,9 @@ pub fn linear_elimination_greedy(
 ///
 /// `is_solution` decides when a leaf counts as a successful terminal state for early exit; use
 /// [`default_is_solution`] unless you need a stricter condition (e.g. [`is_solution_nonzero_kappah`]).
+///
+/// For the same stack as `python/scripts/solving_symbolic.py` and
+/// `tests/python_reference_simplified_mathematica.rs`, use [`dfs_linear_elimination_solving_symbolic`].
 pub fn dfs_linear_elimination<F>(
     system: PolynomialSystem,
     cfg: &SampleConfig,
@@ -262,6 +263,26 @@ where
     };
     validate_elimination_result(&original, &result, cfg);
     Ok(result)
+}
+
+/// [`dfs_linear_elimination`] configured like `python/scripts/solving_symbolic.py` and
+/// `tests/python_reference_simplified_mathematica.rs`: Python-aligned DFS candidate order (equation
+/// index, then variables by [`VarId`]), [`SampleConfig`] as given, and acceptance via
+/// [`is_solution_nonzero_kappah`] for variable `kappah` (must appear in `loaded.var_names`).
+pub fn dfs_linear_elimination_solving_symbolic(
+    loaded: LoadedMathematicaSystem,
+    cfg: &SampleConfig,
+    trace_writer: Option<&mut dyn Write>,
+) -> Result<EliminationResult, EliminationError> {
+    let kappah = loaded
+        .var_names
+        .iter()
+        .position(|n| n == "kappah")
+        .map(|i| VarId(i as u32))
+        .ok_or(EliminationError::MissingKappah)?;
+    dfs_linear_elimination(loaded.system, cfg, trace_writer, |r| {
+        is_solution_nonzero_kappah(r, kappah, cfg)
+    })
 }
 
 fn dfs_linear_elimination_inner<F>(
@@ -372,9 +393,12 @@ where
     Ok(best)
 }
 
-/// Candidates where `is_linear_in` is true. Pairs for which the sampling predicate hard-errors
-/// (e.g. missing variable) are omitted so enumeration stays robust when probing every
-/// `(equation, variable)` — unlike greedy elimination, which stops at the first success per step.
+/// Candidates where `is_linear_in` is true. Enumeration matches Python
+/// `linear_substitution_order._linear_substitution_candidates`: for each equation index in order,
+/// then each variable appearing in that equation, sorted by [`VarId`] (aligned with sorted
+/// `LoadedMathematicaSystem::var_names` and SymPy `default_sort_key` on simple identifiers).
+///
+/// Pairs for which the sampling predicate hard-errors are skipped.
 fn collect_linear_pairs(
     dag: &Dag,
     eq_roots: &[NodeId],
@@ -382,32 +406,21 @@ fn collect_linear_pairs(
     cfg: &SampleConfig,
 ) -> Vec<(VarId, usize)> {
     let mut out = Vec::new();
-    for &x in remaining {
-        let others = other_vars(remaining, x);
-        let linear: Vec<bool> = (0..eq_roots.len())
-            .into_par_iter()
-            .map(|i| match is_linear_in(dag, eq_roots[i], x, &others, cfg) {
-                Ok(true) => true,
-                Ok(false) | Err(_) => false,
-            })
+    for i in 0..eq_roots.len() {
+        let mut vars_in_eq: Vec<VarId> = collect_vars(dag, std::slice::from_ref(&eq_roots[i]))
+            .into_iter()
+            .filter(|v| remaining.contains(v))
             .collect();
-        for i in 0..linear.len() {
-            if linear[i] {
-                out.push((x, i));
+        vars_in_eq.sort_by_key(|v| v.0);
+        for x in vars_in_eq {
+            let others = other_vars(remaining, x);
+            match is_linear_in(dag, eq_roots[i], x, &others, cfg) {
+                Ok(true) => out.push((x, i)),
+                Ok(false) | Err(_) => {}
             }
         }
     }
     out
-}
-
-/// Count of distinct variables that appear in **any** residual equation (union of subgraph vars).
-/// Used only as a DFS tie-break; not Jacobian rank or Hilbert dimension.
-fn distinct_var_count_across_equations(system: &PolynomialSystem) -> usize {
-    let mut seen = HashSet::new();
-    for &r in &system.equations {
-        seen.extend(collect_vars(&system.dag, std::slice::from_ref(&r)));
-    }
-    seen.len()
 }
 
 fn is_better_elimination(a: &EliminationResult, b: &EliminationResult) -> bool {
@@ -416,8 +429,11 @@ fn is_better_elimination(a: &EliminationResult, b: &EliminationResult) -> bool {
     if na != nb {
         return na < nb;
     }
-    distinct_var_count_across_equations(&a.reduced_system)
-        > distinct_var_count_across_equations(&b.reduced_system)
+    // Tie-break aligned with Python `linear_substitution_order._state_priority`:
+    // minimize `(len(remaining_equations), -len(substitution_map))`.
+    let sa = a.substitution.len();
+    let sb = b.substitution.len();
+    sa > sb
 }
 
 fn other_vars(remaining: &BTreeSet<VarId>, x: VarId) -> Vec<VarId> {
@@ -496,43 +512,6 @@ fn apply_one_elimination(
     let snap4 = b.snapshot();
     retain_nonzero_equations(&snap4, eq_roots, cfg);
     Ok(())
-}
-
-fn any_equation_contains_const_pi(system: &PolynomialSystem) -> bool {
-    let dag = &system.dag;
-    system
-        .equations
-        .iter()
-        .any(|&r| subtree_contains_const_pi(dag, r))
-}
-
-fn subtree_contains_const_pi(dag: &Dag, root: NodeId) -> bool {
-    let mut stack = vec![root];
-    let mut seen = HashSet::new();
-    while let Some(id) = stack.pop() {
-        if !seen.insert(id) {
-            continue;
-        }
-        match dag.node(id) {
-            Node::ConstPi => return true,
-            Node::Const(_) | Node::Var(_) => {}
-            Node::Add(cs) | Node::Mul(cs) => {
-                for c in cs {
-                    stack.push(*c);
-                }
-            }
-            Node::Neg(x) => stack.push(*x),
-            Node::Div(n, d) => {
-                stack.push(*n);
-                stack.push(*d);
-            }
-            Node::Pow(b, e) => {
-                stack.push(*b);
-                stack.push(*e);
-            }
-        }
-    }
-    false
 }
 
 fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {

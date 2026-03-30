@@ -19,3 +19,9 @@ pub fn q_zero() -> Q {
 pub fn q_one() -> Q {
     Q::one()
 }
+
+/// Identifier `pi` / Mathematica `\[Pi]` in the DAG; pi ≈ 355/113.
+#[inline]
+pub fn pi_approx_q() -> Q {
+    Q::new(355, 113)
+}

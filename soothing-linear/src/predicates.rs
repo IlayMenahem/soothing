@@ -156,8 +156,6 @@ pub enum PredicateError {
     DivisionByZero,
     #[error("evaluation failed: exponent must be an integer in Q")]
     NonIntegerExponent,
-    #[error("evaluation failed: pi is not in Q")]
-    TranscendentalConstant,
 }
 
 impl From<EvalError> for PredicateError {
@@ -166,7 +164,6 @@ impl From<EvalError> for PredicateError {
             EvalError::MissingVariable(v) => PredicateError::MissingVariable(v),
             EvalError::DivisionByZero => PredicateError::DivisionByZero,
             EvalError::NonIntegerExponent => PredicateError::NonIntegerExponent,
-            EvalError::TranscendentalConstant => PredicateError::TranscendentalConstant,
         }
     }
 }

@@ -4,7 +4,7 @@
 //! expressions and integer powers.
 
 use crate::dag::{Dag, Node, NodeId, VarId};
-use crate::field::Q;
+use crate::field::{pi_approx_q, Q};
 use num_traits::{One, Zero};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -15,8 +15,6 @@ pub enum EvalError {
     MissingVariable(VarId),
     DivisionByZero,
     NonIntegerExponent,
-    /// `pi` is not representable in [`Q`].
-    TranscendentalConstant,
 }
 
 /// Floating-point evaluation for predicate sampling (avoids `i64` overflow in [`crate::field::Q`]).
@@ -49,7 +47,7 @@ fn eval_node_f64(
 ) -> Result<f64, EvalError> {
     match dag.node(id) {
         Node::Const(c) => Ok(q_to_f64(c)),
-        Node::ConstPi => Ok(std::f64::consts::PI),
+        Node::ConstPi => Ok(q_to_f64(&pi_approx_q())),
         Node::Var(x) => assignment
             .get(x)
             .copied()
@@ -119,7 +117,7 @@ fn eval_node(
 ) -> Result<Q, EvalError> {
     match dag.node(id) {
         Node::Const(c) => Ok(*c),
-        Node::ConstPi => Err(EvalError::TranscendentalConstant),
+        Node::ConstPi => Ok(pi_approx_q()),
         Node::Var(x) => assignment
             .get(x)
             .copied()

@@ -1,7 +1,7 @@
 //! Load Mathematica-style rule lists into [`PolynomialSystem`].
 //!
 //! Each rule `lhs -> rhs` (or `==`, `:>`) becomes `lhs - (rhs) = 0` after whitespace collapse,
-//! implicit multiplication, `\[Pi]` → `pi` (a dedicated constant in the DAG, not a [`VarId`]), and
+//! implicit multiplication, `\[Pi]` → `pi` (DAG constant, pi ≈ 355/113; not a [`VarId`]), and
 //! wrapping `integer/(` as `(integer)/(` so rational literals do not swallow parenthesized denominators.
 //! The full rational structure of `rhs` is preserved (no numerator-only rewriting).
 
