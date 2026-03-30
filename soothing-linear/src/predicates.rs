@@ -1,23 +1,23 @@
 //! Sampling-based “is zero” and “is linear in `x`” predicates on DAG expressions.
 
-use crate::dag::{Dag, NodeId, VarId};
+use crate::dag::{Dag, DagBuilder, NodeId, VarId};
 use crate::eval::{evaluate, evaluate_f64, EvalError};
 use crate::field::Q;
 use num_traits::{One, Zero};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use rayon::prelude::*;
 use std::collections::HashMap;
 use thiserror::Error;
 
 /// How many samples to use for predicate checks.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SampleConfig {
-    /// Number of full assignments for the zero test.
+    /// Number of full assignments for the zero test and for the linearity-in-`x` test (via the
+    /// auxiliary polynomial `q` in the paper).
     pub zero_samples: usize,
-    /// Number of assignments to “other” variables when testing linearity in `x`.
+    /// Legacy field: not used by [`is_linear_in`] (kept for config compatibility).
     pub linear_other_assignments: usize,
-    /// Minimum distinct `x` values to check collinearity (at least 3 recommended).
+    /// Legacy field: not used by [`is_linear_in`] (kept for config compatibility).
     pub linear_x_points: usize,
     /// Seed for [`StdRng`] when drawing random values for free / “other” variables (mixed with
     /// expression identity so repeated calls are not identical).
@@ -39,10 +39,6 @@ impl Default for SampleConfig {
 /// [`is_linear_in`] “other” variables (matches `soothing/system_substitution.py` `_RANDOM_VALUE_RANGE`).
 pub const RANDOM_SAMPLE_ABS_MAX: f64 = 2.0;
 
-/// Endpoints for the sweep of the linearity-test variable (matches Python `_VAR_RANGE`).
-pub const LINEARITY_X_SAMPLE_LOW: f64 = -10.0;
-pub const LINEARITY_X_SAMPLE_HIGH: f64 = 10.0;
-
 /// Samples for numeric finiteness check on a substitution RHS (like ruling out SymPy `nan`/`zoo`).
 pub const SUBSTITUTION_NUMERIC_CHECK_SAMPLES: usize = 8;
 
@@ -55,8 +51,8 @@ fn rng_for_zero(cfg: &SampleConfig, root: NodeId) -> StdRng {
     StdRng::seed_from_u64(mix_seed(cfg.random_seed, root.0, 0x5EED_5EED))
 }
 
-fn rng_for_linear(cfg: &SampleConfig, root: NodeId, x: VarId) -> StdRng {
-    StdRng::seed_from_u64(mix_seed(cfg.random_seed, root.0, x.0))
+fn rng_for_linearity_q(cfg: &SampleConfig, q_root: NodeId, x: VarId) -> StdRng {
+    StdRng::seed_from_u64(mix_seed(cfg.random_seed, q_root.0, x.0))
 }
 
 fn random_assignment_f64(vars: &[VarId], rng: &mut StdRng) -> HashMap<VarId, f64> {
@@ -68,16 +64,73 @@ fn random_assignment_f64(vars: &[VarId], rng: &mut StdRng) -> HashMap<VarId, f64
         .collect()
 }
 
-fn linspace(low: f64, high: f64, n: usize) -> Vec<f64> {
-    if n == 0 {
-        return Vec::new();
+fn max_var_id(dag: &Dag, root: NodeId, other_vars: &[VarId]) -> u32 {
+    let mut m = other_vars.iter().map(|v| v.0).max().unwrap_or(0);
+    for v in dag.vars_in_root(root) {
+        m = m.max(v.0);
     }
-    if n == 1 {
-        return vec![low];
+    m
+}
+
+/// Builds \(q = (p(w)-p(u))(v-u) - (p(v)-p(u))(w-u)\) with fresh `u,v,w` symbols (see paper).
+fn build_linearity_q_polynomial(
+    dag: &Dag,
+    root: NodeId,
+    x: VarId,
+    other_vars: &[VarId],
+) -> (Dag, NodeId, VarId, VarId, VarId) {
+    let base = max_var_id(dag, root, other_vars);
+    let u_id = VarId(base + 1);
+    let v_id = VarId(base + 2);
+    let w_id = VarId(base + 3);
+    let mut b = DagBuilder::new();
+    let nu = b.variable(u_id);
+    let nv = b.variable(v_id);
+    let nw = b.variable(w_id);
+    let p_u = b.substitute_in_root(dag, root, x, nu);
+    let p_v = b.substitute_in_root(dag, root, x, nv);
+    let p_w = b.substitute_in_root(dag, root, x, nw);
+    let neg_p_u = b.neg(p_u);
+    let p_w_minus_p_u = b.add(vec![p_w, neg_p_u]);
+    let neg_p_u_b = b.neg(p_u);
+    let p_v_minus_p_u = b.add(vec![p_v, neg_p_u_b]);
+    let neg_nu = b.neg(nu);
+    let v_minus_u = b.add(vec![nv, neg_nu]);
+    let w_minus_u = b.add(vec![nw, neg_nu]);
+    let term1 = b.mul(vec![p_w_minus_p_u, v_minus_u]);
+    let term2 = b.mul(vec![p_v_minus_p_u, w_minus_u]);
+    let neg_term2 = b.neg(term2);
+    let q_root = b.add(vec![term1, neg_term2]);
+    (b.build(), q_root, u_id, v_id, w_id)
+}
+
+/// If `v=u` or `w=u`, the auxiliary polynomial vanishes at that point for every `p`; resample `u,v,w`.
+const MIN_LINEARITY_UV_SEP: f64 = 1e-6;
+const UVW_RESAMPLE_CAP: u32 = 128;
+
+fn random_assignment_with_nondegenerate_uvw(
+    other_vars: &[VarId],
+    u_id: VarId,
+    v_id: VarId,
+    w_id: VarId,
+    rng: &mut StdRng,
+) -> HashMap<VarId, f64> {
+    let mut m = random_assignment_f64(other_vars, rng);
+    for _ in 0..UVW_RESAMPLE_CAP {
+        let u = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
+        let v = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
+        let w = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
+        if (v - u).abs() >= MIN_LINEARITY_UV_SEP && (w - u).abs() >= MIN_LINEARITY_UV_SEP {
+            m.insert(u_id, u);
+            m.insert(v_id, v);
+            m.insert(w_id, w);
+            return m;
+        }
     }
-    (0..n)
-        .map(|i| low + (high - low) * (i as f64) / ((n - 1) as f64))
-        .collect()
+    m.insert(u_id, 0.0);
+    m.insert(v_id, 1.0);
+    m.insert(w_id, -1.0);
+    m
 }
 
 /// True if at least one random assignment yields a finite [`evaluate_f64`] value (numeric analogue
@@ -105,42 +158,8 @@ fn is_effectively_zero(v: f64) -> bool {
     v.is_finite() && v.abs() <= PREDICATE_ZERO_EPS
 }
 
-/// True iff samples `(x_i, y_i)` lie on one affine line. [`points_on_one_affine_line`] uses uniform
-/// spacing in [`LINEARITY_X_SAMPLE_LOW`] … [`LINEARITY_X_SAMPLE_HIGH`]; for affine `y` the second
-/// difference `y_{i+2} - 2 y_{i+1} + y_i` is `0` (and for `y = a x^2 + …` it is `2a` up to step scale).
-fn affine_points_collinear(_xs: &[f64], ys: &[f64]) -> bool {
-    debug_assert_eq!(_xs.len(), ys.len());
-    if _xs.len() < 2 {
-        return false;
-    }
-    if _xs.len() == 2 {
-        return _xs[1] != _xs[0];
-    }
-    for i in 0..ys.len() - 2 {
-        let d2 = ys[i + 2] - 2.0 * ys[i + 1] + ys[i];
-        if !d2.is_finite() {
-            return false;
-        }
-        let ymax = ys[i]
-            .abs()
-            .max(ys[i + 1].abs())
-            .max(ys[i + 2].abs())
-            .max(1.0);
-        let tol = COLLINEAR_SECOND_DIFF_EPS.max(COLLINEAR_SECOND_DIFF_RTOL * ymax);
-        if d2.abs() > tol {
-            return false;
-        }
-    }
-    true
-}
-
 /// Absolute tolerance for reporting “zero” in [`is_zero`] (matches Python `_ZERO_TOL`).
 const PREDICATE_ZERO_EPS: f64 = 1e-9;
-/// Base max `|y_{i+2} - 2y_{i+1} + y_i|` for uniform `x` (catches small curvatures).
-const COLLINEAR_SECOND_DIFF_EPS: f64 = 1.5e-9;
-/// Relative slack so affine slices at large `|y|` still pass despite `f64` cancellation (kept small
-/// enough that `d2 = 2` for a unit quadratic in `x` still exceeds the threshold when `|y|` is large).
-const COLLINEAR_SECOND_DIFF_RTOL: f64 = 5e-14;
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum PredicateError {
@@ -182,8 +201,20 @@ pub fn is_zero(
         return Err(PredicateError::InsufficientSamples);
     }
     let mut rng = rng_for_zero(cfg, root);
+    probabilistic_zero_on_assignments(dag, root, cfg, &mut rng, |rng| {
+        random_assignment_f64(free_vars, rng)
+    })
+}
+
+fn probabilistic_zero_on_assignments(
+    dag: &Dag,
+    root: NodeId,
+    cfg: &SampleConfig,
+    rng: &mut StdRng,
+    mut next_assignment: impl FnMut(&mut StdRng) -> HashMap<VarId, f64>,
+) -> Result<bool, PredicateError> {
     for _ in 0..cfg.zero_samples {
-        let assignment = random_assignment_f64(free_vars, &mut rng);
+        let assignment = next_assignment(rng);
         let v = match evaluate_f64(dag, root, &assignment) {
             Ok(val) if val.is_finite() => val,
             Ok(_) => return Ok(false),
@@ -197,9 +228,8 @@ pub fn is_zero(
     Ok(true)
 }
 
-/// Whether `p` is affine in `x` for random assignments to the other variables (uniform in
-/// ± [`RANDOM_SAMPLE_ABS_MAX`]), then collinearity over `x` on an evenly spaced grid in
-/// [`LINEARITY_X_SAMPLE_LOW`] … [`LINEARITY_X_SAMPLE_HIGH`] (Python `is_linear_in_variable` style).
+/// Whether `p` is affine in `x`: builds the paper’s auxiliary polynomial `q` and runs the same
+/// probabilistic zero test as [`is_zero`] on `q` (see repository `paper/sections/substitution_map.tex`).
 pub fn is_linear_in(
     dag: &Dag,
     root: NodeId,
@@ -207,17 +237,15 @@ pub fn is_linear_in(
     other_vars: &[VarId],
     cfg: &SampleConfig,
 ) -> Result<bool, PredicateError> {
-    if cfg.linear_x_points < 2 || cfg.linear_other_assignments == 0 {
+    if cfg.zero_samples == 0 {
         return Err(PredicateError::InsufficientSamples);
     }
-    let mut rng = rng_for_linear(cfg, root, x);
-    for _ in 0..cfg.linear_other_assignments {
-        let base = random_assignment_f64(other_vars, &mut rng);
-        if !points_on_one_affine_line(dag, root, x, &base, cfg.linear_x_points) {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    let (q_dag, q_root, u_id, v_id, w_id) =
+        build_linearity_q_polynomial(dag, root, x, other_vars);
+    let mut rng = rng_for_linearity_q(cfg, q_root, x);
+    probabilistic_zero_on_assignments(&q_dag, q_root, cfg, &mut rng, |rng| {
+        random_assignment_with_nondegenerate_uvw(other_vars, u_id, v_id, w_id, rng)
+    })
 }
 
 /// Recover `a`, `b` with `p = a*x + b` in `x` (other variables fixed by `base`).
@@ -241,35 +269,6 @@ pub fn recover_linear_coeffs(
 pub struct LinearCoeffs {
     pub a: Q,
     pub b: Q,
-}
-
-fn points_on_one_affine_line(
-    dag: &Dag,
-    root: NodeId,
-    x: VarId,
-    base: &HashMap<VarId, f64>,
-    num_x: usize,
-) -> bool {
-    let xs = linspace(LINEARITY_X_SAMPLE_LOW, LINEARITY_X_SAMPLE_HIGH, num_x);
-    if xs.len() < 2 {
-        return false;
-    }
-    let parts: Vec<Option<f64>> = (0..xs.len())
-        .into_par_iter()
-        .map(|i| {
-            let mut m = base.clone();
-            m.insert(x, xs[i]);
-            match evaluate_f64(dag, root, &m) {
-                Ok(y) if y.is_finite() => Some(y),
-                _ => None,
-            }
-        })
-        .collect();
-    let ys: Vec<f64> = match parts.into_iter().collect::<Option<Vec<_>>>() {
-        Some(v) => v,
-        None => return false,
-    };
-    affine_points_collinear(&xs, &ys)
 }
 
 /// Deterministic sample assignment for `vars` (for tests and call sites that need a fixed base).

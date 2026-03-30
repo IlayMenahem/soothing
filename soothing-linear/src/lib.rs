@@ -25,9 +25,8 @@
 //!
 //! ## Implementation assumptions
 //!
-//! - Sample counts, [`RANDOM_SAMPLE_ABS_MAX`], [`LINEARITY_X_SAMPLE_LOW`] / [`LINEARITY_X_SAMPLE_HIGH`],
-//!   and [`SampleConfig::random_seed`] control predicate sampling (aligned with
-//!   `soothing/system_substitution.py` ranges).
+//! - Sample counts, [`RANDOM_SAMPLE_ABS_MAX`], and [`SampleConfig::random_seed`] control predicate
+//!   sampling (aligned with `soothing/system_substitution.py` ranges).
 //! - Elimination with recovered coefficients `a = 0` and `b \neq 0` is rejected as
 //!   [`elimination::EliminationError::IllegitimateElimination`]; a substitution RHS that never yields a
 //!   finite float at random samples is [`elimination::EliminationError::DegenerateSubstitution`].
@@ -59,8 +58,7 @@ pub use mathematica_system::{
 pub use predicates::assignment_seed;
 pub use predicates::{
     expr_finite_at_some_random_sample, is_linear_in, is_zero, recover_linear_coeffs, LinearCoeffs,
-    PredicateError, SampleConfig, LINEARITY_X_SAMPLE_HIGH, LINEARITY_X_SAMPLE_LOW,
-    RANDOM_SAMPLE_ABS_MAX, SUBSTITUTION_NUMERIC_CHECK_SAMPLES,
+    PredicateError, SampleConfig, RANDOM_SAMPLE_ABS_MAX, SUBSTITUTION_NUMERIC_CHECK_SAMPLES,
 };
 
 pub use cli_display::{print_substitution_bindings, simplify_for_display};

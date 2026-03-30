@@ -12,7 +12,7 @@ fn default_cfg() -> SampleConfig {
     SampleConfig {
         zero_samples: 12,
         linear_other_assignments: 6,
-        linear_x_points: 5,
+        linear_x_points: 5, // unused by Rust `is_linear_in` (legacy field)
         ..Default::default()
     }
 }

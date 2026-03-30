@@ -7,7 +7,8 @@ use soothing_linear::{
     PredicateError, SampleConfig, VarId, Q,
 };
 
-/// Stricter sampling than default for multivariate linearity checks (mirrors “many samples” intent).
+/// Stricter [`zero_samples`] than default for multivariate checks (`linear_*` fields are unused by
+/// Rust [`is_linear_in`] but kept for struct completeness).
 fn cfg_robust() -> SampleConfig {
     SampleConfig {
         zero_samples: 16,
@@ -340,10 +341,10 @@ fn degenerate_or_insufficient() {
 }
 
 #[test]
-fn is_linear_in_rejects_zero_linear_other_assignments() {
+fn is_linear_in_rejects_zero_zero_samples() {
     let (d, r) = parse("v0 + v1");
     let cfg = SampleConfig {
-        linear_other_assignments: 0,
+        zero_samples: 0,
         ..cfg_robust()
     };
     let err = is_linear_in(&d, r, VarId(0), &[VarId(1)], &cfg).unwrap_err();
