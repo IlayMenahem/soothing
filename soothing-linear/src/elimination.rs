@@ -409,7 +409,7 @@ fn collect_linear_pairs(
     remaining: &BTreeSet<VarId>,
     cfg: &SampleConfig,
 ) -> Vec<(VarId, usize)> {
-    let mut out = Vec::new();
+    let mut candidates: Vec<(usize, VarId)> = Vec::new();
     for i in 0..eq_roots.len() {
         let mut vars_in_eq: Vec<VarId> = collect_vars(dag, std::slice::from_ref(&eq_roots[i]))
             .into_iter()
@@ -417,11 +417,20 @@ fn collect_linear_pairs(
             .collect();
         vars_in_eq.sort_by_key(|v| v.0);
         for x in vars_in_eq {
+            candidates.push((i, x));
+        }
+    }
+    let linear_ok: Vec<bool> = candidates
+        .par_iter()
+        .map(|&(i, x)| {
             let others = other_vars(remaining, x);
-            match is_linear_in(dag, eq_roots[i], x, &others, cfg) {
-                Ok(true) => out.push((x, i)),
-                Ok(false) | Err(_) => {}
-            }
+            matches!(is_linear_in(dag, eq_roots[i], x, &others, cfg), Ok(true))
+        })
+        .collect();
+    let mut out = Vec::new();
+    for (idx, &(i, x)) in candidates.iter().enumerate() {
+        if linear_ok[idx] {
+            out.push((x, i));
         }
     }
     out
@@ -445,16 +454,26 @@ fn other_vars(remaining: &BTreeSet<VarId>, x: VarId) -> Vec<VarId> {
 /// Drop equations that the sampling predicate classifies as identically zero. On predicate error,
 /// keep the equation.
 fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleConfig) {
-    eq_roots.retain(|&r| {
-        let vs: Vec<VarId> = collect_vars(dag, std::slice::from_ref(&r))
-            .into_iter()
-            .collect();
-        match is_zero(dag, r, &vs, cfg) {
-            Ok(true) => false,
-            Ok(false) => true,
-            Err(_) => true,
+    let keep: Vec<bool> = eq_roots
+        .par_iter()
+        .map(|&r| {
+            let vs: Vec<VarId> = collect_vars(dag, std::slice::from_ref(&r))
+                .into_iter()
+                .collect();
+            match is_zero(dag, r, &vs, cfg) {
+                Ok(true) => false,
+                Ok(false) => true,
+                Err(_) => true,
+            }
+        })
+        .collect();
+    let mut new_eqs = Vec::with_capacity(eq_roots.len());
+    for (&r, &k) in eq_roots.iter().zip(&keep) {
+        if k {
+            new_eqs.push(r);
         }
-    });
+    }
+    *eq_roots = new_eqs;
 }
 
 fn apply_one_elimination(

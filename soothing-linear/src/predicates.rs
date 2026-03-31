@@ -10,6 +10,7 @@ use crate::eval::{evaluate, EvalError};
 use crate::field::Q;
 use num_traits::{One, Zero};
 use rand::rngs::StdRng;
+use rayon::prelude::*;
 use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -151,15 +152,16 @@ pub fn expr_finite_at_some_random_sample(
     free_vars: &[VarId],
     cfg: &SampleConfig,
 ) -> bool {
-    let mut rng = rng_for_zero(cfg, root);
     let max_attempts = SUBSTITUTION_NUMERIC_CHECK_SAMPLES.saturating_mul(ZERO_TEST_ATTEMPT_MULTIPLIER);
-    for _ in 0..max_attempts {
+    (0..max_attempts).into_par_iter().any(|attempt| {
+        let mut rng = StdRng::seed_from_u64(mix_seed(
+            cfg.random_seed.wrapping_add(attempt as u64),
+            root.0,
+            attempt as u32,
+        ));
         let a = random_assignment_q(free_vars, &mut rng);
-        if evaluate(dag, root, &a).is_ok() {
-            return true;
-        }
-    }
-    false
+        evaluate(dag, root, &a).is_ok()
+    })
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]

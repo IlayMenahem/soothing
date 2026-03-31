@@ -6,8 +6,12 @@
 use crate::dag::{Dag, Node, NodeId, VarId};
 use crate::field::{pi_approx_q, Q};
 use num_traits::{One, Zero};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
+
+/// Use data-parallel fold only when there are enough children to amortize Rayon overhead.
+const MIN_PARALLEL_EVAL_ARITY: usize = 32;
 
 /// Evaluation error.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,18 +48,32 @@ fn eval_node(
             .copied()
             .ok_or(EvalError::MissingVariable(*x)),
         Node::Add(children) => {
-            let mut s = Q::zero();
-            for c in children {
-                s += values[c.0].as_ref().expect("topo order");
+            if children.len() >= MIN_PARALLEL_EVAL_ARITY {
+                Ok(children
+                    .par_iter()
+                    .map(|c| *values[c.0].as_ref().expect("topo order"))
+                    .sum())
+            } else {
+                let mut s = Q::zero();
+                for c in children {
+                    s += values[c.0].as_ref().expect("topo order");
+                }
+                Ok(s)
             }
-            Ok(s)
         }
         Node::Mul(children) => {
-            let mut p = Q::one();
-            for c in children {
-                p *= values[c.0].as_ref().expect("topo order");
+            if children.len() >= MIN_PARALLEL_EVAL_ARITY {
+                Ok(children
+                    .par_iter()
+                    .map(|c| *values[c.0].as_ref().expect("topo order"))
+                    .product())
+            } else {
+                let mut p = Q::one();
+                for c in children {
+                    p *= values[c.0].as_ref().expect("topo order");
+                }
+                Ok(p)
             }
-            Ok(p)
         }
         Node::Neg(x) => Ok(-values[x.0].as_ref().expect("topo order")),
         Node::Div(n, d) => {
