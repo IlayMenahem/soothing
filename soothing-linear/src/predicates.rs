@@ -14,6 +14,7 @@ use rayon::prelude::*;
 use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
 use thiserror::Error;
+use num_integer::Integer;
 
 /// How many samples to use for predicate checks.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,10 +57,15 @@ fn rng_for_linearity_q(cfg: &SampleConfig, q_root: NodeId, x: VarId) -> StdRng {
     StdRng::seed_from_u64(mix_seed(cfg.random_seed, q_root.0, x.0))
 }
 
-// TODO: replace with uniform sample over fractions
 fn random_sample_q(rng: &mut StdRng) -> Q {
-    let numer = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
-    let denom = rng.gen_range(1..=RANDOM_SAMPLE_ABS_MAX);
+    // rejection sampling of numerators and denominators such that $\gcd(numer, denom) = 1$ and $|denom|, |numer| \leq RANDOM_SAMPLE_ABS_MAX$
+    let mut numer = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
+    let mut denom = rng.gen_range(1..=RANDOM_SAMPLE_ABS_MAX);
+    while numer.gcd(&denom) != 1 {
+        numer = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
+        denom = rng.gen_range(1..=RANDOM_SAMPLE_ABS_MAX);
+    }
+
     Q::new(numer.into(), denom.into())
 }
 

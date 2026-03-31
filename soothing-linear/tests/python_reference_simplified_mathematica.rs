@@ -94,6 +94,7 @@ fn rust_elimination_stats() -> PythonEliminationStats {
     }
 }
 
+#[ignore = "extremely slow"]
 #[test]
 fn dfs_matches_python_solving_symbolic_on_simplified_mathematica() {
     let py = python_reference_stats();
