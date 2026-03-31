@@ -577,8 +577,8 @@ fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
 mod tests {
     use super::is_better_elimination;
     use crate::dag::DagBuilder;
-    use crate::system::PolynomialSystem;
     use crate::substitution::SubstitutionMap;
+    use crate::system::PolynomialSystem;
     use crate::{EliminationResult, VarId};
 
     #[test]

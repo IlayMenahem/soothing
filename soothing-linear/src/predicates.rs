@@ -8,13 +8,13 @@
 use crate::dag::{Dag, DagBuilder, NodeId, VarId};
 use crate::eval::{evaluate, EvalError};
 use crate::field::Q;
+use num_integer::Integer;
 use num_traits::{One, Zero};
 use rand::rngs::StdRng;
-use rayon::prelude::*;
 use rand::{Rng, SeedableRng};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use thiserror::Error;
-use num_integer::Integer;
 
 /// How many samples to use for predicate checks.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -42,7 +42,7 @@ pub const RANDOM_SAMPLE_ABS_MAX: i64 = 32;
 
 /// Samples for exact evaluability checks on a substitution RHS.
 pub const SUBSTITUTION_NUMERIC_CHECK_SAMPLES: usize = 8;
-const ZERO_TEST_ATTEMPT_MULTIPLIER: usize = 8;
+const ZERO_TEST_ATTEMPT_MULTIPLIER: usize = 2;
 
 fn mix_seed(base: u64, a: usize, b: u32) -> u64 {
     base ^ (a as u64).wrapping_mul(0x9E37_79B9_1E35_1B03)
@@ -69,11 +69,8 @@ fn random_sample_q(rng: &mut StdRng) -> Q {
     Q::new(numer.into(), denom.into())
 }
 
-// TODO: use parallel iterator
 fn random_assignment_q(vars: &[VarId], rng: &mut StdRng) -> HashMap<VarId, Q> {
-    vars.iter()
-        .map(|&v| (v, random_sample_q(rng)))
-        .collect()
+    vars.iter().map(|&v| (v, random_sample_q(rng))).collect()
 }
 
 fn max_var_id(dag: &Dag, root: NodeId, other_vars: &[VarId]) -> u32 {
@@ -116,7 +113,6 @@ fn build_linearity_q_polynomial(
     (b.build(), q_root, u_id, v_id, w_id)
 }
 
-
 fn random_assignment_with_uvw(
     other_vars: &[VarId],
     u_id: VarId,
@@ -125,15 +121,11 @@ fn random_assignment_with_uvw(
     rng: &mut StdRng,
 ) -> HashMap<VarId, Q> {
     let mut m = random_assignment_q(other_vars, rng);
-    
-    let u = random_sample_q(rng);
-    let v = random_sample_q(rng);
-    let w = random_sample_q(rng);
-    
-    m.insert(u_id, u);
-    m.insert(v_id, v);
-    m.insert(w_id, w);
-    
+
+    m.insert(u_id, random_sample_q(rng));
+    m.insert(v_id, random_sample_q(rng));
+    m.insert(w_id, random_sample_q(rng));
+
     m
 }
 
@@ -147,7 +139,7 @@ pub fn expr_finite_at_some_random_sample(
     free_vars: &[VarId],
     cfg: &SampleConfig,
 ) -> bool {
-    let max_attempts = SUBSTITUTION_NUMERIC_CHECK_SAMPLES.saturating_mul(ZERO_TEST_ATTEMPT_MULTIPLIER);
+    let max_attempts = SUBSTITUTION_NUMERIC_CHECK_SAMPLES * ZERO_TEST_ATTEMPT_MULTIPLIER;
     (0..max_attempts).into_par_iter().any(|attempt| {
         let mut rng = StdRng::seed_from_u64(mix_seed(
             cfg.random_seed.wrapping_add(attempt as u64),
@@ -215,8 +207,9 @@ fn probabilistic_zero_on_assignments(
     rng: &mut StdRng,
     mut next_assignment: impl FnMut(&mut StdRng) -> HashMap<VarId, Q>,
 ) -> Result<bool, PredicateError> {
-    let mut successes = 0usize;
-    let max_attempts = cfg.zero_samples.saturating_mul(ZERO_TEST_ATTEMPT_MULTIPLIER);
+    let mut successes = 0;
+    let max_attempts = cfg.zero_samples * ZERO_TEST_ATTEMPT_MULTIPLIER;
+
     for _ in 0..max_attempts {
         let assignment = next_assignment(rng);
         let v = match evaluate(dag, root, &assignment) {
@@ -248,8 +241,8 @@ pub fn is_linear_in(
     if cfg.zero_samples == 0 {
         return Err(PredicateError::InsufficientSamples);
     }
-    let (q_dag, q_root, u_id, v_id, w_id) =
-        build_linearity_q_polynomial(dag, root, x, other_vars);
+
+    let (q_dag, q_root, u_id, v_id, w_id) = build_linearity_q_polynomial(dag, root, x, other_vars);
     let mut rng = rng_for_linearity_q(cfg, q_root, x);
     probabilistic_zero_on_assignments(&q_dag, q_root, cfg, &mut rng, |rng| {
         random_assignment_with_uvw(other_vars, u_id, v_id, w_id, rng)
@@ -264,12 +257,15 @@ pub fn recover_linear_coeffs(
     base: &HashMap<VarId, Q>,
 ) -> Result<LinearCoeffs, PredicateError> {
     let mut a0 = base.clone();
-    a0.insert(x, Q::zero());
     let mut a1 = base.clone();
+
+    a0.insert(x, Q::zero());
     a1.insert(x, Q::one());
+
     let b = evaluate(dag, root, &a0)?;
     let at_one = evaluate(dag, root, &a1)?;
     let a = at_one - b.clone();
+
     Ok(LinearCoeffs { a, b })
 }
 
@@ -281,7 +277,7 @@ pub struct LinearCoeffs {
 
 /// Deterministic sample assignment for `vars` (for tests and call sites that need a fixed base).
 pub fn assignment_seed(vars: &[VarId], seed: usize) -> HashMap<VarId, Q> {
-    vars.iter()
+    vars.par_iter()
         .enumerate()
         .map(|(i, v)| {
             let t = (seed + 1) as i64 * (i as i64 + 1);

@@ -4,7 +4,6 @@
 
 use crate::dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 use crate::field::Q;
-use num_bigint::BigInt;
 use arithmetic_parser::{
     grammars::{Features, Parse, ParseLiteral, Untyped},
     BinaryOp, Error as ApError, ErrorKind as ApErrorKind, Expr, InputSpan, NomResult, Spanned,
@@ -16,6 +15,7 @@ use nom::{
     sequence::tuple,
     Err as NomErr, Slice,
 };
+use num_bigint::BigInt;
 use num_traits::Zero;
 use std::collections::HashMap;
 
@@ -50,7 +50,7 @@ impl ParseLiteral for RationalGrammar {
     }
 }
 
-impl Parse<'_> for RationalGrammar {
+impl Parse for RationalGrammar {
     type Base = Untyped<Self>;
     const FEATURES: Features = Features::empty();
 }
@@ -93,8 +93,8 @@ pub fn parse_rational_expression_with_var_map(
     Ok((builder.build(), root))
 }
 
-fn map_ap_error(s: &str, e: ApError<'_>) -> DagParseError {
-    let pos = e.span().location_offset();
+fn map_ap_error(s: &str, e: ApError) -> DagParseError {
+    let pos = e.location().location_offset();
     let char_at_pos = || s[pos..].chars().next().unwrap_or('\u{0}');
     match e.kind() {
         ApErrorKind::Leftovers => DagParseError::TrailingInput { pos },

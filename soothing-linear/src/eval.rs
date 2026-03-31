@@ -25,10 +25,12 @@ pub enum EvalError {
 pub fn evaluate(dag: &Dag, root: NodeId, assignment: &HashMap<VarId, Q>) -> Result<Q, EvalError> {
     let order = topological_order(dag, root);
     let mut values: Vec<Option<Q>> = vec![None; dag.len()];
+    
     for &nid in &order {
         let v = eval_node(dag, nid, assignment, &values)?;
         values[nid.0] = Some(v);
     }
+    
     Ok(values[root.0]
         .take()
         .expect("root must appear in topological order"))

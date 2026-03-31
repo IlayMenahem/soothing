@@ -77,8 +77,7 @@ fn rust_elimination_stats() -> PythonEliminationStats {
     }
 
     let cfg = SampleConfig::default();
-    let res =
-        dfs_linear_elimination_solving_symbolic(loaded, &cfg, None).expect("dfs");
+    let res = dfs_linear_elimination_solving_symbolic(loaded, &cfg, None).expect("dfs");
 
     let remaining = res.reduced_system.equations.len();
     let substitutions = res.substitution.len();
