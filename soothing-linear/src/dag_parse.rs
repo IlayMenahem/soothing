@@ -4,6 +4,7 @@
 
 use crate::dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 use crate::field::Q;
+use num_bigint::BigInt;
 use arithmetic_parser::{
     grammars::{Features, Parse, ParseLiteral, Untyped},
     BinaryOp, Error as ApError, ErrorKind as ApErrorKind, Expr, InputSpan, NomResult, Spanned,
@@ -18,7 +19,7 @@ use nom::{
 use num_traits::Zero;
 use std::collections::HashMap;
 
-/// Grammar: [`Q`] literals (`i64` or `i64/i64`), variables, and operators handled by `arithmetic-parser`
+/// Grammar: [`Q`] literals (decimal integers or `p/q`), variables, and operators handled by `arithmetic-parser`
 /// with [`Features::empty()`] (no tuples, blocks, function defs, methods, or boolean comparisons).
 #[derive(Debug)]
 struct RationalGrammar;
@@ -27,14 +28,14 @@ impl ParseLiteral for RationalGrammar {
     type Lit = Q;
 
     fn parse_literal(input: InputSpan<'_>) -> NomResult<'_, Self::Lit> {
-        let mut parse_i64 = map_res(
+        let mut parse_bigint = map_res(
             recognize(tuple((opt(tag_char('-')), digit1))),
-            |s: InputSpan<'_>| s.fragment().parse::<i64>().map_err(ApErrorKind::literal),
+            |s: InputSpan<'_>| s.fragment().parse::<BigInt>().map_err(ApErrorKind::literal),
         );
-        let (rest, num) = parse_i64(input)?;
+        let (rest, num) = parse_bigint(input)?;
         if rest.fragment().starts_with('/') {
             let after_slash = rest.slice(1..);
-            let (rest2, den) = parse_i64(after_slash)?;
+            let (rest2, den) = parse_bigint(after_slash)?;
             if den.is_zero() {
                 let frag = after_slash.fragment();
                 let sp = Spanned::from_str(frag, 0..frag.len());
@@ -44,7 +45,7 @@ impl ParseLiteral for RationalGrammar {
             }
             Ok((rest2, Q::new(num, den)))
         } else {
-            Ok((rest, Q::new(num, 1)))
+            Ok((rest, Q::new(num, 1.into())))
         }
     }
 }
@@ -160,7 +161,7 @@ fn lower_expr_allocating(
 ) -> Result<NodeId, DagParseError> {
     let pos = sp.location_offset();
     match &sp.extra {
-        Expr::Literal(q) => Ok(b.constant(*q)),
+        Expr::Literal(q) => Ok(b.constant(q.clone())),
         Expr::Variable => {
             let name: &str = *sp.fragment();
             if name == "pi" {
@@ -226,7 +227,7 @@ fn lower_expr_fixed_map(
 ) -> Result<NodeId, DagParseError> {
     let pos = sp.location_offset();
     match &sp.extra {
-        Expr::Literal(q) => Ok(b.constant(*q)),
+        Expr::Literal(q) => Ok(b.constant(q.clone())),
         Expr::Variable => {
             let name: &str = *sp.fragment();
             if name == "pi" {

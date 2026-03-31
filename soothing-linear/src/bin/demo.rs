@@ -111,7 +111,7 @@ fn main() {
                     let assign = assignment_seed(&free, sample);
                     let binding: Vec<String> = free
                         .iter()
-                        .map(|u| format!("{}={}", var_name(*u), assign.get(u).copied().unwrap()))
+                        .map(|u| format!("{}={}", var_name(*u), assign.get(u).cloned().unwrap()))
                         .collect();
                     match evaluate(&disp_dag, disp_root, &assign) {
                         Ok(q) => println!("    [{}]  {}", binding.join(", "), q),

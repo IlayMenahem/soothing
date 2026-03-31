@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use num_traits::Zero;
 use soothing_linear::{
     default_is_solution, dfs_linear_elimination, evaluate, is_solution_nonzero_kappah,
-    linear_elimination_greedy, Dag, DagBuilder, EliminationResult, PolynomialSystem, SampleConfig,
+    linear_elimination_greedy, q, Dag, DagBuilder, EliminationResult, PolynomialSystem, SampleConfig,
     SubstitutionMap, VarId, Q,
 };
 
@@ -13,7 +13,7 @@ fn nonzero_kappah_rejects_degenerate_expanded_kappah() {
     let k = VarId(1);
     let mut subst = SubstitutionMap::new();
     let mut b0 = DagBuilder::new();
-    let zero = b0.constant(Q::new(0, 1));
+    let zero = b0.constant(q(0, 1));
     let d_dag = b0.build();
     subst.insert(d, &d_dag, zero);
     let mut b1 = DagBuilder::new();
@@ -55,7 +55,7 @@ fn recomputes_candidates() {
     let vy = b.variable(y);
     let e1 = b.add(vec![vx, vy]);
     let vx2 = b.variable(x);
-    let c = b.constant(Q::new(1, 1));
+    let c = b.constant(q(1, 1));
     let e2 = b.add(vec![vx2, c]);
     let sys = PolynomialSystem::new(b.build(), vec![e1, e2]);
     let r = linear_elimination_greedy(sys, &SampleConfig::default()).unwrap();
@@ -104,16 +104,16 @@ fn nonzero_slope_substitution_satisfies_original_linear_equation() {
     let order = r.substitution.replay_order().unwrap();
     for seed in 0usize..8 {
         let mut a = HashMap::new();
-        a.insert(VarId(1), Q::new((seed as i64) + 1, 1));
+        a.insert(VarId(1), q((seed as i64) + 1, 1));
         for &v in &order {
             if let Some(sub_root) = r.substitution.get(v) {
                 let val = evaluate(&sub_dag, sub_root, &a).unwrap();
                 a.insert(v, val);
             }
         }
-        let v0 = *a.get(&VarId(0)).unwrap();
-        let v1 = *a.get(&VarId(1)).unwrap();
-        assert_eq!(Q::new(3, 1) * v0 + v1, Q::zero());
+        let v0 = a.get(&VarId(0)).unwrap().clone();
+        let v1 = a.get(&VarId(1)).unwrap().clone();
+        assert_eq!(q(3, 1) * v0 + v1, Q::zero());
     }
 }
 
@@ -124,7 +124,7 @@ fn end_to_end() {
     let y = VarId(1);
     let vx = b.variable(x);
     let vy = b.variable(y);
-    let c = b.constant(Q::new(1, 1));
+    let c = b.constant(q(1, 1));
     let e = b.add(vec![vx, vy, c]);
     let sys = PolynomialSystem::new(b.build(), vec![e]);
     let r = linear_elimination_greedy(sys, &SampleConfig::default()).unwrap();

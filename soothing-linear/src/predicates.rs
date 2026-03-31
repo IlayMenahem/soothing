@@ -21,10 +21,6 @@ pub struct SampleConfig {
     /// Number of full assignments for the zero test and for the linearity-in-`x` test (via the
     /// auxiliary polynomial `q` in the paper).
     pub zero_samples: usize,
-    /// Legacy field: not used by [`is_linear_in`] (kept for config compatibility).
-    pub linear_other_assignments: usize,
-    /// Legacy field: not used by [`is_linear_in`] (kept for config compatibility).
-    pub linear_x_points: usize,
     /// Seed for [`StdRng`] when drawing random values for free / “other” variables (mixed with
     /// expression identity so repeated calls are not identical).
     pub random_seed: u64,
@@ -34,8 +30,6 @@ impl Default for SampleConfig {
     fn default() -> Self {
         Self {
             zero_samples: 8,
-            linear_other_assignments: 4,
-            linear_x_points: 8,
             random_seed: 0xE0B0_5EED_E0B0_5EED,
         }
     }
@@ -43,7 +37,7 @@ impl Default for SampleConfig {
 
 /// Half-width of the bounded rational sample set for exact samples in [`is_zero`] and
 /// [`is_linear_in`] “other” variables.
-pub const RANDOM_SAMPLE_ABS_MAX: i64 = 2;
+pub const RANDOM_SAMPLE_ABS_MAX: i64 = 32;
 
 /// Samples for exact evaluability checks on a substitution RHS.
 pub const SUBSTITUTION_NUMERIC_CHECK_SAMPLES: usize = 8;
@@ -62,12 +56,14 @@ fn rng_for_linearity_q(cfg: &SampleConfig, q_root: NodeId, x: VarId) -> StdRng {
     StdRng::seed_from_u64(mix_seed(cfg.random_seed, q_root.0, x.0))
 }
 
+// TODO: replace with uniform sample over fractions
 fn random_sample_q(rng: &mut StdRng) -> Q {
     let numer = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
     let denom = rng.gen_range(1..=RANDOM_SAMPLE_ABS_MAX);
-    Q::new(numer, denom)
+    Q::new(numer.into(), denom.into())
 }
 
+// TODO: use parallel iterator
 fn random_assignment_q(vars: &[VarId], rng: &mut StdRng) -> HashMap<VarId, Q> {
     vars.iter()
         .map(|&v| (v, random_sample_q(rng)))
@@ -114,10 +110,8 @@ fn build_linearity_q_polynomial(
     (b.build(), q_root, u_id, v_id, w_id)
 }
 
-/// If `v=u` or `w=u`, the auxiliary polynomial vanishes at that point for every `p`; resample `u,v,w`.
-const UVW_RESAMPLE_CAP: u32 = 128;
 
-fn random_assignment_with_nondegenerate_uvw(
+fn random_assignment_with_uvw(
     other_vars: &[VarId],
     u_id: VarId,
     v_id: VarId,
@@ -125,20 +119,15 @@ fn random_assignment_with_nondegenerate_uvw(
     rng: &mut StdRng,
 ) -> HashMap<VarId, Q> {
     let mut m = random_assignment_q(other_vars, rng);
-    for _ in 0..UVW_RESAMPLE_CAP {
-        let u = random_sample_q(rng);
-        let v = random_sample_q(rng);
-        let w = random_sample_q(rng);
-        if v != u && w != u {
-            m.insert(u_id, u);
-            m.insert(v_id, v);
-            m.insert(w_id, w);
-            return m;
-        }
-    }
-    m.insert(u_id, Q::zero());
-    m.insert(v_id, Q::one());
-    m.insert(w_id, -Q::one());
+    
+    let u = random_sample_q(rng);
+    let v = random_sample_q(rng);
+    let w = random_sample_q(rng);
+    
+    m.insert(u_id, u);
+    m.insert(v_id, v);
+    m.insert(w_id, w);
+    
     m
 }
 
@@ -257,7 +246,7 @@ pub fn is_linear_in(
         build_linearity_q_polynomial(dag, root, x, other_vars);
     let mut rng = rng_for_linearity_q(cfg, q_root, x);
     probabilistic_zero_on_assignments(&q_dag, q_root, cfg, &mut rng, |rng| {
-        random_assignment_with_nondegenerate_uvw(other_vars, u_id, v_id, w_id, rng)
+        random_assignment_with_uvw(other_vars, u_id, v_id, w_id, rng)
     })
 }
 
@@ -274,7 +263,7 @@ pub fn recover_linear_coeffs(
     a1.insert(x, Q::one());
     let b = evaluate(dag, root, &a0)?;
     let at_one = evaluate(dag, root, &a1)?;
-    let a = at_one - b;
+    let a = at_one - b.clone();
     Ok(LinearCoeffs { a, b })
 }
 
@@ -290,7 +279,7 @@ pub fn assignment_seed(vars: &[VarId], seed: usize) -> HashMap<VarId, Q> {
         .enumerate()
         .map(|(i, v)| {
             let t = (seed + 1) as i64 * (i as i64 + 1);
-            (*v, Q::new(t, 1))
+            (*v, Q::new(t.into(), 1.into()))
         })
         .collect()
 }

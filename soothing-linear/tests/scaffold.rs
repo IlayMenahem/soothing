@@ -1,4 +1,4 @@
-use soothing_linear::{DagBuilder, PolynomialSystem, VarId, Q};
+use soothing_linear::{q, DagBuilder, PolynomialSystem, VarId};
 
 #[test]
 fn crate_smoke_rational_system_and_dag() {
@@ -8,5 +8,5 @@ fn crate_smoke_rational_system_and_dag() {
     let d = b.build();
     let s = PolynomialSystem::new(d, vec![r]);
     assert_eq!(s.equations.len(), 1);
-    assert_eq!(Q::new(3, 7), Q::new(3, 7));
+    assert_eq!(q(3, 7), q(3, 7));
 }

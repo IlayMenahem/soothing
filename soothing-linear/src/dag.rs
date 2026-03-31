@@ -167,10 +167,10 @@ impl Dag {
     /// Parse a rational expression into a DAG and its root.
     ///
     /// Syntax is parsed by the [`arithmetic-parser`](https://docs.rs/arithmetic-parser) crate with a
-    /// custom rational literal grammar (`i64` or `i64/i64`), no statements or semicolons, and
+    /// custom rational literal grammar (decimal integers or `p/q`), no statements or semicolons, and
     /// features limited to basic arithmetic (no tuples, blocks, `//` is a line comment).
     ///
-    /// - **Rational literals:** integers or `p/q` with `i64` numerator and denominator.
+    /// - **Rational literals:** integers or `p/q` with arbitrary-size integer numerator and denominator.
     /// - **Variables:** `vN` for `N` decimal digits maps to [`VarId`]`(N)`. Any other identifier
     ///   gets a fresh [`VarId`] on first occurrence (stable across the string).
     /// - **Operators:** `+`, `-` (binary and unary), `*`, `/`, `^` (right-associative), parentheses.
@@ -306,7 +306,7 @@ impl DagBuilder {
             return n;
         }
         let mapped = match source.node(id) {
-            Node::Const(c) => self.constant(*c),
+            Node::Const(c) => self.constant(c.clone()),
             Node::ConstPi => self.const_pi(),
             Node::Var(v) => self.variable(*v),
             Node::Add(cs) => {
@@ -379,7 +379,7 @@ impl DagBuilder {
         }
         let mapped = match source.node(id) {
             Node::Var(v) if *v == var => repl,
-            Node::Const(c) => self.constant(*c),
+            Node::Const(c) => self.constant(c.clone()),
             Node::ConstPi => self.const_pi(),
             Node::Var(v) => self.variable(*v),
             Node::Add(cs) => {

@@ -1,10 +1,10 @@
-use soothing_linear::{DagBuilder, SubstitutionMap, VarId, Q};
+use soothing_linear::{q, DagBuilder, SubstitutionMap, VarId};
 
 #[test]
 fn single_binding() {
     let mut b = DagBuilder::new();
     let x = VarId(0);
-    let one = b.constant(Q::new(1, 1));
+    let one = b.constant(q(1, 1));
     let vx = b.variable(x);
     let e = b.add(vec![vx, one]);
     let d = b.build();
@@ -19,10 +19,10 @@ fn replay_order() {
     let x = VarId(0);
     let y = VarId(1);
     let mut by = DagBuilder::new();
-    let ey = by.constant(Q::new(1, 1));
+    let ey = by.constant(q(1, 1));
     let dy = by.build();
     let mut bx = DagBuilder::new();
-    let c2 = bx.constant(Q::new(2, 1));
+    let c2 = bx.constant(q(2, 1));
     let vy = bx.variable(y);
     let ex = bx.add(vec![vy, c2]);
     let dx = bx.build();
@@ -57,7 +57,7 @@ fn sampled_consistency() {
     let mut b = DagBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
-    let c2 = b.constant(Q::new(2, 1));
+    let c2 = b.constant(q(2, 1));
     let vy = b.variable(y);
     let ex = b.add(vec![vy, c2]);
     let d = b.build();
@@ -72,7 +72,7 @@ fn sampled_consistency() {
     let mut b2 = DagBuilder::new();
     let xv = b2.variable(x);
     let yv = b2.variable(y);
-    let c2 = b2.constant(Q::new(2, 1));
+    let c2 = b2.constant(q(2, 1));
     let y_plus_2 = b2.add(vec![yv, c2]);
     let ny = b2.neg(y_plus_2);
     let orig = b2.add(vec![xv, ny]);

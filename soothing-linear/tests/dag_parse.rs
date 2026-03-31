@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use soothing_linear::{evaluate, Dag, DagParseError, VarId, Q};
+use soothing_linear::{evaluate, q, Dag, DagParseError, VarId, Q};
 
 #[test]
 fn parse_roundtrip_format() {
@@ -15,8 +15,8 @@ fn parse_roundtrip_format() {
 fn parse_rational_div_chain() {
     let (dag, root) = Dag::from_rational_string("1 / 2 / 3").unwrap();
     let assign = HashMap::new();
-    let q = evaluate(&dag, root, &assign).unwrap();
-    assert_eq!(q, Q::new(1, 6));
+    let got = evaluate(&dag, root, &assign).unwrap();
+    assert_eq!(got, q(1, 6));
 }
 
 /// `arithmetic-parser` chains `^` with left associativity: `2^3^2` is `(2^3)^2`, not `2^(3^2)`.
@@ -24,19 +24,19 @@ fn parse_rational_div_chain() {
 fn parse_pow_left_assoc() {
     let (dag, root) = Dag::from_rational_string("2 ^ 3 ^ 2").unwrap();
     let assign = HashMap::new();
-    let q = evaluate(&dag, root, &assign).unwrap();
-    assert_eq!(q, Q::from_integer(64));
+    let got = evaluate(&dag, root, &assign).unwrap();
+    assert_eq!(got, Q::from_integer(64.into()));
 }
 
 #[test]
 fn parse_named_vars_and_eval() {
     let (dag, root) = Dag::from_rational_string("(v1 + v2) * v0").unwrap();
     let mut assign = HashMap::new();
-    assign.insert(VarId(0), Q::new(2, 1));
-    assign.insert(VarId(1), Q::new(3, 1));
-    assign.insert(VarId(2), Q::new(5, 1));
-    let q = evaluate(&dag, root, &assign).unwrap();
-    assert_eq!(q, Q::new(16, 1));
+    assign.insert(VarId(0), q(2, 1));
+    assign.insert(VarId(1), q(3, 1));
+    assign.insert(VarId(2), q(5, 1));
+    let got = evaluate(&dag, root, &assign).unwrap();
+    assert_eq!(got, q(16, 1));
 }
 
 #[test]
@@ -54,10 +54,10 @@ fn parse_zero_minus_neg_one() {
 fn parse_unary_minus_and_precedence() {
     let (dag, root) = Dag::from_rational_string("-v0 * v1 + 2").unwrap();
     let mut assign = HashMap::new();
-    assign.insert(VarId(0), Q::new(3, 1));
-    assign.insert(VarId(1), Q::new(2, 1));
-    let q = evaluate(&dag, root, &assign).unwrap();
-    assert_eq!(q, Q::new(-4, 1));
+    assign.insert(VarId(0), q(3, 1));
+    assign.insert(VarId(1), q(2, 1));
+    let got = evaluate(&dag, root, &assign).unwrap();
+    assert_eq!(got, q(-4, 1));
 }
 
 #[test]

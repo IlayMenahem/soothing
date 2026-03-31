@@ -51,7 +51,7 @@ pub use elimination::{
     is_solution_nonzero_kappah, linear_elimination_greedy, EliminationError, EliminationResult,
 };
 pub use eval::{evaluate, EvalError};
-pub use field::Q;
+pub use field::{q, Q};
 pub use mathematica_system::{
     default_systems_dir_from_manifest, load_mathematica_system_from_path,
     load_mathematica_system_from_path_with_var_names, load_mathematica_system_from_str,

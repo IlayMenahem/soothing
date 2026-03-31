@@ -4,7 +4,8 @@
 //! in preference order (constant fold, flatten, identities, sign/fractions, affine/constants).
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
-use crate::field::{q_one, q_zero, Q};
+use crate::field::{q_one, q_pow_integer, q_zero, Q};
+use num_bigint::BigInt;
 use num_traits::{One, Zero};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -32,7 +33,7 @@ pub fn simplify_once(
 
 fn try_const(b: &DagBuilder, id: NodeId) -> Option<Q> {
     match b.node(id) {
-        Node::Const(c) => Some(*c),
+        Node::Const(c) => Some(c.clone()),
         _ => None,
     }
 }
@@ -56,9 +57,9 @@ fn flatten_mul(b: &DagBuilder, ids: &[NodeId], out: &mut Vec<NodeId>) {
 }
 
 fn merge_coeff_maps(into: &mut BTreeMap<VarId, Q>, add: &BTreeMap<VarId, Q>) {
-    for (&v, &c) in add {
+    for (&v, c) in add {
         let e = into.entry(v).or_insert_with(q_zero);
-        *e += c;
+        *e += c.clone();
         if e.is_zero() {
             into.remove(&v);
         }
@@ -67,7 +68,7 @@ fn merge_coeff_maps(into: &mut BTreeMap<VarId, Q>, add: &BTreeMap<VarId, Q>) {
 
 fn try_affine_linear(b: &DagBuilder, id: NodeId) -> Option<(BTreeMap<VarId, Q>, Q)> {
     match b.node(id) {
-        Node::Const(c) => Some((BTreeMap::new(), *c)),
+        Node::Const(c) => Some((BTreeMap::new(), c.clone())),
         Node::Var(v) => {
             let mut m = BTreeMap::new();
             m.insert(*v, q_one());
@@ -76,7 +77,7 @@ fn try_affine_linear(b: &DagBuilder, id: NodeId) -> Option<(BTreeMap<VarId, Q>, 
         Node::Neg(x) => {
             let (mut m, c) = try_affine_linear(b, *x)?;
             for coef in m.values_mut() {
-                *coef = -*coef;
+                *coef = -coef.clone();
             }
             m.retain(|_, k| !k.is_zero());
             Some((m, -c))
@@ -94,7 +95,7 @@ fn try_affine_linear(b: &DagBuilder, id: NodeId) -> Option<(BTreeMap<VarId, Q>, 
         Node::Mul(cs) if cs.len() == 2 => match (b.node(cs[0]), b.node(cs[1])) {
             (Node::Const(k), Node::Var(v)) | (Node::Var(v), Node::Const(k)) => {
                 let mut m = BTreeMap::new();
-                m.insert(*v, *k);
+                m.insert(*v, k.clone());
                 Some((m, q_zero()))
             }
             (Node::Const(a), Node::Const(b)) => Some((BTreeMap::new(), a * b)),
@@ -155,7 +156,7 @@ fn affine_div_by_const(
     let inv = Q::one() / divisor;
     let mut scaled = BTreeMap::new();
     for (v, c) in coeffs {
-        let nv = c * inv;
+        let nv = c * inv.clone();
         if !nv.is_zero() {
             scaled.insert(v, nv);
         }
@@ -187,7 +188,7 @@ fn rebuild_add_terms(b: &mut DagBuilder, net: HashMap<NodeId, i64>) -> Vec<NodeI
         } else if c == -1 {
             parts.push(b.neg(u));
         } else {
-            let k = b.constant(Q::from_integer(c));
+            let k = b.constant(Q::from_integer(c.into()));
             parts.push(b.mul(vec![k, u]));
         }
     }
@@ -199,7 +200,7 @@ fn merge_const_summands(b: &mut DagBuilder, terms: Vec<NodeId>) -> Vec<NodeId> {
     let mut out = Vec::new();
     for t in terms {
         if let Node::Const(c) = b.node(t) {
-            csum += *c;
+            csum += c.clone();
         } else {
             out.push(t);
         }
@@ -229,7 +230,7 @@ fn peel_sign_factor(b: &mut DagBuilder, mut id: NodeId) -> (NodeId, bool) {
                 }
                 if *c < q_zero() {
                     flip ^= true;
-                    return (b.constant(-*c), flip);
+                    return (b.constant(-c.clone()), flip);
                 }
                 return (id, flip);
             }
@@ -238,38 +239,11 @@ fn peel_sign_factor(b: &mut DagBuilder, mut id: NodeId) -> (NodeId, bool) {
     }
 }
 
-fn rational_pow_i64(base: Q, exp: i64) -> Result<Q, SimplifyError> {
-    if exp >= i32::MIN as i64 && exp <= i32::MAX as i64 {
-        if exp < 0 && base.is_zero() {
-            return Err(SimplifyError::UndefinedPower);
-        }
-        return Ok(base.pow(exp as i32));
-    }
-    let mut acc = Q::one();
-    let mut b = base;
-    let mut e = exp.unsigned_abs();
-    let invert = exp < 0;
-    if invert {
-        if b.is_zero() {
-            return Err(SimplifyError::UndefinedPower);
-        }
-        b = Q::one() / b;
-    }
-    while e > 0 {
-        if e & 1 != 0 {
-            acc *= &b;
-        }
-        b = &b * &b;
-        e >>= 1;
-    }
-    Ok(acc)
-}
-
 fn fold_const_pow(base: Q, exp: Q) -> Result<Q, SimplifyError> {
-    if *exp.denom() != 1 {
+    if !exp.is_integer() {
         return Err(SimplifyError::NonIntegerExponent);
     }
-    rational_pow_i64(base, *exp.numer())
+    q_pow_integer(base, exp.numer()).ok_or(SimplifyError::UndefinedPower)
 }
 
 fn construct_add(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, SimplifyError> {
@@ -280,7 +254,7 @@ fn construct_add(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
         let s: Q = flat
             .iter()
             .map(|&id| match b.node(id) {
-                Node::Const(c) => *c,
+                Node::Const(c) => c.clone(),
                 _ => unreachable!(),
             })
             .sum();
@@ -314,7 +288,7 @@ fn construct_mul(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
         let mut p = q_one();
         for &id in &flat {
             match b.node(id) {
-                Node::Const(c) => p *= *c,
+                Node::Const(c) => p *= c.clone(),
                 _ => unreachable!(),
             }
         }
@@ -376,7 +350,7 @@ fn construct_mul(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
 
 fn construct_neg(b: &mut DagBuilder, x: NodeId) -> Result<NodeId, SimplifyError> {
     match b.node(x) {
-        Node::Const(c) => Ok(b.constant(-*c)),
+        Node::Const(c) => Ok(b.constant(-c.clone())),
         Node::Neg(y) => Ok(*y),
         _ => {
             if let Some((m, c)) = try_affine_linear(b, x) {
@@ -459,9 +433,9 @@ fn construct_pow(b: &mut DagBuilder, base: NodeId, exp: NodeId) -> Result<NodeId
     if let Some(bc) = try_const(b, base) {
         if bc.is_zero() {
             if let Some(ec) = try_const(b, exp) {
-                if *ec.denom() == 1 {
-                    let n = *ec.numer();
-                    if n > 0 {
+                if ec.is_integer() {
+                    let n = ec.numer();
+                    if n > &BigInt::from(0) {
                         return Ok(b.constant(q_zero()));
                     }
                 }
@@ -499,7 +473,7 @@ fn simplify_dfs(
         return Ok(n);
     }
     let mapped = match source.node(id) {
-        Node::Const(c) => b.constant(*c),
+        Node::Const(c) => b.constant(c.clone()),
         Node::ConstPi => b.const_pi(),
         Node::Var(v) => b.variable(*v),
         Node::Neg(x) => {

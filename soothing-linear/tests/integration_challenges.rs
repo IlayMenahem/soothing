@@ -3,7 +3,7 @@
 
 use num_traits::Zero;
 use soothing_linear::{
-    evaluate, linear_elimination_greedy, Dag, DagBuilder, EliminationError, PolynomialSystem,
+    evaluate, linear_elimination_greedy, q, Dag, DagBuilder, EliminationError, PolynomialSystem,
     SampleConfig, VarId, Q,
 };
 use std::collections::HashMap;
@@ -11,8 +11,6 @@ use std::collections::HashMap;
 fn default_cfg() -> SampleConfig {
     SampleConfig {
         zero_samples: 12,
-        linear_other_assignments: 6,
-        linear_x_points: 5, // unused by Rust `is_linear_in` (legacy field)
         ..Default::default()
     }
 }
@@ -20,7 +18,7 @@ fn default_cfg() -> SampleConfig {
 #[test]
 fn empty_system_no_work() {
     let mut b = DagBuilder::new();
-    let _ = b.constant(Q::new(0, 1));
+    let _ = b.constant(q(0, 1));
     let d = b.build();
     let sys = PolynomialSystem::new(d, vec![]);
     let r = linear_elimination_greedy(sys, &default_cfg()).unwrap();
@@ -58,7 +56,7 @@ fn partial_system_keeps_quadratic() {
     let vx = b.variable(x);
     let vy = b.variable(y);
     let vz = b.variable(z);
-    let c1 = b.constant(Q::new(1, 1));
+    let c1 = b.constant(q(1, 1));
     let linear = b.add(vec![vx, vy]);
     let x2 = b.mul(vec![vx, vx]);
     let z2 = b.mul(vec![vz, vz]);
@@ -78,7 +76,7 @@ fn quadratic_systems_stall_without_linearities() {
     let x = VarId(0);
     let y = VarId(1);
     let vx = b.variable(x);
-    let one = b.constant(Q::new(1, 1));
+    let one = b.constant(q(1, 1));
     let x2 = b.mul(vec![vx, vx]);
     let neg_one = b.neg(one);
     let e0 = b.add(vec![x2, neg_one]);
@@ -94,7 +92,7 @@ fn quadratic_systems_stall_without_linearities() {
     let x2 = b.mul(vec![vx, vx]);
     let y2 = b.mul(vec![vy, vy]);
     let sum = b.add(vec![x2, y2]);
-    let c1 = b.constant(Q::new(1, 1));
+    let c1 = b.constant(q(1, 1));
     let neg_c1 = b.neg(c1);
     let e0 = b.add(vec![sum, neg_c1]);
     let neg_y2 = b.neg(y2);
@@ -133,7 +131,7 @@ fn substitution_residuals_vanish_for_single_linear_equation() {
     let y = VarId(1);
     let vx = b.variable(x);
     let vy = b.variable(y);
-    let c2 = b.constant(Q::new(2, 1));
+    let c2 = b.constant(q(2, 1));
     let two_y = b.mul(vec![c2, vy]);
     let eq = b.add(vec![vx, two_y]);
     let d = b.build();
@@ -145,16 +143,16 @@ fn substitution_residuals_vanish_for_single_linear_equation() {
     let free = if r.substitution.contains(x) { y } else { x };
     for seed in 0usize..12 {
         let mut a = HashMap::new();
-        a.insert(free, Q::new((seed as i64) + 1, 1));
+        a.insert(free, q((seed as i64) + 1, 1));
         for &v in &order {
             if let Some(root) = r.substitution.get(v) {
                 let val = evaluate(&sub_dag, root, &a).unwrap();
                 a.insert(v, val);
             }
         }
-        let vx_val = *a.get(&x).unwrap();
-        let vy_val = *a.get(&y).unwrap();
-        assert_eq!(vx_val + Q::new(2, 1) * vy_val, Q::zero());
+        let vx_val = a.get(&x).unwrap().clone();
+        let vy_val = a.get(&y).unwrap().clone();
+        assert_eq!(vx_val + q(2, 1) * vy_val, Q::zero());
     }
 }
 
@@ -183,10 +181,10 @@ fn parse_named_identifiers_roundtrip_under_custom_names() {
     let out = dag.format_root(root, &name);
     assert_eq!(out, "alpha + beta * alpha");
     let mut assign = HashMap::new();
-    assign.insert(VarId(0), Q::new(3, 1));
-    assign.insert(VarId(1), Q::new(2, 1));
+    assign.insert(VarId(0), q(3, 1));
+    assign.insert(VarId(1), q(2, 1));
     let val = evaluate(&dag, root, &assign).unwrap();
-    assert_eq!(val, Q::new(9, 1));
+    assert_eq!(val, q(9, 1));
 }
 
 #[test]
@@ -194,7 +192,7 @@ fn format_parentheses_non_atomic_subexpressions() {
     let mut b = DagBuilder::new();
     let x = VarId(0);
     let vx = b.variable(x);
-    let one = b.constant(Q::new(1, 1));
+    let one = b.constant(q(1, 1));
     let sum = b.add(vec![vx, one]);
     let sq = b.mul(vec![sum, sum]);
     let d = b.build();

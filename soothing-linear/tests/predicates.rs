@@ -3,8 +3,8 @@
 
 use num_traits::Zero;
 use soothing_linear::{
-    assignment_seed, expr_finite_at_some_random_sample, is_linear_in, is_zero,
-    recover_linear_coeffs, Dag, DagBuilder, NodeId, PredicateError, SampleConfig, VarId, Q,
+    assignment_seed, expr_finite_at_some_random_sample, is_linear_in, is_zero, q,
+    recover_linear_coeffs, Dag, DagBuilder, NodeId, PredicateError, SampleConfig, VarId,
 };
 
 /// Stricter [`zero_samples`] than default for multivariate checks (`linear_*` fields are unused by
@@ -12,8 +12,6 @@ use soothing_linear::{
 fn cfg_robust() -> SampleConfig {
     SampleConfig {
         zero_samples: 16,
-        linear_other_assignments: 8,
-        linear_x_points: 6,
         ..Default::default()
     }
 }
@@ -323,14 +321,14 @@ fn recover_coeffs_rational_slope() {
     let x = VarId(0);
     let y = VarId(1);
     let xv = b.variable(x);
-    let half = b.constant(Q::new(1, 2));
+    let half = b.constant(q(1, 2));
     let half_x = b.mul(vec![half, xv]);
     let yv = b.variable(y);
     let e = b.add(vec![half_x, yv]);
     let d = b.build();
     let base = assignment_seed(&[y], 0);
     let coeffs = recover_linear_coeffs(&d, e, x, &base).unwrap();
-    assert_eq!(coeffs.a, Q::new(1, 2));
+    assert_eq!(coeffs.a, q(1, 2));
     assert!(!coeffs.b.is_zero());
 }
 
@@ -340,14 +338,14 @@ fn recover_coeffs_affine() {
     let x = VarId(0);
     let y = VarId(1);
     let xv = b.variable(x);
-    let c2 = b.constant(Q::new(2, 1));
+    let c2 = b.constant(q(2, 1));
     let two_x = b.mul(vec![c2, xv]);
     let yv = b.variable(y);
     let e = b.add(vec![two_x, yv]);
     let d = b.build();
     let base = assignment_seed(&[y], 0);
     let c = recover_linear_coeffs(&d, e, x, &base).unwrap();
-    assert_eq!(c.a, Q::new(2, 1));
+    assert_eq!(c.a, q(2, 1));
     assert!(!c.b.is_zero());
 }
 
