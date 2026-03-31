@@ -88,75 +88,55 @@ impl Dag {
     }
 
     fn fmt_node(&self, id: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
+        fn bracketed(dag: &Dag, id: NodeId, str: String) -> String {
+            if dag.is_atomic(id) {
+                str
+            } else {
+                format!("({str})")
+            }
+        }
+
+        fn fmt_neg(dag: &Dag, id: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
+            bracketed(dag, id, format!("-{}", dag.fmt_node(id, var_name)))
+        }
+
+        fn fmt_add(dag: &Dag, ids: &[NodeId], var_name: &impl Fn(VarId) -> String) -> String {
+            if ids.is_empty() {
+                "0".to_string()
+            } else {
+                ids.iter().map(|c| dag.fmt_node(*c, var_name)).collect::<Vec<_>>().join(" + ")
+            }
+        }
+
+        fn fmt_mul(dag: &Dag, ids: &[NodeId], var_name: &impl Fn(VarId) -> String) -> String {
+            if ids.is_empty() {
+                "1".to_string()
+            } else {
+                ids.iter().map(|c| bracketed(dag, *c, dag.fmt_node(*c, var_name))).collect::<Vec<_>>().join(" * ")
+            }
+        }
+
+        fn fmt_div(dag: &Dag, num: NodeId, den: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
+            let ns = dag.fmt_node(num, var_name);
+            let ds = dag.fmt_node(den, var_name);
+            format!("{ns} / {ds}")
+        }
+
+        fn fmt_pow(dag: &Dag, base: NodeId, exp: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
+            let bs = dag.fmt_node(base, var_name);
+            let es = dag.fmt_node(exp, var_name);
+            format!("{bs} ^ {es}")
+        }
+
         match self.node(id) {
             Node::Const(c) => format!("{}", c),
             Node::ConstPi => "pi".to_string(),
             Node::Var(v) => var_name(*v),
-            Node::Neg(x) => {
-                let inner = self.fmt_node(*x, var_name);
-                if self.is_atomic(*x) {
-                    format!("-{inner}")
-                } else {
-                    format!("-({inner})")
-                }
-            }
-            Node::Add(cs) => {
-                if cs.is_empty() {
-                    "0".to_string()
-                } else {
-                    cs.iter()
-                        .map(|c| self.fmt_node(*c, var_name))
-                        .collect::<Vec<_>>()
-                        .join(" + ")
-                }
-            }
-            Node::Mul(cs) => {
-                if cs.is_empty() {
-                    "1".to_string()
-                } else {
-                    cs.iter()
-                        .map(|c| {
-                            let s = self.fmt_node(*c, var_name);
-                            if self.is_atomic(*c) {
-                                s
-                            } else {
-                                format!("({s})")
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" * ")
-                }
-            }
-            Node::Div(n, d) => {
-                let ns = self.fmt_node(*n, var_name);
-                let ds = self.fmt_node(*d, var_name);
-                let num = if self.is_atomic(*n) {
-                    ns
-                } else {
-                    format!("({ns})")
-                };
-                let den = if self.is_atomic(*d) {
-                    ds
-                } else {
-                    format!("({ds})")
-                };
-                format!("{num} / {den}")
-            }
-            Node::Pow(b, e) => {
-                let bs = self.fmt_node(*b, var_name);
-                let es = self.fmt_node(*e, var_name);
-                let left = if self.is_atomic(*b) {
-                    bs
-                } else {
-                    format!("({bs})")
-                };
-                let right = if self.is_atomic(*e) {
-                    es
-                } else {
-                    format!("({es})")
-                };
-                format!("{left} ^ {right}")
-            }
+            Node::Neg(x) => fmt_neg(self, *x, var_name),
+            Node::Add(cs) => fmt_add(self, cs, var_name),
+            Node::Mul(cs) => fmt_mul(self, cs, var_name),
+            Node::Div(n, d) => fmt_div(self, *n, *d, var_name),
+            Node::Pow(b, e) => fmt_pow(self, *b, *e, var_name),
         }
     }
 
@@ -296,6 +276,10 @@ impl DagBuilder {
         self.merge_dfs(source, root, &mut memo)
     }
 
+    fn merge_children(&mut self, source: &Dag, cs: &Vec<NodeId>, memo: &mut HashMap<NodeId, NodeId>) -> Vec<NodeId> {
+        cs.iter().map(|c| self.merge_dfs(source, *c, memo)).collect()
+    }
+
     fn merge_dfs(
         &mut self,
         source: &Dag,
@@ -305,22 +289,17 @@ impl DagBuilder {
         if let Some(&n) = memo.get(&id) {
             return n;
         }
+
         let mapped = match source.node(id) {
             Node::Const(c) => self.constant(c.clone()),
             Node::ConstPi => self.const_pi(),
             Node::Var(v) => self.variable(*v),
             Node::Add(cs) => {
-                let v: Vec<NodeId> = cs
-                    .iter()
-                    .map(|c| self.merge_dfs(source, *c, memo))
-                    .collect();
+                let v = self.merge_children(source, cs, memo);
                 self.add(v)
             }
             Node::Mul(cs) => {
-                let v: Vec<NodeId> = cs
-                    .iter()
-                    .map(|c| self.merge_dfs(source, *c, memo))
-                    .collect();
+                let v = self.merge_children(source, cs, memo);
                 self.mul(v)
             }
             Node::Neg(x) => {
@@ -366,6 +345,10 @@ impl DagBuilder {
         self.substitute_in_root(source, root, var, c)
     }
 
+    fn substitute_children(&mut self, source: &Dag, cs: &Vec<NodeId>, var: VarId, repl: NodeId, memo: &mut HashMap<NodeId, NodeId>) -> Vec<NodeId> {
+        cs.iter().map(|c| self.substitute_dfs(source, *c, var, repl, memo)).collect()
+    }
+
     fn substitute_dfs(
         &mut self,
         source: &Dag,
@@ -383,17 +366,11 @@ impl DagBuilder {
             Node::ConstPi => self.const_pi(),
             Node::Var(v) => self.variable(*v),
             Node::Add(cs) => {
-                let v: Vec<NodeId> = cs
-                    .iter()
-                    .map(|c| self.substitute_dfs(source, *c, var, repl, memo))
-                    .collect();
+                let v = self.substitute_children(source, cs, var, repl, memo);
                 self.add(v)
             }
             Node::Mul(cs) => {
-                let v: Vec<NodeId> = cs
-                    .iter()
-                    .map(|c| self.substitute_dfs(source, *c, var, repl, memo))
-                    .collect();
+                let v = self.substitute_children(source, cs, var, repl, memo);
                 self.mul(v)
             }
             Node::Neg(x) => {
