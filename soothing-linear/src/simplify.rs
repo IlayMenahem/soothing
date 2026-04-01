@@ -125,7 +125,7 @@ fn linear_term(b: &mut DagBuilder, v: VarId, coef: Q) -> NodeId {
     } else {
         let k = b.constant(coef);
         let vx = b.variable(v);
-        b.mul(vec![k, vx])
+        b.mul2(k, vx)
     }
 }
 
@@ -189,7 +189,7 @@ fn rebuild_add_terms(b: &mut DagBuilder, net: HashMap<NodeId, i64>) -> Vec<NodeI
             parts.push(b.neg(u));
         } else {
             let k = b.constant(Q::from_integer(c.into()));
-            parts.push(b.mul(vec![k, u]));
+            parts.push(b.mul2(k, u));
         }
     }
     parts

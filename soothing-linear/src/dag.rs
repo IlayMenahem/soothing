@@ -251,6 +251,17 @@ impl DagBuilder {
         self.intern_node(Node::Mul(children))
     }
 
+    /// Binary multiplication (`lhs * rhs`).
+    pub fn mul2(&mut self, lhs: NodeId, rhs: NodeId) -> NodeId {
+        self.mul(vec![lhs, rhs])
+    }
+
+    /// Binary subtraction (`lhs - rhs`), represented as `lhs + (-rhs)`.
+    pub fn sub(&mut self, lhs: NodeId, rhs: NodeId) -> NodeId {
+        let neg_rhs = self.neg(rhs);
+        self.add(vec![lhs, neg_rhs])
+    }
+
     pub fn div(&mut self, num: NodeId, den: NodeId) -> NodeId {
         self.intern_node(Node::Div(num, den))
     }

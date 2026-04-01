@@ -490,8 +490,7 @@ fn apply_one_elimination(
     // Affine in x: p = a*x + b with a,b constant in x. Paper: b = p|_{x=0}, a = p|_{x=1} - p|_{x=0}.
     let b_coeff = builder.substitute_var_with_const(&snap, eq_root, x, q_zero());
     let p_at_one = builder.substitute_var_with_const(&snap, eq_root, x, q_one());
-    let neg_b = builder.neg(b_coeff);
-    let a_coeff = builder.add(vec![p_at_one, neg_b]);
+    let a_coeff = builder.sub(p_at_one, b_coeff);
     let snap2 = builder.snapshot();
     let free = other_vars(remaining, x);
     let a_is_zero = is_zero(&snap2, a_coeff, &free, cfg)?;
@@ -594,7 +593,7 @@ mod tests {
         let mut right_builder = DagBuilder::new();
         let right_x0 = right_builder.variable(x);
         let right_x1 = right_builder.variable(x);
-        let right_eq = right_builder.mul(vec![right_x0, right_x1]);
+        let right_eq = right_builder.mul2(right_x0, right_x1);
         let right_system = PolynomialSystem::new(right_builder.build(), vec![right_eq]);
 
         let mut right_subst = SubstitutionMap::new();

@@ -99,17 +99,13 @@ fn build_linearity_q_polynomial(
     let p_u = b.substitute_in_root(dag, root, x, nu);
     let p_v = b.substitute_in_root(dag, root, x, nv);
     let p_w = b.substitute_in_root(dag, root, x, nw);
-    let neg_p_u = b.neg(p_u);
-    let p_w_minus_p_u = b.add(vec![p_w, neg_p_u]);
-    let neg_p_u_b = b.neg(p_u);
-    let p_v_minus_p_u = b.add(vec![p_v, neg_p_u_b]);
-    let neg_nu = b.neg(nu);
-    let v_minus_u = b.add(vec![nv, neg_nu]);
-    let w_minus_u = b.add(vec![nw, neg_nu]);
-    let term1 = b.mul(vec![p_w_minus_p_u, v_minus_u]);
-    let term2 = b.mul(vec![p_v_minus_p_u, w_minus_u]);
-    let neg_term2 = b.neg(term2);
-    let q_root = b.add(vec![term1, neg_term2]);
+    let p_w_minus_p_u = b.sub(p_w, p_u);
+    let p_v_minus_p_u = b.sub(p_v, p_u);
+    let v_minus_u = b.sub(nv, nu);
+    let w_minus_u = b.sub(nw, nu);
+    let term1 = b.mul2(p_w_minus_p_u, v_minus_u);
+    let term2 = b.mul2(p_v_minus_p_u, w_minus_u);
+    let q_root = b.sub(term1, term2);
     (b.build(), q_root, u_id, v_id, w_id)
 }
 

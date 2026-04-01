@@ -189,11 +189,8 @@ fn lower_expr_allocating(
             let r = lower_expr_allocating(rhs, b, name_to_var, next_free)?;
             match op.extra {
                 BinaryOp::Add => Ok(b.add(vec![l, r])),
-                BinaryOp::Sub => {
-                    let nr = b.neg(r);
-                    Ok(b.add(vec![l, nr]))
-                }
-                BinaryOp::Mul => Ok(b.mul(vec![l, r])),
+                BinaryOp::Sub => Ok(b.sub(l, r)),
+                BinaryOp::Mul => Ok(b.mul2(l, r)),
                 BinaryOp::Div => Ok(b.div(l, r)),
                 BinaryOp::Power => Ok(b.pow(l, r)),
                 _ => Err(DagParseError::Unsupported {
@@ -261,11 +258,8 @@ fn lower_expr_fixed_map(
             let r = lower_expr_fixed_map(rhs, b, var_map)?;
             match op.extra {
                 BinaryOp::Add => Ok(b.add(vec![l, r])),
-                BinaryOp::Sub => {
-                    let nr = b.neg(r);
-                    Ok(b.add(vec![l, nr]))
-                }
-                BinaryOp::Mul => Ok(b.mul(vec![l, r])),
+                BinaryOp::Sub => Ok(b.sub(l, r)),
+                BinaryOp::Mul => Ok(b.mul2(l, r)),
                 BinaryOp::Div => Ok(b.div(l, r)),
                 BinaryOp::Power => Ok(b.pow(l, r)),
                 _ => Err(DagParseError::Unsupported {
