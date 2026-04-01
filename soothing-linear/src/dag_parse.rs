@@ -163,7 +163,7 @@ fn lower_expr_allocating(
     match &sp.extra {
         Expr::Literal(q) => Ok(b.constant(q.clone())),
         Expr::Variable => {
-            let name: &str = *sp.fragment();
+            let name: &str = sp.fragment();
             if name == "pi" {
                 return Ok(b.const_pi());
             }
@@ -226,7 +226,7 @@ fn lower_expr_fixed_map(
     match &sp.extra {
         Expr::Literal(q) => Ok(b.constant(q.clone())),
         Expr::Variable => {
-            let name: &str = *sp.fragment();
+            let name: &str = sp.fragment();
             if name == "pi" {
                 return Ok(b.const_pi());
             }

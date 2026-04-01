@@ -305,7 +305,7 @@ impl DagBuilder {
     fn merge_children(
         &mut self,
         source: &Dag,
-        cs: &Vec<NodeId>,
+        cs: &[NodeId],
         memo: &mut HashMap<NodeId, NodeId>,
     ) -> Vec<NodeId> {
         cs.iter()
@@ -381,7 +381,7 @@ impl DagBuilder {
     fn substitute_children(
         &mut self,
         source: &Dag,
-        cs: &Vec<NodeId>,
+        cs: &[NodeId],
         var: VarId,
         repl: NodeId,
         memo: &mut HashMap<NodeId, NodeId>,

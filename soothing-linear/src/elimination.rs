@@ -63,9 +63,11 @@ pub fn is_solution_nonzero_kappah(
     if !default_is_solution(r) {
         return false;
     }
+
     if !r.substitution.contains(kappah) {
         return true;
     }
+
     let expanded_zero = match expand_substitution_bindings(r) {
         Ok((_order, b, expanded_rhs)) => {
             let Some(&expanded_root) = expanded_rhs.get(&kappah) else {
@@ -75,22 +77,22 @@ pub fn is_solution_nonzero_kappah(
             let vs: Vec<VarId> = collect_vars(&snap, std::slice::from_ref(&expanded_root))
                 .into_iter()
                 .collect();
-            match is_zero(&snap, expanded_root, &vs, cfg) {
-                Ok(z) => z,
-                Err(_) => false,
-            }
+            is_zero(&snap, expanded_root, &vs, cfg).unwrap_or_default()
         }
+
         Err(SubstitutionError::Cycle) => return false,
     };
 
     !expanded_zero
 }
 
+type ExpandedSubstitution = (Vec<VarId>, DagBuilder, HashMap<VarId, NodeId>);
+
 /// Expand each substituted RHS by applying earlier bindings in [`SubstitutionMap::replay_order`]
 /// (same construction as elimination validation).
 fn expand_substitution_bindings(
     result: &EliminationResult,
-) -> Result<(Vec<VarId>, DagBuilder, HashMap<VarId, NodeId>), SubstitutionError> {
+) -> Result<ExpandedSubstitution, SubstitutionError> {
     let order = result.substitution.replay_order()?;
     let subst_dag = result.substitution.dag();
     let mut b = DagBuilder::new();
@@ -100,6 +102,7 @@ fn expand_substitution_bindings(
             .substitution
             .get(v)
             .expect("expand_substitution_bindings: missing binding for variable in replay order");
+
         let mut node = b.merge_root(&subst_dag, rhs);
         order.iter().copied().take_while(|&u| u != v).for_each(|u| {
             if let Some(&u_root) = expanded_rhs.get(&u) {
@@ -519,7 +522,8 @@ fn apply_one_elimination(
     *eq_roots = eq_roots
         .iter()
         .enumerate()
-        .filter_map(|(j, &er)| (j != i).then(|| builder.substitute_in_root(&snap3, er, x, x_sol)))
+        .filter(|&(j, _)| j != i)
+        .map(|(_, &er)| builder.substitute_in_root(&snap3, er, x, x_sol))
         .collect();
 
     let snap4 = builder.snapshot();
