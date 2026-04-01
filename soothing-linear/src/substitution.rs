@@ -72,19 +72,20 @@ impl SubstitutionMap {
     pub fn replay_order(&self) -> Result<Vec<VarId>, SubstitutionError> {
         let dag = self.builder.snapshot();
         let mut deps: HashMap<VarId, Vec<VarId>> = HashMap::new();
-        for (&v, &root) in &self.bindings {
+        self.bindings.iter().for_each(|(&v, &root)| {
             let ds: Vec<VarId> = vars_in_subgraph(&dag, root, &self.bindings)
                 .into_iter()
                 .filter(|u| *u != v)
                 .collect();
             deps.insert(v, ds);
-        }
+        });
         let mut order = Vec::new();
         let mut temp = HashSet::new();
         let mut perm = HashSet::new();
-        for &v in &self.insertion {
-            dfs_deps_first(v, &deps, &mut temp, &mut perm, &mut order)?;
-        }
+        self.insertion
+            .iter()
+            .copied()
+            .try_for_each(|v| dfs_deps_first(v, &deps, &mut temp, &mut perm, &mut order))?;
         Ok(order)
     }
 }
@@ -105,9 +106,9 @@ fn dfs_deps_first(
     }
     temp.insert(v);
     if let Some(us) = deps.get(&v) {
-        for &u in us {
-            dfs_deps_first(u, deps, temp, perm, order)?;
-        }
+        us.iter()
+            .copied()
+            .try_for_each(|u| dfs_deps_first(u, deps, temp, perm, order))?;
     }
     temp.remove(&v);
     perm.insert(v);
@@ -119,7 +120,7 @@ fn vars_in_subgraph(dag: &Dag, root: NodeId, bound: &HashMap<VarId, NodeId>) -> 
     let mut out = HashSet::new();
     let mut stack = vec![root];
     let mut seen = HashSet::new();
-    
+
     while let Some(id) = stack.pop() {
         if !seen.insert(id) {
             continue;
@@ -146,6 +147,6 @@ fn vars_in_subgraph(dag: &Dag, root: NodeId, bound: &HashMap<VarId, NodeId>) -> 
             }
         }
     }
-    
+
     out
 }

@@ -59,12 +59,14 @@ fn rng_for_linearity_q(cfg: &SampleConfig, q_root: NodeId, x: VarId) -> StdRng {
 
 fn random_sample_q(rng: &mut StdRng) -> Q {
     // rejection sampling of numerators and denominators such that $\gcd(numer, denom) = 1$ and $|denom|, |numer| \leq RANDOM_SAMPLE_ABS_MAX$
-    let mut numer = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
-    let mut denom = rng.gen_range(1..=RANDOM_SAMPLE_ABS_MAX);
-    while numer.gcd(&denom) != 1 {
-        numer = rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX);
-        denom = rng.gen_range(1..=RANDOM_SAMPLE_ABS_MAX);
-    }
+    let (numer, denom) = std::iter::repeat_with(|| {
+        (
+            rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX),
+            rng.gen_range(1..=RANDOM_SAMPLE_ABS_MAX),
+        )
+    })
+    .find(|(n, d)| n.abs().gcd(d) == 1)
+    .expect("coprime pair exists in bounded range");
 
     Q::new(numer.into(), denom.into())
 }
@@ -74,11 +76,12 @@ fn random_assignment_q(vars: &[VarId], rng: &mut StdRng) -> HashMap<VarId, Q> {
 }
 
 fn max_var_id(dag: &Dag, root: NodeId, other_vars: &[VarId]) -> u32 {
-    let mut m = other_vars.iter().map(|v| v.0).max().unwrap_or(0);
-    for v in dag.vars_in_root(root) {
-        m = m.max(v.0);
-    }
-    m
+    other_vars
+        .iter()
+        .map(|v| v.0)
+        .chain(dag.vars_in_root(root).into_iter().map(|v| v.0))
+        .max()
+        .unwrap_or(0)
 }
 
 /// Builds \(q = (p(w)-p(u))(v-u) - (p(v)-p(u))(w-u)\) with fresh `u,v,w` symbols (see paper).

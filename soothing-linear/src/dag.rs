@@ -67,9 +67,8 @@ impl Dag {
             }
             Node::Const(_) | Node::ConstPi => {}
             Node::Add(cs) | Node::Mul(cs) => {
-                for c in cs {
-                    self.collect_vars_dfs(*c, seen_node, vars);
-                }
+                cs.iter()
+                    .for_each(|c| self.collect_vars_dfs(*c, seen_node, vars));
             }
             Node::Neg(x) => self.collect_vars_dfs(*x, seen_node, vars),
             Node::Div(n, d) => {
@@ -104,7 +103,10 @@ impl Dag {
             if ids.is_empty() {
                 "0".to_string()
             } else {
-                ids.iter().map(|c| dag.fmt_node(*c, var_name)).collect::<Vec<_>>().join(" + ")
+                ids.iter()
+                    .map(|c| dag.fmt_node(*c, var_name))
+                    .collect::<Vec<_>>()
+                    .join(" + ")
             }
         }
 
@@ -112,17 +114,30 @@ impl Dag {
             if ids.is_empty() {
                 "1".to_string()
             } else {
-                ids.iter().map(|c| bracketed(dag, *c, dag.fmt_node(*c, var_name))).collect::<Vec<_>>().join(" * ")
+                ids.iter()
+                    .map(|c| bracketed(dag, *c, dag.fmt_node(*c, var_name)))
+                    .collect::<Vec<_>>()
+                    .join(" * ")
             }
         }
 
-        fn fmt_div(dag: &Dag, num: NodeId, den: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
+        fn fmt_div(
+            dag: &Dag,
+            num: NodeId,
+            den: NodeId,
+            var_name: &impl Fn(VarId) -> String,
+        ) -> String {
             let ns = dag.fmt_node(num, var_name);
             let ds = dag.fmt_node(den, var_name);
             format!("{ns} / {ds}")
         }
 
-        fn fmt_pow(dag: &Dag, base: NodeId, exp: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
+        fn fmt_pow(
+            dag: &Dag,
+            base: NodeId,
+            exp: NodeId,
+            var_name: &impl Fn(VarId) -> String,
+        ) -> String {
             let bs = dag.fmt_node(base, var_name);
             let es = dag.fmt_node(exp, var_name);
             format!("{bs} ^ {es}")
@@ -287,8 +302,15 @@ impl DagBuilder {
         self.merge_dfs(source, root, &mut memo)
     }
 
-    fn merge_children(&mut self, source: &Dag, cs: &Vec<NodeId>, memo: &mut HashMap<NodeId, NodeId>) -> Vec<NodeId> {
-        cs.iter().map(|c| self.merge_dfs(source, *c, memo)).collect()
+    fn merge_children(
+        &mut self,
+        source: &Dag,
+        cs: &Vec<NodeId>,
+        memo: &mut HashMap<NodeId, NodeId>,
+    ) -> Vec<NodeId> {
+        cs.iter()
+            .map(|c| self.merge_dfs(source, *c, memo))
+            .collect()
     }
 
     fn merge_dfs(
@@ -356,8 +378,17 @@ impl DagBuilder {
         self.substitute_in_root(source, root, var, c)
     }
 
-    fn substitute_children(&mut self, source: &Dag, cs: &Vec<NodeId>, var: VarId, repl: NodeId, memo: &mut HashMap<NodeId, NodeId>) -> Vec<NodeId> {
-        cs.iter().map(|c| self.substitute_dfs(source, *c, var, repl, memo)).collect()
+    fn substitute_children(
+        &mut self,
+        source: &Dag,
+        cs: &Vec<NodeId>,
+        var: VarId,
+        repl: NodeId,
+        memo: &mut HashMap<NodeId, NodeId>,
+    ) -> Vec<NodeId> {
+        cs.iter()
+            .map(|c| self.substitute_dfs(source, *c, var, repl, memo))
+            .collect()
     }
 
     fn substitute_dfs(

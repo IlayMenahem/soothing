@@ -39,31 +39,27 @@ fn try_const(b: &DagBuilder, id: NodeId) -> Option<Q> {
 }
 
 fn flatten_add(b: &DagBuilder, ids: &[NodeId], out: &mut Vec<NodeId>) {
-    for &id in ids {
-        match b.node(id) {
-            Node::Add(cs) => flatten_add(b, cs, out),
-            _ => out.push(id),
-        }
-    }
+    ids.iter().copied().for_each(|id| match b.node(id) {
+        Node::Add(cs) => flatten_add(b, cs, out),
+        _ => out.push(id),
+    });
 }
 
 fn flatten_mul(b: &DagBuilder, ids: &[NodeId], out: &mut Vec<NodeId>) {
-    for &id in ids {
-        match b.node(id) {
-            Node::Mul(cs) => flatten_mul(b, cs, out),
-            _ => out.push(id),
-        }
-    }
+    ids.iter().copied().for_each(|id| match b.node(id) {
+        Node::Mul(cs) => flatten_mul(b, cs, out),
+        _ => out.push(id),
+    });
 }
 
 fn merge_coeff_maps(into: &mut BTreeMap<VarId, Q>, add: &BTreeMap<VarId, Q>) {
-    for (&v, c) in add {
+    add.iter().for_each(|(&v, c)| {
         let e = into.entry(v).or_insert_with(q_zero);
         *e += c.clone();
         if e.is_zero() {
             into.remove(&v);
         }
-    }
+    });
 }
 
 fn try_affine_linear(b: &DagBuilder, id: NodeId) -> Option<(BTreeMap<VarId, Q>, Q)> {
@@ -76,22 +72,21 @@ fn try_affine_linear(b: &DagBuilder, id: NodeId) -> Option<(BTreeMap<VarId, Q>, 
         }
         Node::Neg(x) => {
             let (mut m, c) = try_affine_linear(b, *x)?;
-            for coef in m.values_mut() {
+            m.values_mut().for_each(|coef| {
                 *coef = -coef.clone();
-            }
+            });
             m.retain(|_, k| !k.is_zero());
             Some((m, -c))
         }
-        Node::Add(parts) => {
-            let mut acc = BTreeMap::new();
-            let mut const_sum = q_zero();
-            for &p in parts {
+        Node::Add(parts) => parts.iter().copied().try_fold(
+            (BTreeMap::new(), q_zero()),
+            |(mut acc, mut const_sum), p| {
                 let (m, c) = try_affine_linear(b, p)?;
                 merge_coeff_maps(&mut acc, &m);
                 const_sum += c;
-            }
-            Some((acc, const_sum))
-        }
+                Some((acc, const_sum))
+            },
+        ),
         Node::Mul(cs) if cs.len() == 2 => match (b.node(cs[0]), b.node(cs[1])) {
             (Node::Const(k), Node::Var(v)) | (Node::Var(v), Node::Const(k)) => {
                 let mut m = BTreeMap::new();
@@ -106,14 +101,15 @@ fn try_affine_linear(b: &DagBuilder, id: NodeId) -> Option<(BTreeMap<VarId, Q>, 
 }
 
 fn try_affine_sum_parts(b: &DagBuilder, parts: &[NodeId]) -> Option<(BTreeMap<VarId, Q>, Q)> {
-    let mut acc = BTreeMap::new();
-    let mut const_sum = q_zero();
-    for &p in parts {
-        let (m, c) = try_affine_linear(b, p)?;
-        merge_coeff_maps(&mut acc, &m);
-        const_sum += c;
-    }
-    Some((acc, const_sum))
+    parts.iter().copied().try_fold(
+        (BTreeMap::new(), q_zero()),
+        |(mut acc, mut const_sum), p| {
+            let (m, c) = try_affine_linear(b, p)?;
+            merge_coeff_maps(&mut acc, &m);
+            const_sum += c;
+            Some((acc, const_sum))
+        },
+    )
 }
 
 fn linear_term(b: &mut DagBuilder, v: VarId, coef: Q) -> NodeId {
@@ -134,12 +130,12 @@ fn affine_to_node(b: &mut DagBuilder, coeffs: BTreeMap<VarId, Q>, constant: Q) -
     if !constant.is_zero() {
         parts.push(b.constant(constant));
     }
-    for (v, coef) in coeffs {
-        if coef.is_zero() {
-            continue;
-        }
-        parts.push(linear_term(b, v, coef));
-    }
+    parts.extend(
+        coeffs
+            .into_iter()
+            .filter(|(_, coef)| !coef.is_zero())
+            .map(|(v, coef)| linear_term(b, v, coef)),
+    );
     match parts.len() {
         0 => b.constant(q_zero()),
         1 => parts[0],
@@ -154,57 +150,61 @@ fn affine_div_by_const(
     divisor: Q,
 ) -> NodeId {
     let inv = Q::one() / divisor;
-    let mut scaled = BTreeMap::new();
-    for (v, c) in coeffs {
-        let nv = c * inv.clone();
-        if !nv.is_zero() {
-            scaled.insert(v, nv);
-        }
-    }
+    let scaled: BTreeMap<_, _> = coeffs
+        .into_iter()
+        .filter_map(|(v, c)| {
+            let nv = c * inv.clone();
+            (!nv.is_zero()).then_some((v, nv))
+        })
+        .collect();
     let c = const_term * inv;
     affine_to_node(b, scaled, c)
 }
 
 fn net_terms_after_neg_cancel(b: &DagBuilder, terms: &[NodeId]) -> HashMap<NodeId, i64> {
-    let mut m: HashMap<NodeId, i64> = HashMap::new();
-    for &t in terms {
-        if let Node::Neg(u) = b.node(t) {
-            *m.entry(*u).or_insert(0) -= 1;
-        } else {
-            *m.entry(t).or_insert(0) += 1;
-        }
-    }
-    m
+    terms
+        .iter()
+        .copied()
+        .fold(HashMap::<NodeId, i64>::new(), |mut m, t| {
+            if let Node::Neg(u) = b.node(t) {
+                *m.entry(*u).or_insert(0) -= 1;
+            } else {
+                *m.entry(t).or_insert(0) += 1;
+            }
+            m
+        })
 }
 
 fn rebuild_add_terms(b: &mut DagBuilder, net: HashMap<NodeId, i64>) -> Vec<NodeId> {
-    let mut parts = Vec::new();
-    for (u, c) in net {
-        if c == 0 {
-            continue;
-        }
-        if c == 1 {
-            parts.push(u);
-        } else if c == -1 {
-            parts.push(b.neg(u));
-        } else {
-            let k = b.constant(Q::from_integer(c.into()));
-            parts.push(b.mul2(k, u));
-        }
-    }
-    parts
+    net.into_iter()
+        .filter_map(|(u, c)| {
+            if c == 0 {
+                return None;
+            }
+            Some(if c == 1 {
+                u
+            } else if c == -1 {
+                b.neg(u)
+            } else {
+                let k = b.constant(Q::from_integer(c.into()));
+                b.mul2(k, u)
+            })
+        })
+        .collect()
 }
 
 fn merge_const_summands(b: &mut DagBuilder, terms: Vec<NodeId>) -> Vec<NodeId> {
-    let mut csum = q_zero();
-    let mut out = Vec::new();
-    for t in terms {
-        if let Node::Const(c) = b.node(t) {
-            csum += c.clone();
-        } else {
-            out.push(t);
-        }
-    }
+    let (csum, mut out) =
+        terms
+            .into_iter()
+            .fold((q_zero(), Vec::new()), |(mut csum, mut out), t| {
+                if let Node::Const(c) = b.node(t) {
+                    csum += c.clone();
+                } else {
+                    out.push(t);
+                }
+                (csum, out)
+            });
     if !csum.is_zero() {
         out.push(b.constant(csum));
     }
@@ -285,13 +285,13 @@ fn construct_mul(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
     flatten_mul(b, &parts, &mut flat);
 
     if flat.iter().all(|&id| matches!(b.node(id), Node::Const(_))) {
-        let mut p = q_one();
-        for &id in &flat {
-            match b.node(id) {
-                Node::Const(c) => p *= c.clone(),
+        let p = flat
+            .iter()
+            .map(|&id| match b.node(id) {
+                Node::Const(c) => c.clone(),
                 _ => unreachable!(),
-            }
-        }
+            })
+            .product();
         return Ok(b.constant(p));
     }
 
@@ -304,18 +304,19 @@ fn construct_mul(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
 
     flat.retain(|&id| !matches!(b.node(id), Node::Const(c) if *c == q_one()));
 
-    let mut nums = Vec::new();
-    let mut dens = Vec::new();
-    let mut plain = Vec::new();
-    for &f in &flat {
-        match b.node(f) {
-            Node::Div(n, d) => {
-                nums.push(*n);
-                dens.push(*d);
+    let (mut nums, dens, plain): (Vec<_>, Vec<_>, Vec<_>) = flat.iter().copied().fold(
+        (Vec::new(), Vec::new(), Vec::new()),
+        |(mut nums, mut dens, mut plain), f| {
+            match b.node(f) {
+                Node::Div(n, d) => {
+                    nums.push(*n);
+                    dens.push(*d);
+                }
+                _ => plain.push(f),
             }
-            _ => plain.push(f),
-        }
-    }
+            (nums, dens, plain)
+        },
+    );
 
     if !dens.is_empty() {
         nums.extend(plain);
@@ -324,16 +325,16 @@ fn construct_mul(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
         return construct_div(b, n, d);
     }
 
-    let mut flip = false;
-    let mut cores = Vec::new();
-    for f in flat {
-        let (core, flp) = peel_sign_factor(b, f);
-        flip ^= flp;
-        if matches!(b.node(core), Node::Const(c) if *c == q_one()) {
-            continue;
-        }
-        cores.push(core);
-    }
+    let (flip, mut cores) =
+        flat.into_iter()
+            .fold((false, Vec::new()), |(mut flip, mut cores), f| {
+                let (core, flp) = peel_sign_factor(b, f);
+                flip ^= flp;
+                if !matches!(b.node(core), Node::Const(c) if *c == q_one()) {
+                    cores.push(core);
+                }
+                (flip, cores)
+            });
 
     cores.retain(|&id| !matches!(b.node(id), Node::Const(c) if *c == q_one()));
 
@@ -354,13 +355,13 @@ fn construct_neg(b: &mut DagBuilder, x: NodeId) -> Result<NodeId, SimplifyError>
         Node::Neg(y) => Ok(*y),
         _ => {
             if let Some((m, c)) = try_affine_linear(b, x) {
-                let mut nm = BTreeMap::new();
-                for (k, v) in m {
-                    let nv = -v;
-                    if !nv.is_zero() {
-                        nm.insert(k, nv);
-                    }
-                }
+                let nm: BTreeMap<_, _> = m
+                    .into_iter()
+                    .filter_map(|(k, v)| {
+                        let nv = -v;
+                        (!nv.is_zero()).then_some((k, nv))
+                    })
+                    .collect();
                 return Ok(affine_to_node(b, nm, -c));
             }
             Ok(b.neg(x))

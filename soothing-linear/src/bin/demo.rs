@@ -30,17 +30,17 @@ fn main() {
         "v1 * v2 + v0", // x*y + z
     ];
     let mut b = DagBuilder::new();
-    let mut equation_roots = Vec::with_capacity(equation_strings.len());
-    for s in &equation_strings {
-        let (dag, root) = match Dag::from_rational_string(s) {
-            Ok(p) => p,
+    let equation_roots: Vec<_> = equation_strings
+        .iter()
+        .map(|s| match Dag::from_rational_string(s) {
+            Ok(p) => Ok(b.merge_root(&p.0, p.1)),
             Err(e) => {
                 eprintln!("parse equation {s:?}: {e}");
-                std::process::exit(1);
+                Err(())
             }
-        };
-        equation_roots.push(b.merge_root(&dag, root));
-    }
+        })
+        .collect::<Result<_, _>>()
+        .unwrap_or_else(|_| std::process::exit(1));
     let sys = PolynomialSystem::new(b.build(), equation_roots);
 
     println!("Initial system:");
@@ -79,7 +79,7 @@ fn main() {
 
     let dag = sub.dag();
     println!("Evaluation:");
-    for &v in sub.insertion_order() {
+    sub.insertion_order().iter().copied().for_each(|v| {
         if let Some(root) = sub.get(v) {
             let label = if v == x {
                 "x"
@@ -107,7 +107,7 @@ fn main() {
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
-                for sample in 0..3 {
+                (0..3).for_each(|sample| {
                     let assign = assignment_seed(&free, sample);
                     let binding: Vec<String> = free
                         .iter()
@@ -117,10 +117,10 @@ fn main() {
                         Ok(q) => println!("    [{}]  {}", binding.join(", "), q),
                         Err(e) => println!("    (sample {}: {:?})", sample, e),
                     }
-                }
+                });
             }
         }
-    }
+    });
 
     println!("\nDone.");
 }

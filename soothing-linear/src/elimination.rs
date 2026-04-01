@@ -95,23 +95,20 @@ fn expand_substitution_bindings(
     let subst_dag = result.substitution.dag();
     let mut b = DagBuilder::new();
     let mut expanded_rhs: HashMap<VarId, NodeId> = HashMap::new();
-    for &v in &order {
+    order.iter().copied().for_each(|v| {
         let rhs = result
             .substitution
             .get(v)
             .expect("expand_substitution_bindings: missing binding for variable in replay order");
         let mut node = b.merge_root(&subst_dag, rhs);
-        for &u in &order {
-            if u == v {
-                break;
-            }
+        order.iter().copied().take_while(|&u| u != v).for_each(|u| {
             if let Some(&u_root) = expanded_rhs.get(&u) {
                 let snap_inner = b.snapshot();
                 node = b.substitute_in_root(&snap_inner, node, u, u_root);
             }
-        }
+        });
         expanded_rhs.insert(v, node);
-    }
+    });
     Ok((order, b, expanded_rhs))
 }
 
@@ -130,15 +127,15 @@ fn validate_elimination_result(
     let (order, mut b, expanded_rhs) = expand_substitution_bindings(result)
         .expect("elimination validation: cyclic substitution map");
 
-    for (i, &eq_root) in original.equations.iter().enumerate() {
+    original.equations.iter().enumerate().for_each(|(i, &eq_root)| {
         let mut r = b.merge_root(&original.dag, eq_root);
-        for &v in &order {
+        order.iter().copied().for_each(|v| {
             let repl = *expanded_rhs
                 .get(&v)
                 .expect("elimination validation: expanded binding missing");
             let snap = b.snapshot();
             r = b.substitute_in_root(&snap, r, v, repl);
-        }
+        });
         let snap = b.snapshot();
         let free_vars = snap.vars_in_root(r);
         let ok = match is_zero(&snap, r, &free_vars, cfg) {
@@ -152,7 +149,7 @@ fn validate_elimination_result(
                 "elimination validation failed: original equation index {i} does not vanish under substitution"
             );
         }
-    }
+    });
 }
 
 /// Run linear elimination until no equation is linear in any remaining variable.
@@ -409,17 +406,16 @@ fn collect_linear_pairs(
     remaining: &BTreeSet<VarId>,
     cfg: &SampleConfig,
 ) -> Vec<(VarId, usize)> {
-    let mut candidates: Vec<(usize, VarId)> = Vec::new();
-    for i in 0..eq_roots.len() {
-        let mut vars_in_eq: Vec<VarId> = collect_vars(dag, std::slice::from_ref(&eq_roots[i]))
-            .into_iter()
-            .filter(|v| remaining.contains(v))
-            .collect();
-        vars_in_eq.sort_by_key(|v| v.0);
-        for x in vars_in_eq {
-            candidates.push((i, x));
-        }
-    }
+    let candidates: Vec<(usize, VarId)> = (0..eq_roots.len())
+        .flat_map(|i| {
+            let mut vars_in_eq: Vec<VarId> = collect_vars(dag, std::slice::from_ref(&eq_roots[i]))
+                .into_iter()
+                .filter(|v| remaining.contains(v))
+                .collect();
+            vars_in_eq.sort_by_key(|v| v.0);
+            vars_in_eq.into_iter().map(move |x| (i, x))
+        })
+        .collect();
     let linear_ok: Vec<bool> = candidates
         .par_iter()
         .map(|&(i, x)| {
@@ -427,13 +423,11 @@ fn collect_linear_pairs(
             matches!(is_linear_in(dag, eq_roots[i], x, &others, cfg), Ok(true))
         })
         .collect();
-    let mut out = Vec::new();
-    for (idx, &(i, x)) in candidates.iter().enumerate() {
-        if linear_ok[idx] {
-            out.push((x, i));
-        }
-    }
-    out
+    candidates
+        .iter()
+        .zip(&linear_ok)
+        .filter_map(|(&(i, x), &ok)| ok.then_some((x, i)))
+        .collect()
 }
 
 fn is_better_elimination(a: &EliminationResult, b: &EliminationResult) -> bool {
@@ -467,13 +461,11 @@ fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleC
             }
         })
         .collect();
-    let mut new_eqs = Vec::with_capacity(eq_roots.len());
-    for (&r, &k) in eq_roots.iter().zip(&keep) {
-        if k {
-            new_eqs.push(r);
-        }
-    }
-    *eq_roots = new_eqs;
+    *eq_roots = eq_roots
+        .iter()
+        .zip(&keep)
+        .filter_map(|(&r, &k)| k.then_some(r))
+        .collect();
 }
 
 fn apply_one_elimination(
@@ -501,13 +493,11 @@ fn apply_one_elimination(
     }
     // a = 0, b = 0: tautology; drop this equation.
     if a_is_zero && b_is_zero {
-        let mut new_eqs = Vec::with_capacity(eq_roots.len().saturating_sub(1));
-        for (j, &er) in eq_roots.iter().enumerate() {
-            if j != i {
-                new_eqs.push(er);
-            }
-        }
-        *eq_roots = new_eqs;
+        *eq_roots = eq_roots
+            .iter()
+            .enumerate()
+            .filter_map(|(j, &er)| (j != i).then_some(er))
+            .collect();
         let snap_taut = builder.snapshot();
         retain_nonzero_equations(&snap_taut, eq_roots, cfg);
         return Ok(());
@@ -526,14 +516,11 @@ fn apply_one_elimination(
     let snap3 = builder.snapshot();
     subst.insert(x, &snap3, x_sol);
 
-    let mut new_eqs = Vec::with_capacity(eq_roots.len().saturating_sub(1));
-    for (j, &er) in eq_roots.iter().enumerate() {
-        if j == i {
-            continue;
-        }
-        new_eqs.push(builder.substitute_in_root(&snap3, er, x, x_sol));
-    }
-    *eq_roots = new_eqs;
+    *eq_roots = eq_roots
+        .iter()
+        .enumerate()
+        .filter_map(|(j, &er)| (j != i).then(|| builder.substitute_in_root(&snap3, er, x, x_sol)))
+        .collect();
 
     let snap4 = builder.snapshot();
     retain_nonzero_equations(&snap4, eq_roots, cfg);
@@ -554,9 +541,7 @@ fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
             }
             Node::Const(_) | Node::ConstPi => {}
             Node::Add(cs) | Node::Mul(cs) => {
-                for c in cs {
-                    stack.push(*c);
-                }
+                cs.iter().for_each(|c| stack.push(*c));
             }
             Node::Neg(x) => stack.push(*x),
             Node::Div(n, d) => {

@@ -5,7 +5,7 @@
 //! wrapping `integer/(` as `(integer)/(` so rational literals do not swallow parenthesized denominators.
 //! The full rational structure of `rhs` is preserved (no numerator-only rewriting).
 
-use crate::dag::{Dag, DagBuilder, DagParseError, VarId};
+use crate::dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 use crate::system::PolynomialSystem;
 use regex::Regex;
 use std::collections::HashMap;
@@ -146,11 +146,11 @@ static IMPLICIT_MUL_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::n
 });
 
 fn apply_implicit_multiplication(s: &str) -> String {
-    let mut result = s.to_string();
-    for (re, repl) in IMPLICIT_MUL_PATTERNS.iter() {
-        result = re.replace_all(&result, *repl).to_string();
-    }
-    result
+    IMPLICIT_MUL_PATTERNS
+        .iter()
+        .fold(s.to_string(), |acc, (re, repl)| {
+            re.replace_all(&acc, *repl).to_string()
+        })
 }
 
 /// Integer `/` `(` must become `(integer)/(` or the rational literal grammar treats `1/` as part
@@ -222,27 +222,30 @@ fn equation_strings_from_mathematica(text: &str) -> Result<Vec<String>, Mathemat
     if cleaned.is_empty() {
         return Err(MathematicaLoadError::Empty);
     }
-    let mut equations = Vec::new();
-    for segment in split_top_level(cleaned) {
-        let Some((lhs, rhs)) = split_rule(&segment) else {
-            let t = segment.trim();
-            if t.is_empty() {
-                continue;
-            }
-            return Err(MathematicaLoadError::NoRuleSeparator(segment));
-        };
-        let lhs_c = normalize_mathematica_symbols(lhs);
-        let lhs_c = collapse_ws(&lhs_c);
-        let lhs_c = apply_implicit_multiplication(&lhs_c);
-        let lhs_c = wrap_int_numerator_paren_denominator(&lhs_c);
-        let rhs_c = normalize_mathematica_symbols(rhs);
-        let rhs_c = collapse_ws(&rhs_c);
-        let rhs_c = apply_implicit_multiplication(&rhs_c);
-        let rhs_c = wrap_int_numerator_paren_denominator(&rhs_c);
-        // Parenthesize rhs only; wrapping lhs as `(kappah)` is parsed as a variable named "(kappah)".
-        let eq = format!("{lhs_c}-({rhs_c})");
-        equations.push(eq);
-    }
+    let equations =
+        split_top_level(cleaned)
+            .into_iter()
+            .try_fold(Vec::new(), |mut equations, segment| {
+                let Some((lhs, rhs)) = split_rule(&segment) else {
+                    let t = segment.trim();
+                    if t.is_empty() {
+                        return Ok(equations);
+                    }
+                    return Err(MathematicaLoadError::NoRuleSeparator(segment));
+                };
+                let lhs_c = normalize_mathematica_symbols(lhs);
+                let lhs_c = collapse_ws(&lhs_c);
+                let lhs_c = apply_implicit_multiplication(&lhs_c);
+                let lhs_c = wrap_int_numerator_paren_denominator(&lhs_c);
+                let rhs_c = normalize_mathematica_symbols(rhs);
+                let rhs_c = collapse_ws(&rhs_c);
+                let rhs_c = apply_implicit_multiplication(&rhs_c);
+                let rhs_c = wrap_int_numerator_paren_denominator(&rhs_c);
+                // Parenthesize rhs only; wrapping lhs as `(kappah)` is parsed as a variable named "(kappah)".
+                let eq = format!("{lhs_c}-({rhs_c})");
+                equations.push(eq);
+                Ok(equations)
+            })?;
     if equations.is_empty() {
         return Err(MathematicaLoadError::Empty);
     }
@@ -263,19 +266,22 @@ pub fn load_mathematica_system_from_str_with_var_names(
     text: &str,
 ) -> Result<LoadedMathematicaSystem, MathematicaLoadError> {
     let equations = equation_strings_from_mathematica(text)?;
-    let mut all_names: Vec<String> = Vec::new();
-    for eq in &equations {
-        all_names.extend(collect_identifiers(eq));
-    }
+    let mut all_names: Vec<String> = equations
+        .iter()
+        .flat_map(|eq| collect_identifiers(eq))
+        .collect();
     all_names.sort();
     all_names.dedup();
     let var_map = build_var_map(&all_names);
     let mut b = DagBuilder::new();
-    let mut roots = Vec::with_capacity(equations.len());
-    for eq in equations {
-        let (dag, root) = Dag::from_rational_string_with_var_map(&eq, &var_map)?;
-        roots.push(b.merge_root(&dag, root));
-    }
+    let roots = equations.into_iter().try_fold(
+        Vec::new(),
+        |mut roots, eq| -> Result<Vec<NodeId>, MathematicaLoadError> {
+            let (dag, root) = Dag::from_rational_string_with_var_map(&eq, &var_map)?;
+            roots.push(b.merge_root(&dag, root));
+            Ok(roots)
+        },
+    )?;
     Ok(LoadedMathematicaSystem {
         system: PolynomialSystem::new(b.build(), roots),
         var_names: all_names,

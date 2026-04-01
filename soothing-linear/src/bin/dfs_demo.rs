@@ -35,14 +35,16 @@ fn run_three_equation_demo(cfg: &SampleConfig) {
     let y = VarId(2);
     let equation_strings = ["v1 + v0 - 1", "v2 - v0", "v1 * v2 + v0"];
     let mut b = DagBuilder::new();
-    let mut equation_roots = Vec::with_capacity(equation_strings.len());
-    for s in &equation_strings {
-        let (dag, root) = Dag::from_rational_string(s).unwrap_or_else(|e| {
-            eprintln!("parse equation {s:?}: {e}");
-            std::process::exit(1);
-        });
-        equation_roots.push(b.merge_root(&dag, root));
-    }
+    let equation_roots: Vec<_> = equation_strings
+        .iter()
+        .map(|s| {
+            Dag::from_rational_string(s).unwrap_or_else(|e| {
+                eprintln!("parse equation {s:?}: {e}");
+                std::process::exit(1);
+            })
+        })
+        .map(|(dag, root)| b.merge_root(&dag, root))
+        .collect();
     let sys = PolynomialSystem::new(b.build(), equation_roots);
 
     println!("System (same as `demo` binary):");
