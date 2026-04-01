@@ -119,10 +119,12 @@ fn vars_in_subgraph(dag: &Dag, root: NodeId, bound: &HashMap<VarId, NodeId>) -> 
     let mut out = HashSet::new();
     let mut stack = vec![root];
     let mut seen = HashSet::new();
+    
     while let Some(id) = stack.pop() {
         if !seen.insert(id) {
             continue;
         }
+
         match dag.node(id) {
             Node::Const(_) | Node::ConstPi => {}
             Node::Var(x) => {
@@ -131,9 +133,7 @@ fn vars_in_subgraph(dag: &Dag, root: NodeId, bound: &HashMap<VarId, NodeId>) -> 
                 }
             }
             Node::Add(cs) | Node::Mul(cs) => {
-                for c in cs {
-                    stack.push(*c);
-                }
+                stack.extend(cs);
             }
             Node::Neg(x) => stack.push(*x),
             Node::Div(n, d) => {
@@ -146,5 +146,6 @@ fn vars_in_subgraph(dag: &Dag, root: NodeId, bound: &HashMap<VarId, NodeId>) -> 
             }
         }
     }
+    
     out
 }

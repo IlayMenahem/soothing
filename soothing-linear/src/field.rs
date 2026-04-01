@@ -4,7 +4,7 @@
 
 use num_bigint::BigInt;
 use num_rational::Ratio;
-use num_traits::{One, ToPrimitive, Zero};
+use num_traits::{One, Pow, Zero};
 
 /// Rational numbers used throughout the crate.
 pub type Q = Ratio<BigInt>;
@@ -35,12 +35,13 @@ pub fn pi_approx_q() -> Q {
 
 /// `base` raised to integer exponent `exp` (negative exponents invert `base`).
 /// Returns `None` for `0` to a negative integer power.
-pub fn q_pow_integer(base: Q, exp: &BigInt) -> Option<Q> {
+pub fn q_pow_integer(mut base: Q, exp: &BigInt) -> Option<Q> {
     if exp.is_zero() {
         return Some(Q::one());
     }
+
     let mut exp_pos = exp.clone();
-    let mut base = base;
+
     if exp_pos < BigInt::zero() {
         if base.is_zero() {
             return None;
@@ -48,18 +49,7 @@ pub fn q_pow_integer(base: Q, exp: &BigInt) -> Option<Q> {
         base = Q::one() / base;
         exp_pos = -exp_pos;
     }
-    if let Some(i) = exp_pos.to_i32() {
-        return Some(base.pow(i));
-    }
-    let mut acc = Q::one();
-    let mut b = base;
-    let mut e = exp_pos;
-    while e > BigInt::zero() {
-        if &e & BigInt::from(1u8) != BigInt::zero() {
-            acc *= &b;
-        }
-        b = &b * &b;
-        e >>= 1;
-    }
-    Some(acc)
+
+    let exp_u = exp_pos.to_biguint()?;
+    Some(Pow::pow(base, &exp_u))
 }
