@@ -14,6 +14,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use std::collections::HashMap;
+use std::hash::BuildHasher;
 use thiserror::Error;
 
 /// How many samples to use for predicate checks.
@@ -133,7 +134,12 @@ fn random_assignment_with_uvw(
 ///
 /// This uses a bounded retry budget so expressions that are defined only on a tiny subset of the
 /// sample space can still report `false`.
-#[must_use] 
+///
+/// # Panics
+///
+/// Panics if the attempt index does not fit in `u32`. With the current bounded loop
+/// (`SUBSTITUTION_NUMERIC_CHECK_SAMPLES` × `ZERO_TEST_ATTEMPT_MULTIPLIER`) this cannot occur.
+#[must_use]
 pub fn expr_finite_at_some_random_sample(
     dag: &Dag,
     root: NodeId,
@@ -264,11 +270,11 @@ pub fn is_linear_in(
 /// # Errors
 ///
 /// Returns [`PredicateError`] when evaluation fails (missing variable, division by zero, etc.).
-pub fn recover_linear_coeffs(
+pub fn recover_linear_coeffs<S: BuildHasher + Clone>(
     dag: &Dag,
     root: NodeId,
     x: VarId,
-    base: &HashMap<VarId, Q>,
+    base: &HashMap<VarId, Q, S>,
 ) -> Result<LinearCoeffs, PredicateError> {
     let mut a0 = base.clone();
     let mut a1 = base.clone();
@@ -290,7 +296,7 @@ pub struct LinearCoeffs {
 }
 
 /// Deterministic sample assignment for `vars` (for tests and call sites that need a fixed base).
-#[must_use] 
+#[must_use]
 pub fn assignment_seed(vars: &[VarId], seed: usize) -> HashMap<VarId, Q> {
     vars.par_iter()
         .enumerate()

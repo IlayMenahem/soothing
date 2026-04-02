@@ -8,6 +8,7 @@ use crate::field::{pi_approx_q, q_pow_integer, Q};
 use num_traits::Zero;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::hash::BuildHasher;
 
 /// Evaluation error.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,7 +29,11 @@ pub enum EvalError {
 /// # Panics
 ///
 /// Panics if `root` does not receive a value after topological evaluation (internal DAG invariant).
-pub fn evaluate(dag: &Dag, root: NodeId, assignment: &HashMap<VarId, Q>) -> Result<Q, EvalError> {
+pub fn evaluate<S: BuildHasher>(
+    dag: &Dag,
+    root: NodeId,
+    assignment: &HashMap<VarId, Q, S>,
+) -> Result<Q, EvalError> {
     let order = topological_order(dag, root);
     let mut values: Vec<Option<Q>> = vec![None; dag.len()];
 
@@ -43,10 +48,10 @@ pub fn evaluate(dag: &Dag, root: NodeId, assignment: &HashMap<VarId, Q>) -> Resu
         .expect("root must appear in topological order"))
 }
 
-fn eval_node(
+fn eval_node<S: BuildHasher>(
     dag: &Dag,
     id: NodeId,
-    assignment: &HashMap<VarId, Q>,
+    assignment: &HashMap<VarId, Q, S>,
     values: &[Option<Q>],
 ) -> Result<Q, EvalError> {
     match dag.node(id) {

@@ -20,10 +20,10 @@ use soothing_linear::{
 const TRACE_LOG_FILE: &str = "elimination_trace.log";
 
 fn main() {
-    let path: PathBuf = std::env::args()
-        .nth(1).map_or_else(|| {
-            default_systems_dir_from_manifest().join("simplified_mathematica_system.txt")
-        }, PathBuf::from);
+    let path: PathBuf = std::env::args().nth(1).map_or_else(
+        || default_systems_dir_from_manifest().join("simplified_mathematica_system.txt"),
+        PathBuf::from,
+    );
 
     let trace_path = Path::new(TRACE_LOG_FILE);
 
@@ -63,7 +63,7 @@ fn main() {
     };
 
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination_solving_symbolic(loaded, &cfg, Some(&mut trace_file)) {
+    let res = match dfs_linear_elimination_solving_symbolic(&loaded, &cfg, Some(&mut trace_file)) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("dfs_linear_elimination_solving_symbolic error: {e}");

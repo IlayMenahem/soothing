@@ -10,7 +10,7 @@ pub struct PolynomialSystem {
 }
 
 impl PolynomialSystem {
-    #[must_use] 
+    #[must_use]
     pub fn new(dag: Dag, equations: Vec<NodeId>) -> Self {
         Self { equations, dag }
     }

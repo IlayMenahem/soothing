@@ -13,7 +13,7 @@
 //! let vy = b.variable(y);
 //! let eq = b.add(vec![vx, vy]);
 //! let sys = PolynomialSystem::new(b.build(), vec![eq]);
-//! let _ = linear_elimination_greedy(sys, &SampleConfig::default()).expect("ok");
+//! let _ = linear_elimination_greedy(&sys, &SampleConfig::default()).expect("ok");
 //! ```
 //!
 //! ## Scope (v1)

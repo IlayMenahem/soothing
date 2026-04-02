@@ -44,7 +44,7 @@ pub struct EliminationResult {
 }
 
 /// `true` when the residual system has no equations — default DFS acceptance predicate.
-#[must_use] 
+#[must_use]
 pub fn default_is_solution(r: &EliminationResult) -> bool {
     r.reduced_system.equations.is_empty()
 }
@@ -56,7 +56,7 @@ pub fn default_is_solution(r: &EliminationResult) -> bool {
 /// map, reject when its **fully expanded** RHS (after applying other bindings in
 /// [`SubstitutionMap::replay_order`]) is identically zero — matching SymPy’s
 /// `substitution_map[kappah] == 0` in `soothing/linear_substitution_order.py` (`_is_kappah_zero`).
-#[must_use] 
+#[must_use]
 pub fn is_solution_nonzero_kappah(
     r: &EliminationResult,
     kappah: VarId,
@@ -149,7 +149,8 @@ fn validate_elimination_result(
                 "elimination validation: predicate error on original equation index {i}: {e}"
             ),
         };
-        assert!(ok, 
+        assert!(
+            ok,
             "elimination validation failed: original equation index {i} does not vanish under substitution"
         );
     });
@@ -165,7 +166,7 @@ fn validate_elimination_result(
 /// Returns [`EliminationError`] when a predicate fails ([`EliminationError::Predicate`]), an
 /// elimination step is illegitimate or degenerate, or I/O fails when tracing is enabled.
 pub fn linear_elimination_greedy(
-    system: PolynomialSystem,
+    system: &PolynomialSystem,
     cfg: &SampleConfig,
 ) -> Result<EliminationResult, EliminationError> {
     let original = system.clone();
@@ -242,7 +243,7 @@ pub fn linear_elimination_greedy(
 /// Same as [`linear_elimination_greedy`]: [`EliminationError`] from predicates, bad elimination
 /// steps, or I/O.
 pub fn dfs_linear_elimination<F>(
-    system: PolynomialSystem,
+    system: &PolynomialSystem,
     cfg: &SampleConfig,
     trace_writer: Option<&mut dyn Write>,
     is_solution: F,
@@ -259,12 +260,12 @@ where
         .collect();
     let subst = SubstitutionMap::new();
     let result = match trace_writer {
-        None => dfs_linear_elimination_inner(b, eq_roots, subst, cfg, None, None, &is_solution)?,
+        None => dfs_linear_elimination_inner(&b, eq_roots, subst, cfg, None, None, &is_solution)?,
         Some(w) => {
             let trace_w = RefCell::new(w);
             let trace_st = RefCell::new(EliminationTraceState::default());
             dfs_linear_elimination_inner(
-                b,
+                &b,
                 eq_roots,
                 subst,
                 cfg,
@@ -288,8 +289,13 @@ where
 ///
 /// Returns [`EliminationError::MissingKappah`] if the loaded system has no `kappah` variable, or any
 /// error from [`dfs_linear_elimination`].
+///
+/// # Panics
+///
+/// Panics if the index of `kappah` in `var_names` does not fit in `u32` (cannot occur when
+/// [`VarId`] indices match the platform’s normal variable counts).
 pub fn dfs_linear_elimination_solving_symbolic(
-    loaded: LoadedMathematicaSystem,
+    loaded: &LoadedMathematicaSystem,
     cfg: &SampleConfig,
     trace_writer: Option<&mut dyn Write>,
 ) -> Result<EliminationResult, EliminationError> {
@@ -299,13 +305,13 @@ pub fn dfs_linear_elimination_solving_symbolic(
         .position(|n| n == "kappah")
         .map(|i| VarId(u32::try_from(i).unwrap()))
         .ok_or(EliminationError::MissingKappah)?;
-    dfs_linear_elimination(loaded.system, cfg, trace_writer, |r| {
+    dfs_linear_elimination(&loaded.system, cfg, trace_writer, |r| {
         is_solution_nonzero_kappah(r, kappah, cfg)
     })
 }
 
 fn dfs_linear_elimination_inner<F>(
-    b: DagBuilder,
+    b: &DagBuilder,
     eq_roots: Vec<NodeId>,
     subst: SubstitutionMap,
     cfg: &SampleConfig,
@@ -374,8 +380,10 @@ where
             cfg,
         ) {
             Ok(()) => {}
-            Err(EliminationError::IllegitimateElimination { .. } |
-EliminationError::DegenerateSubstitution { .. }) => {
+            Err(
+                EliminationError::IllegitimateElimination { .. }
+                | EliminationError::DegenerateSubstitution { .. },
+            ) => {
                 branch_skips += 1;
                 continue;
             }
@@ -392,7 +400,7 @@ EliminationError::DegenerateSubstitution { .. }) => {
         }
 
         let r = dfs_linear_elimination_inner(
-            b_branch,
+            &b_branch,
             eq_branch,
             subst_branch,
             cfg,
@@ -473,8 +481,7 @@ fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleC
                 .collect();
             match is_zero(dag, r, &vs, cfg) {
                 Ok(true) => false,
-                Ok(false) => true,
-                Err(_) => true,
+                Ok(false) | Err(_) => true,
             }
         })
         .collect();

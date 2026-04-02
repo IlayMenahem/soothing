@@ -56,7 +56,7 @@ impl Parse for RationalGrammar {
 }
 
 pub(crate) fn parse_rational_expression(s: &str) -> Result<(Dag, NodeId), DagParseError> {
-    let block = RationalGrammar::parse_statements(s).map_err(|e| map_ap_error(s, e))?;
+    let block = RationalGrammar::parse_statements(s).map_err(|e| map_ap_error(s, &e))?;
     if !block.statements.is_empty() {
         return Err(DagParseError::Unsupported {
             reason: "only one expression is allowed (no semicolons or assignments)",
@@ -78,7 +78,7 @@ pub fn parse_rational_expression_with_var_map(
     s: &str,
     var_map: &HashMap<String, VarId>,
 ) -> Result<(Dag, NodeId), DagParseError> {
-    let block = RationalGrammar::parse_statements(s).map_err(|e| map_ap_error(s, e))?;
+    let block = RationalGrammar::parse_statements(s).map_err(|e| map_ap_error(s, &e))?;
     if !block.statements.is_empty() {
         return Err(DagParseError::Unsupported {
             reason: "only one expression is allowed (no semicolons or assignments)",
@@ -93,7 +93,7 @@ pub fn parse_rational_expression_with_var_map(
     Ok((builder.build(), root))
 }
 
-fn map_ap_error(s: &str, e: ApError) -> DagParseError {
+fn map_ap_error(s: &str, e: &ApError) -> DagParseError {
     let pos = e.location().location_offset();
     let char_at_pos = || s[pos..].chars().next().unwrap_or('\u{0}');
     match e.kind() {
@@ -104,10 +104,6 @@ fn map_ap_error(s: &str, e: ApError) -> DagParseError {
                 pos,
             }
         }
-        ApErrorKind::Literal(_) => DagParseError::InvalidNumber {
-            pos,
-            message: e.kind().to_string(),
-        },
         ApErrorKind::UnsupportedOp(_) => DagParseError::Unsupported {
             reason: "operator not available in this grammar",
             pos,

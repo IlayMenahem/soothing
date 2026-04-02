@@ -36,18 +36,18 @@ impl Dag {
         &self.nodes[id.0]
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
 
     /// Variables that occur in the subgraph at `root`, sorted by [`VarId`].
-    #[must_use] 
+    #[must_use]
     pub fn vars_in_root(&self, root: NodeId) -> Vec<VarId> {
         let mut seen_node = HashSet::new();
         let mut vars = BTreeSet::new();
@@ -71,7 +71,7 @@ impl Dag {
             Node::Const(_) | Node::ConstPi => {}
             Node::Add(cs) | Node::Mul(cs) => {
                 for c in cs {
-                    self.collect_vars_dfs(*c, seen_node, vars); 
+                    self.collect_vars_dfs(*c, seen_node, vars);
                 }
             }
             Node::Neg(x) => self.collect_vars_dfs(*x, seen_node, vars),
@@ -230,7 +230,7 @@ impl Default for DagBuilder {
 }
 
 impl DagBuilder {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
@@ -300,13 +300,13 @@ impl DagBuilder {
         self.intern_node(Node::Pow(base, exp))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn build(self) -> Dag {
         Dag { nodes: self.nodes }
     }
 
     /// Immutable snapshot of nodes built so far (for sharing with [`SubstitutionMap`]).
-    #[must_use] 
+    #[must_use]
     pub fn snapshot(&self) -> Dag {
         Dag {
             nodes: self.nodes.clone(),
