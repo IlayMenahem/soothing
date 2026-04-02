@@ -84,6 +84,7 @@ fn run_three_equation_demo(cfg: &SampleConfig) {
     println!();
 }
 
+#[allow(clippy::many_single_char_names)]
 fn run_two_linear_equations_demo(cfg: &SampleConfig) {
     println!("---");
     println!("Smaller example: two affine equations in x, y (fully linear).");

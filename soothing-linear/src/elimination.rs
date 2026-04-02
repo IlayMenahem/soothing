@@ -44,17 +44,19 @@ pub struct EliminationResult {
 }
 
 /// `true` when the residual system has no equations — default DFS acceptance predicate.
+#[must_use] 
 pub fn default_is_solution(r: &EliminationResult) -> bool {
     r.reduced_system.equations.is_empty()
 }
 
-/// Specialized symbolic acceptance predicate used to mirror the Python / SymPy solving stack.
+/// Specialized symbolic acceptance predicate used to mirror the Python / `SymPy` solving stack.
 ///
 /// This is an implementation-specific extension, not part of the paper's default elimination
 /// contract. It behaves like [`default_is_solution`], but if `kappah` appears in the substitution
 /// map, reject when its **fully expanded** RHS (after applying other bindings in
 /// [`SubstitutionMap::replay_order`]) is identically zero — matching SymPy’s
 /// `substitution_map[kappah] == 0` in `soothing/linear_substitution_order.py` (`_is_kappah_zero`).
+#[must_use] 
 pub fn is_solution_nonzero_kappah(
     r: &EliminationResult,
     kappah: VarId,
@@ -147,11 +149,9 @@ fn validate_elimination_result(
                 "elimination validation: predicate error on original equation index {i}: {e}"
             ),
         };
-        if !ok {
-            panic!(
-                "elimination validation failed: original equation index {i} does not vanish under substitution"
-            );
-        }
+        assert!(ok, 
+            "elimination validation failed: original equation index {i} does not vanish under substitution"
+        );
     });
 }
 
@@ -359,8 +359,8 @@ where
             cfg,
         ) {
             Ok(()) => {}
-            Err(EliminationError::IllegitimateElimination { .. })
-            | Err(EliminationError::DegenerateSubstitution { .. }) => {
+            Err(EliminationError::IllegitimateElimination { .. } |
+EliminationError::DegenerateSubstitution { .. }) => {
                 branch_skips += 1;
                 continue;
             }
@@ -371,8 +371,7 @@ where
             let mut out = cw.borrow_mut();
             writeln!(
                 &mut *out,
-                "branch var={:?} eq_index={} skips_before_success={}",
-                x, i, branch_skips
+                "branch var={x:?} eq_index={i} skips_before_success={branch_skips}"
             )?;
             out.flush()?;
         }
@@ -400,7 +399,7 @@ where
 /// Candidates where `is_linear_in` is true. Enumeration matches Python
 /// `linear_substitution_order._linear_substitution_candidates`: for each equation index in order,
 /// then each variable appearing in that equation, sorted by [`VarId`] (aligned with sorted
-/// `LoadedMathematicaSystem::var_names` and SymPy `default_sort_key` on simple identifiers).
+/// `LoadedMathematicaSystem::var_names` and `SymPy` `default_sort_key` on simple identifiers).
 ///
 /// Pairs for which the sampling predicate hard-errors are skipped.
 fn collect_linear_pairs(

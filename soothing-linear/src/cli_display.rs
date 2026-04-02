@@ -5,6 +5,7 @@ use crate::simplify::simplify_once;
 use crate::substitution::SubstitutionMap;
 
 /// Fold local rewrites so [`Dag::format_root`] is readable (DAGs from elimination are not minimal).
+#[must_use] 
 pub fn simplify_for_display(dag: &Dag, root: NodeId) -> (Dag, NodeId) {
     let mut cur_dag = dag.clone();
     let mut cur_root = root;

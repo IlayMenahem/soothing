@@ -46,7 +46,7 @@ const ZERO_TEST_ATTEMPT_MULTIPLIER: usize = 2;
 
 fn mix_seed(base: u64, a: usize, b: u32) -> u64 {
     base ^ (a as u64).wrapping_mul(0x9E37_79B9_1E35_1B03)
-        ^ (b as u64).wrapping_mul(0xC6BC_2796_92B5_C323)
+        ^ u64::from(b).wrapping_mul(0xC6BC_2796_92B5_C323)
 }
 
 fn rng_for_zero(cfg: &SampleConfig, root: NodeId) -> StdRng {
@@ -132,6 +132,7 @@ fn random_assignment_with_uvw(
 ///
 /// This uses a bounded retry budget so expressions that are defined only on a tiny subset of the
 /// sample space can still report `false`.
+#[must_use] 
 pub fn expr_finite_at_some_random_sample(
     dag: &Dag,
     root: NodeId,
@@ -275,6 +276,7 @@ pub struct LinearCoeffs {
 }
 
 /// Deterministic sample assignment for `vars` (for tests and call sites that need a fixed base).
+#[must_use] 
 pub fn assignment_seed(vars: &[VarId], seed: usize) -> HashMap<VarId, Q> {
     vars.par_iter()
         .enumerate()

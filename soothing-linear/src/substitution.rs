@@ -25,6 +25,7 @@ impl Default for SubstitutionMap {
 }
 
 impl SubstitutionMap {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             builder: DagBuilder::new(),
@@ -33,23 +34,28 @@ impl SubstitutionMap {
         }
     }
 
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.bindings.len()
     }
 
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.bindings.is_empty()
     }
 
+    #[must_use] 
     pub fn get(&self, v: VarId) -> Option<NodeId> {
         self.bindings.get(&v).copied()
     }
 
+    #[must_use] 
     pub fn contains(&self, v: VarId) -> bool {
         self.bindings.contains_key(&v)
     }
 
     /// Current DAG snapshot (all merged expressions).
+    #[must_use] 
     pub fn dag(&self) -> Dag {
         self.builder.snapshot()
     }
@@ -64,6 +70,7 @@ impl SubstitutionMap {
     }
 
     /// Variables in insertion order.
+    #[must_use] 
     pub fn insertion_order(&self) -> &[VarId] {
         &self.insertion
     }

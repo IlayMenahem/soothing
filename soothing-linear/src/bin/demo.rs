@@ -10,6 +10,7 @@ use soothing_linear::{
     simplify_for_display, Dag, DagBuilder, PolynomialSystem, SampleConfig, VarId, Q,
 };
 
+#[allow(clippy::many_single_char_names)]
 fn main() {
     println!("soothing-linear — linear elimination demo\n");
 
@@ -40,7 +41,7 @@ fn main() {
             }
         })
         .collect::<Result<_, _>>()
-        .unwrap_or_else(|_| std::process::exit(1));
+        .unwrap_or_else(|()| std::process::exit(1));
     let sys = PolynomialSystem::new(b.build(), equation_roots);
 
     println!("Initial system:");
@@ -95,8 +96,8 @@ fn main() {
             if free.is_empty() {
                 let assign: HashMap<VarId, Q> = HashMap::new();
                 match evaluate(&disp_dag, disp_root, &assign) {
-                    Ok(q) => println!("  {}: value (no free vars): {}", label, q),
-                    Err(e) => println!("  {}: (eval: {e:?})", label),
+                    Ok(q) => println!("  {label}: value (no free vars): {q}"),
+                    Err(e) => println!("  {label}: (eval: {e:?})"),
                 }
             } else {
                 println!(
@@ -115,7 +116,7 @@ fn main() {
                         .collect();
                     match evaluate(&disp_dag, disp_root, &assign) {
                         Ok(q) => println!("    [{}]  {}", binding.join(", "), q),
-                        Err(e) => println!("    (sample {}: {:?})", sample, e),
+                        Err(e) => println!("    (sample {sample}: {e:?})"),
                     }
                 });
             }
