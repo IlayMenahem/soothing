@@ -159,6 +159,11 @@ fn validate_elimination_result(
 ///
 /// At each step the **first** linear pair `(equation, variable)` in a fixed deterministic order is
 /// chosen (greedy). For search over orders, see [`dfs_linear_elimination`].
+///
+/// # Errors
+///
+/// Returns [`EliminationError`] when a predicate fails ([`EliminationError::Predicate`]), an
+/// elimination step is illegitimate or degenerate, or I/O fails when tracing is enabled.
 pub fn linear_elimination_greedy(
     system: PolynomialSystem,
     cfg: &SampleConfig,
@@ -231,6 +236,11 @@ pub fn linear_elimination_greedy(
 ///
 /// For the same stack as `python/scripts/solving_symbolic.py` and
 /// `tests/python_reference_simplified_mathematica.rs`, use [`dfs_linear_elimination_solving_symbolic`].
+///
+/// # Errors
+///
+/// Same as [`linear_elimination_greedy`]: [`EliminationError`] from predicates, bad elimination
+/// steps, or I/O.
 pub fn dfs_linear_elimination<F>(
     system: PolynomialSystem,
     cfg: &SampleConfig,
@@ -273,6 +283,11 @@ where
 ///
 /// This entry point is kept for symbolic parity with the Python stack; it is not the paper's
 /// default elimination API.
+///
+/// # Errors
+///
+/// Returns [`EliminationError::MissingKappah`] if the loaded system has no `kappah` variable, or any
+/// error from [`dfs_linear_elimination`].
 pub fn dfs_linear_elimination_solving_symbolic(
     loaded: LoadedMathematicaSystem,
     cfg: &SampleConfig,

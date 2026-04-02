@@ -85,6 +85,7 @@ fn max_var_id(dag: &Dag, root: NodeId, other_vars: &[VarId]) -> u32 {
 }
 
 /// Builds \(q = (p(w)-p(u))(v-u) - (p(v)-p(u))(w-u)\) with fresh `u,v,w` symbols (see paper).
+#[allow(clippy::similar_names)] // symmetric `p(w)-p(u)` and `p(v)-p(u)` factors
 fn build_linearity_q_polynomial(
     dag: &Dag,
     root: NodeId,
@@ -102,12 +103,12 @@ fn build_linearity_q_polynomial(
     let p_u = b.substitute_in_root(dag, root, x, nu);
     let p_v = b.substitute_in_root(dag, root, x, nv);
     let p_w = b.substitute_in_root(dag, root, x, nw);
-    let p_w_minus_p_u = b.sub(p_w, p_u);
-    let p_v_minus_p_u = b.sub(p_v, p_u);
+    let p_wu = b.sub(p_w, p_u);
+    let p_vu = b.sub(p_v, p_u);
     let v_minus_u = b.sub(nv, nu);
     let w_minus_u = b.sub(nw, nu);
-    let term1 = b.mul2(p_w_minus_p_u, v_minus_u);
-    let term2 = b.mul2(p_v_minus_p_u, w_minus_u);
+    let term1 = b.mul2(p_wu, v_minus_u);
+    let term2 = b.mul2(p_vu, w_minus_u);
     let q_root = b.sub(term1, term2);
     (b.build(), q_root, u_id, v_id, w_id)
 }
@@ -185,6 +186,11 @@ impl From<EvalError> for PredicateError {
 /// division failures are skipped so the same API can probe rational expressions without turning a
 /// sampled pole into a hard predicate error. If too many samples are undefined the predicate
 /// reports [`Ok(false)`].
+///
+/// # Errors
+///
+/// Returns [`PredicateError::InsufficientSamples`] when `cfg.zero_samples == 0`, and other
+/// [`PredicateError`] variants when evaluation fails in a way that is not treated as a skipped sample.
 pub fn is_zero(
     dag: &Dag,
     root: NodeId,
@@ -231,6 +237,10 @@ fn probabilistic_zero_on_assignments(
 /// Whether `p` is affine in `x`: builds the paper’s auxiliary polynomial `q` and runs the same
 /// sampled exact zero test as [`is_zero`] on `q` (see repository
 /// `paper/sections/substitution_map.tex`).
+///
+/// # Errors
+///
+/// Same as [`is_zero`]: [`PredicateError::InsufficientSamples`] when `cfg.zero_samples == 0`, etc.
 pub fn is_linear_in(
     dag: &Dag,
     root: NodeId,
@@ -250,6 +260,10 @@ pub fn is_linear_in(
 }
 
 /// Recover `a`, `b` with `p = a*x + b` in `x` (other variables fixed by `base`).
+///
+/// # Errors
+///
+/// Returns [`PredicateError`] when evaluation fails (missing variable, division by zero, etc.).
 pub fn recover_linear_coeffs(
     dag: &Dag,
     root: NodeId,

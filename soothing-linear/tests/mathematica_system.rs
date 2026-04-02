@@ -1,3 +1,5 @@
+#![allow(clippy::many_single_char_names)]
+
 use std::collections::HashSet;
 use std::path::Path;
 

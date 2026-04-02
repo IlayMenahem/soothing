@@ -1,7 +1,10 @@
 //! Predicate tests aligned with `tests/test_system_substitution.py` (`is_zero`, `is_linear_in_variable`).
 //! Rust predicates operate on DAGs (substitution is applied when building the DAG elsewhere).
 
+#![allow(clippy::many_single_char_names)]
+
 use num_traits::Zero;
+
 use soothing_linear::{
     assignment_seed, expr_finite_at_some_random_sample, is_linear_in, is_zero, q,
     recover_linear_coeffs, Dag, DagBuilder, NodeId, PredicateError, SampleConfig, VarId,

@@ -1,3 +1,5 @@
+#![allow(clippy::many_single_char_names)]
+
 use soothing_linear::{evaluate, q, simplify_once, Dag, DagBuilder, SimplifyError, VarId};
 use std::collections::HashMap;
 

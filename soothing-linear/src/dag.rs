@@ -173,12 +173,22 @@ impl Dag {
     /// - **Variables:** `vN` for `N` decimal digits maps to [`VarId`]`(N)`. Any other identifier
     ///   gets a fresh [`VarId`] on first occurrence (stable across the string).
     /// - **Operators:** `+`, `-` (binary and unary), `*`, `/`, `^` (right-associative), parentheses.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DagParseError`] when the input is not a valid rational expression (syntax, invalid
+    /// literals, trailing text, etc.).
     pub fn from_rational_string(s: &str) -> Result<(Dag, NodeId), DagParseError> {
         crate::dag_parse::parse_rational_expression(s)
     }
 
     /// Like [`from_rational_string`](Self::from_rational_string), but every identifier must appear in
     /// `var_map` (including `v0`-style names if used).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DagParseError`] on the same conditions as [`from_rational_string`](Self::from_rational_string),
+    /// and additionally [`DagParseError::UnknownVariable`] when a name is not present in `var_map`.
     pub fn from_rational_string_with_var_map(
         s: &str,
         var_map: &std::collections::HashMap<String, VarId>,

@@ -22,6 +22,11 @@ pub enum SimplifyError {
 }
 
 /// One bottom-up pass: copy `source` into `builder`, simplifying each shared subexpression once.
+///
+/// # Errors
+///
+/// Returns [`SimplifyError`] when constant folding hits division by zero, non-integer powers where
+/// required, or otherwise undefined exponentiation.
 pub fn simplify_once(
     builder: &mut DagBuilder,
     source: &Dag,

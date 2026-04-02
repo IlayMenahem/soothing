@@ -1,3 +1,5 @@
+#![allow(clippy::many_single_char_names)]
+
 //! Parity with `python/scripts/solving_symbolic.py` on `systems/simplified_mathematica_system.txt`:
 //! same DFS outcome as `best_linear_substitutions_order` — remaining equations, elimination count
 //! (`n_initial - n_remaining`), free-variable count, and substitution size.

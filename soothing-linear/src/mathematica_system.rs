@@ -263,6 +263,11 @@ pub struct LoadedMathematicaSystem {
 }
 
 /// Parse a Mathematica list of rules into a polynomial system and variable names (`equation = 0` per rule).
+///
+/// # Errors
+///
+/// Returns [`MathematicaLoadError`] for empty input, malformed rules, I/O when reading is involved, or
+/// parse failures as [`MathematicaLoadError::DagParse`].
 pub fn load_mathematica_system_from_str_with_var_names(
     text: &str,
 ) -> Result<LoadedMathematicaSystem, MathematicaLoadError> {
@@ -290,6 +295,10 @@ pub fn load_mathematica_system_from_str_with_var_names(
 }
 
 /// Parse a Mathematica list of rules into a polynomial system (`equation = 0` for each rule).
+///
+/// # Errors
+///
+/// Same as [`load_mathematica_system_from_str_with_var_names`].
 pub fn load_mathematica_system_from_str(
     text: &str,
 ) -> Result<PolynomialSystem, MathematicaLoadError> {
@@ -297,6 +306,10 @@ pub fn load_mathematica_system_from_str(
 }
 
 /// Read UTF-8 from `path` and [`load_mathematica_system_from_str_with_var_names`].
+///
+/// # Errors
+///
+/// Propagates I/O errors and any error from [`load_mathematica_system_from_str_with_var_names`].
 pub fn load_mathematica_system_from_path_with_var_names(
     path: &Path,
 ) -> Result<LoadedMathematicaSystem, MathematicaLoadError> {
@@ -305,6 +318,10 @@ pub fn load_mathematica_system_from_path_with_var_names(
 }
 
 /// Read UTF-8 from `path` and [`load_mathematica_system_from_str`].
+///
+/// # Errors
+///
+/// Same as [`load_mathematica_system_from_path_with_var_names`].
 pub fn load_mathematica_system_from_path(
     path: &Path,
 ) -> Result<PolynomialSystem, MathematicaLoadError> {

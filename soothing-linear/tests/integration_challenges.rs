@@ -1,7 +1,10 @@
 //! Heavier scenarios aligned with `tests/` Python coverage: multi-step elimination,
 //! partial linear systems, residuals, and DAG utilities.
 
+#![allow(clippy::many_single_char_names)]
+
 use num_traits::Zero;
+
 use soothing_linear::{
     evaluate, linear_elimination_greedy, q, Dag, DagBuilder, EliminationError, PolynomialSystem,
     SampleConfig, VarId, Q,
@@ -93,10 +96,10 @@ fn quadratic_systems_stall_without_linearities() {
     let y2 = b.mul(vec![vy, vy]);
     let sum = b.add(vec![x2, y2]);
     let c1 = b.constant(q(1, 1));
-    let neg_c1 = b.neg(c1);
-    let e0 = b.add(vec![sum, neg_c1]);
-    let neg_y2 = b.neg(y2);
-    let diff = b.add(vec![x2, neg_y2]);
+    let minus_one = b.neg(c1);
+    let e0 = b.add(vec![sum, minus_one]);
+    let minus_y_squared = b.neg(y2);
+    let diff = b.add(vec![x2, minus_y_squared]);
     let d = b.build();
     let sys = PolynomialSystem::new(d, vec![e0, diff]);
     let r = linear_elimination_greedy(sys, &default_cfg()).unwrap();
@@ -150,9 +153,9 @@ fn substitution_residuals_vanish_for_single_linear_equation() {
                 a.insert(v, val);
             }
         }
-        let vx_val = a.get(&x).unwrap().clone();
-        let vy_val = a.get(&y).unwrap().clone();
-        assert_eq!(vx_val + q(2, 1) * vy_val, Q::zero());
+        let value_at_x = a.get(&x).unwrap().clone();
+        let value_at_y = a.get(&y).unwrap().clone();
+        assert_eq!(value_at_x + q(2, 1) * value_at_y, Q::zero());
     }
 }
 

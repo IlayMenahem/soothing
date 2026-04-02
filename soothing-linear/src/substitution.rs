@@ -76,6 +76,10 @@ impl SubstitutionMap {
     }
 
     /// Topological order: if `u` appears inside the expression for `v`, then `u` comes before `v`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SubstitutionError::Cycle`] when bindings contain a cyclic dependency.
     pub fn replay_order(&self) -> Result<Vec<VarId>, SubstitutionError> {
         let dag = self.builder.snapshot();
         let mut deps: HashMap<VarId, Vec<VarId>> = HashMap::new();

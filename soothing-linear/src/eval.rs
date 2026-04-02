@@ -18,6 +18,16 @@ pub enum EvalError {
 }
 
 /// Evaluate the expression at `root` using `assignment` for variables.
+///
+/// # Errors
+///
+/// Returns [`EvalError::MissingVariable`] if a variable in the subgraph is absent from `assignment`,
+/// [`EvalError::DivisionByZero`] for a zero divisor, and [`EvalError::NonIntegerExponent`] when a
+/// power requires a non-integer exponent in `Q`.
+///
+/// # Panics
+///
+/// Panics if `root` does not receive a value after topological evaluation (internal DAG invariant).
 pub fn evaluate(dag: &Dag, root: NodeId, assignment: &HashMap<VarId, Q>) -> Result<Q, EvalError> {
     let order = topological_order(dag, root);
     let mut values: Vec<Option<Q>> = vec![None; dag.len()];

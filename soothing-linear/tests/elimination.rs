@@ -1,6 +1,9 @@
+#![allow(clippy::many_single_char_names)]
+
 use std::collections::HashMap;
 
 use num_traits::Zero;
+
 use soothing_linear::{
     default_is_solution, dfs_linear_elimination, evaluate, is_solution_nonzero_kappah,
     linear_elimination_greedy, q, Dag, DagBuilder, EliminationResult, PolynomialSystem,
@@ -91,7 +94,7 @@ fn affine_tautology_drops_equation_without_substitution() {
     );
 }
 
-/// Paper case \(a \neq 0\): substitute \(x \mapsto -b/a\) (here \(3 v_0 + v_1 = 0 \Rightarrow v_0 = -v_1/3\) when \(v_0\) is eliminated first).
+/// Paper case with nonzero slope: substitution matches \(-b/a\) (e.g. `3*v0 + v1` implies `v0 = -v1/3` when `v0` is eliminated first).
 #[test]
 fn nonzero_slope_substitution_satisfies_original_linear_equation() {
     let (dag, root) = Dag::from_rational_string("3 * v0 + v1").unwrap();
