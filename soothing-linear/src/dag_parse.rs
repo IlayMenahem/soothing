@@ -140,17 +140,17 @@ fn var_for_ident(
     name: &str,
     name_to_var: &mut HashMap<String, VarId>,
     next_free: &mut u32,
-) -> Result<VarId, DagParseError> {
+) -> VarId {
     if let Some(id) = var_id_from_v_digits(name) {
-        return Ok(id);
+        return id;
     }
     if let Some(&id) = name_to_var.get(name) {
-        return Ok(id);
+        return id;
     }
     let id = VarId(*next_free);
     *next_free = next_free.saturating_add(1);
     name_to_var.insert(name.to_string(), id);
-    Ok(id)
+    id
 }
 
 fn lower_expr_allocating(
@@ -167,7 +167,7 @@ fn lower_expr_allocating(
             if name == "pi" {
                 return Ok(b.const_pi());
             }
-            let v = var_for_ident(name, name_to_var, next_free)?;
+            let v = var_for_ident(name, name_to_var, next_free);
             Ok(b.variable(v))
         }
         Expr::Unary { op, inner } => match op.extra {

@@ -251,9 +251,9 @@ fn fold_const_pow(base: Q, exp: &Q) -> Result<Q, SimplifyError> {
     q_pow_integer(base, exp.numer()).ok_or(SimplifyError::UndefinedPower)
 }
 
-fn construct_add(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, SimplifyError> {
+fn construct_add(b: &mut DagBuilder, parts: &[NodeId]) -> NodeId {
     let mut flat = Vec::new();
-    flatten_add(b, &parts, &mut flat);
+    flatten_add(b, parts, &mut flat);
 
     if flat.iter().all(|&id| matches!(b.node(id), Node::Const(_))) {
         let s: Q = flat
@@ -263,7 +263,7 @@ fn construct_add(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
                 _ => unreachable!(),
             })
             .sum();
-        return Ok(b.constant(s));
+        return b.constant(s);
     }
 
     flat.retain(|&id| !matches!(b.node(id), Node::Const(c) if c.is_zero()));
@@ -273,16 +273,16 @@ fn construct_add(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
     rebuilt = merge_const_summands(b, rebuilt);
 
     let out = match rebuilt.len() {
-        0 => return Ok(b.constant(q_zero())),
-        1 => return Ok(rebuilt[0]),
+        0 => return b.constant(q_zero()),
+        1 => return rebuilt[0],
         _ => rebuilt,
     };
 
     if let Some((coeffs, ct)) = try_affine_sum_parts(b, &out) {
-        return Ok(affine_to_node(b, coeffs, ct));
+        return affine_to_node(b, coeffs, ct);
     }
 
-    Ok(b.add(out))
+    b.add(out)
 }
 
 fn construct_mul(b: &mut DagBuilder, parts: &[NodeId]) -> Result<NodeId, SimplifyError> {
@@ -354,10 +354,10 @@ fn construct_mul(b: &mut DagBuilder, parts: &[NodeId]) -> Result<NodeId, Simplif
     Ok(r)
 }
 
-fn construct_neg(b: &mut DagBuilder, x: NodeId) -> Result<NodeId, SimplifyError> {
+fn construct_neg(b: &mut DagBuilder, x: NodeId) -> NodeId {
     match b.node(x) {
-        Node::Const(c) => Ok(b.constant(-c.clone())),
-        Node::Neg(y) => Ok(*y),
+        Node::Const(c) => b.constant(-c.clone()),
+        Node::Neg(y) => *y,
         _ => {
             if let Some((m, c)) = try_affine_linear(b, x) {
                 let nm: BTreeMap<_, _> = m
@@ -367,9 +367,9 @@ fn construct_neg(b: &mut DagBuilder, x: NodeId) -> Result<NodeId, SimplifyError>
                         (!nv.is_zero()).then_some((k, nv))
                     })
                     .collect();
-                return Ok(affine_to_node(b, nm, -c));
+                return affine_to_node(b, nm, -c);
             }
-            Ok(b.neg(x))
+            b.neg(x)
         }
     }
 }
@@ -484,14 +484,14 @@ fn simplify_dfs(
         Node::Var(v) => b.variable(*v),
         Node::Neg(x) => {
             let y = simplify_dfs(b, source, *x, memo)?;
-            construct_neg(b, y)?
+            construct_neg(b, y)
         }
         Node::Add(cs) => {
             let parts: Vec<NodeId> = cs
                 .iter()
                 .map(|c| simplify_dfs(b, source, *c, memo))
                 .collect::<Result<_, _>>()?;
-            construct_add(b, parts)?
+            construct_add(b, &parts)
         }
         Node::Mul(cs) => {
             let parts: Vec<NodeId> = cs
