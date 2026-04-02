@@ -297,7 +297,7 @@ pub fn dfs_linear_elimination_solving_symbolic(
         .var_names
         .iter()
         .position(|n| n == "kappah")
-        .map(|i| VarId(i as u32))
+        .map(|i| VarId(u32::try_from(i).unwrap()))
         .ok_or(EliminationError::MissingKappah)?;
     dfs_linear_elimination(loaded.system, cfg, trace_writer, |r| {
         is_solution_nonzero_kappah(r, kappah, cfg)
@@ -559,7 +559,9 @@ fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
             }
             Node::Const(_) | Node::ConstPi => {}
             Node::Add(cs) | Node::Mul(cs) => {
-                cs.iter().for_each(|c| stack.push(*c));
+                for c in cs {
+                    stack.push(*c);
+                }
             }
             Node::Neg(x) => stack.push(*x),
             Node::Div(n, d) => {

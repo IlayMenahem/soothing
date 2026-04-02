@@ -99,7 +99,9 @@ fn dfs_post(dag: &Dag, id: NodeId, visited: &mut HashSet<NodeId>, out: &mut Vec<
     match dag.node(id) {
         Node::Const(_) | Node::ConstPi | Node::Var(_) => {}
         Node::Add(cs) | Node::Mul(cs) => {
-            cs.iter().for_each(|c| dfs_post(dag, *c, visited, out));
+            for c in cs {
+                dfs_post(dag, *c, visited, out);
+            }
         }
         Node::Neg(x) => dfs_post(dag, *x, visited, out),
         Node::Div(n, d) => {

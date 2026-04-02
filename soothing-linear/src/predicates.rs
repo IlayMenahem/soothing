@@ -145,7 +145,7 @@ pub fn expr_finite_at_some_random_sample(
         let mut rng = StdRng::seed_from_u64(mix_seed(
             cfg.random_seed.wrapping_add(attempt as u64),
             root.0,
-            attempt as u32,
+            u32::try_from(attempt).unwrap(),
         ));
         let a = random_assignment_q(free_vars, &mut rng);
         evaluate(dag, root, &a).is_ok()

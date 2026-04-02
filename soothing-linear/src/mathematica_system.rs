@@ -214,7 +214,7 @@ fn build_var_map(names: &[String]) -> HashMap<String, VarId> {
     names
         .iter()
         .enumerate()
-        .map(|(i, n)| (n.clone(), VarId(i as u32)))
+        .map(|(i, n)| (n.clone(), VarId(u32::try_from(i).unwrap())))
         .collect()
 }
 

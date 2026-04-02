@@ -58,13 +58,13 @@ fn flatten_mul(b: &DagBuilder, ids: &[NodeId], out: &mut Vec<NodeId>) {
 }
 
 fn merge_coeff_maps(into: &mut BTreeMap<VarId, Q>, add: &BTreeMap<VarId, Q>) {
-    add.iter().for_each(|(&v, c)| {
+    for (&v, c) in add {
         let e = into.entry(v).or_insert_with(q_zero);
         *e += c.clone();
         if e.is_zero() {
             into.remove(&v);
         }
-    });
+    }
 }
 
 fn try_affine_linear(b: &DagBuilder, id: NodeId) -> Option<(BTreeMap<VarId, Q>, Q)> {
@@ -77,9 +77,9 @@ fn try_affine_linear(b: &DagBuilder, id: NodeId) -> Option<(BTreeMap<VarId, Q>, 
         }
         Node::Neg(x) => {
             let (mut m, c) = try_affine_linear(b, *x)?;
-            m.values_mut().for_each(|coef| {
+            for coef in m.values_mut() {
                 *coef = -coef.clone();
-            });
+            }
             m.retain(|_, k| !k.is_zero());
             Some((m, -c))
         }
@@ -244,7 +244,7 @@ fn peel_sign_factor(b: &mut DagBuilder, mut id: NodeId) -> (NodeId, bool) {
     }
 }
 
-fn fold_const_pow(base: Q, exp: Q) -> Result<Q, SimplifyError> {
+fn fold_const_pow(base: Q, exp: &Q) -> Result<Q, SimplifyError> {
     if !exp.is_integer() {
         return Err(SimplifyError::NonIntegerExponent);
     }
@@ -285,9 +285,9 @@ fn construct_add(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
     Ok(b.add(out))
 }
 
-fn construct_mul(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, SimplifyError> {
+fn construct_mul(b: &mut DagBuilder, parts: &[NodeId]) -> Result<NodeId, SimplifyError> {
     let mut flat = Vec::new();
-    flatten_mul(b, &parts, &mut flat);
+    flatten_mul(b, parts, &mut flat);
 
     if flat.iter().all(|&id| matches!(b.node(id), Node::Const(_))) {
         let p = flat
@@ -325,8 +325,8 @@ fn construct_mul(b: &mut DagBuilder, parts: Vec<NodeId>) -> Result<NodeId, Simpl
 
     if !dens.is_empty() {
         nums.extend(plain);
-        let n = construct_mul(b, nums)?;
-        let d = construct_mul(b, dens)?;
+        let n = construct_mul(b, &nums)?;
+        let d = construct_mul(b, &dens)?;
         return construct_div(b, n, d);
     }
 
@@ -414,8 +414,8 @@ fn construct_div(b: &mut DagBuilder, nn: NodeId, dd: NodeId) -> Result<NodeId, S
         _ => None,
     };
     if let Some((a, bn, c, dn)) = nested_fracs {
-        let num = construct_mul(b, vec![a, dn])?;
-        let den = construct_mul(b, vec![bn, c])?;
+        let num = construct_mul(b, &[a, dn])?;
+        let den = construct_mul(b, &[bn, c])?;
         let r = construct_div(b, num, den)?;
         return Ok(apply_div_sign(b, r, sign_flip));
     }
@@ -433,7 +433,7 @@ fn construct_div(b: &mut DagBuilder, nn: NodeId, dd: NodeId) -> Result<NodeId, S
 
 fn construct_pow(b: &mut DagBuilder, base: NodeId, exp: NodeId) -> Result<NodeId, SimplifyError> {
     if let (Some(bc), Some(ec)) = (try_const(b, base), try_const(b, exp)) {
-        return Ok(b.constant(fold_const_pow(bc, ec)?));
+        return Ok(b.constant(fold_const_pow(bc, &ec)?));
     }
 
     if let Some(bc) = try_const(b, base) {
@@ -459,7 +459,7 @@ fn construct_pow(b: &mut DagBuilder, base: NodeId, exp: NodeId) -> Result<NodeId
         if ec.is_zero() {
             if let Some(bc) = try_const(b, base) {
                 if bc.is_zero() {
-                    return Ok(b.constant(fold_const_pow(bc, ec)?));
+                    return Ok(b.constant(fold_const_pow(bc, &ec)?));
                 }
                 return Ok(b.constant(q_one()));
             }
@@ -498,7 +498,7 @@ fn simplify_dfs(
                 .iter()
                 .map(|c| simplify_dfs(b, source, *c, memo))
                 .collect::<Result<_, _>>()?;
-            construct_mul(b, parts)?
+            construct_mul(b, &parts)?
         }
         Node::Div(n, d) => {
             let nn = simplify_dfs(b, source, *n, memo)?;
