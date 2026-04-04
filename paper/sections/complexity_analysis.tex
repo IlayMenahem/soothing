@@ -7,7 +7,7 @@ This section analyzes the cost of the operations introduced in the previous sect
 The basic subroutine is evaluation of a represented expression.
 
 \begin{lemma}
-    Evaluating the expression represented by $G$ at a fixed assignment takes $O(|G|)$ time.
+  Evaluating the expression represented by $G$ at a fixed assignment takes $O(|G|)$ time.
 \end{lemma}
 \begin{proof}
   The evaluation algorithm processes the nodes of $G$ in topological order.
@@ -46,11 +46,11 @@ We assume that arithmetic in the base field and memoized node lookup both take c
 \end{lemma}
 
 \begin{proof}
-Let $(p,x)$ be the chosen pair. By the previous lemma, testing whether $p$ is linear in $x$ and recovering the coefficients needed to solve for $x$ cost $O(|p|)$. Forming $p(0)$ and $p(1)$ and building the represented substitution
-\[
-  x \mapsto -\frac{b}{a}
-\]
-add only $O(|p|)$ work, since they duplicate or evaluate $p$ a constant number of times. Removing the active equations that have become zero costs $O(N_i)$, because each zero test is linear in the size of its DAG and the total size of the active equations is at most $N_i$. Since $|p| \leq N_i$, the whole step costs $O(N_i)$.
+  Let $(p,x)$ be the chosen pair. By the previous lemma, testing whether $p$ is linear in $x$ and recovering the coefficients needed to solve for $x$ cost $O(|p|)$. Forming $p(0)$ and $p(1)$ and building the represented substitution
+  \[
+    x \mapsto -\frac{b}{a}
+  \]
+  add only $O(|p|)$ work, since they duplicate or evaluate $p$ a constant number of times. Removing the active equations that have become zero costs $O(N_i)$, because each zero test is linear in the size of its DAG and the total size of the active equations is at most $N_i$. Since $|p| \leq N_i$, the whole step costs $O(N_i)$.
 \end{proof}
 
 Moreover, the substitution is stored symbolically rather than expanded through all active equations, so one successful elimination step adds only a constant number of represented expressions derived from $p$. Hence there is a constant $K$ such that
@@ -65,7 +65,7 @@ Moreover, the substitution is stored symbolically rather than expanded through a
   \]
 \end{theorem}
 \begin{proof}
-  First note that for $c_0 = 1 + K$ we have $N_{i+1} \leq c_0 N_i$ for every successful elimination step; iterating gives $N_d \leq c_0^d N_0$. 
+  First note that for $c_0 = 1 + K$ we have $N_{i+1} \leq c_0 N_i$ for every successful elimination step; iterating gives $N_d \leq c_0^d N_0$.
   Since each step costs $O(N_i)$, the total runtime is $O(\sum_{i=0}^{d-1} N_i) = O(N_0 c_0^d)$.
 \end{proof}
 

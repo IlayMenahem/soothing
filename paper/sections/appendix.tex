@@ -15,6 +15,7 @@ additional side conditions.
   \item $x_1 \cdot \ldots \cdot 0 \cdot \ldots \cdot x_n \mapsto 0$
   \item $((-1)^{n_1} \cdot x_1) \cdot \ldots \cdot ((-1)^{n_k} \cdot x_k) \mapsto (-1)^{n_1 + \ldots + n_k} \cdot (x_1 \cdot \ldots \cdot x_k)$ where $n_i$ are integers
   \item $\frac{x}{1} \mapsto x$
+  \item $\frac{x}{y} \cdot z \mapsto \frac{x \cdot z}{y}$
   \item $\frac{-x}{y} \mapsto -\frac{x}{y}$
   \item $\frac{x}{-y} \mapsto -\frac{x}{y}$
   \item $\frac{-x}{-y} \mapsto \frac{x}{y}$
@@ -39,41 +40,18 @@ additional side conditions.
 
 \paragraph{Local simplifications algorithm.}
 
-To apply all the local simplifications efficiently in a single pass over the expression DAG, we use a bottom-up traversal with memoization. This ensures that every unique subexpression is simplified exactly once, and that parent nodes are simplified only after their children have been fully simplified. The \textsc{ConstructAndSimplify} function acts as a ``smart constructor'' that applies the local simplification rules to a node given its already-simplified children.
+To apply all the local simplifications, we use a fixed-point algorithm over the expression DAG. 
+First we find all the local simplifications that can be applied to the DAG.
+Then while there are still local simplifications that can be applied, we apply them and look at the changed nodes to see if they introduce new possible simplifications.
 
-When multiple simplification rules could apply within the smart constructor, they are evaluated in the following preference order to ensure termination and maximal simplification:
+If there are multiple possible simplifications, we apply them in the following order of precedence:
 \begin{enumerate}
   \item \textbf{Flattening:} For associative operations (addition and multiplication), flatten nested identical operations. This exposes all operands to the subsequent steps.
-  \item \textbf{Constant folding:} If all operands are constants, immediately compute the result.
+  \item \textbf{Combining like terms:} Group constants together (partial constant folding among siblings) and combine affine terms (e.g., $a\cdot x + b\cdot x \mapsto (a+b)\cdot x$).
   \item \textbf{Annihilators and Identities:} Apply rules involving $0$ and $1$ (e.g., $x \cdot 0 \mapsto 0$, $x + 0 \mapsto x$, $x^1 \mapsto x$).
   \item \textbf{Sign and Fraction Normalization:} Push negations down or pull them up consistently, and simplify fractions (e.g., $-(-x) \mapsto x$, $\frac{-x}{-y} \mapsto \frac{x}{y}$).
-  \item \textbf{Combining like terms:} Group constants together (partial constant folding among siblings) and combine affine terms (e.g., $a\cdot x + b\cdot x \mapsto (a+b)\cdot x$).
+  \item \textbf{Constant folding:} If all operands are constants, immediately compute the result.
 \end{enumerate}
-
-\begin{algorithm}[H]
-  \caption{Bottom-up DAG simplification}
-  \label{alg:dag-simplification}
-  \begin{algorithmic}[1]
-    \Require DAG node $v$, memoization cache $C$
-    \Ensure A fully simplified DAG node
-    \Function{Simplify}{$v, C$}
-    \If{$v \in C$}
-    \State \Return $C[v]$
-    \EndIf
-    \If{$v$ is a variable or constant}
-    \State $C[v] \gets v$
-    \State \Return $v$
-    \EndIf
-    \State Let $u_1, \dots, u_k$ be the children of $v$
-    \For{$i = 1 \dots k$}
-    \State $u'_i \gets \Call{Simplify}{u_i, C}$
-    \EndFor
-    \State $v' \gets \Call{ConstructAndSimplify}{\text{operation of } v, u'_1, \dots, u'_k}$
-    \State $C[v] \gets v'$
-    \State \Return $v'$
-    \EndFunction
-  \end{algorithmic}
-\end{algorithm}
 
 \subsection*{DFS for linear elimination order}
 
