@@ -8,32 +8,33 @@ additional side conditions.
 
 \paragraph{Always safe local simplifications.}
 \begin{itemize}
-    \item $x_1 + \ldots + 0 + \ldots + x_n \mapsto x_1 + \ldots + x_n$
-    \item $x_1 + \ldots + x + \ldots + (-x) + \ldots + x_n \mapsto x_1 + \ldots + x_n$
-    \item $-(-x) \mapsto x$
-    \item $x_1 \cdot \ldots \cdot 1 \cdot \ldots \cdot x_n \mapsto x_1 \cdot \ldots \cdot x_n$
-    \item $x_1 \cdot \ldots \cdot 0 \cdot \ldots \cdot x_n \mapsto 0$
-    \item $((-1)^{n_1} \cdot x_1) \cdot \ldots \cdot ((-1)^{n_k} \cdot x_k) \mapsto (-1)^{n_1 + \ldots + n_k} \cdot (x_1 \cdot \ldots \cdot x_k)$ when $n_i$ are integers
-    \item $\frac{x}{1} \mapsto x$
-    \item $\frac{-x}{y} \mapsto -\frac{x}{y}$
-    \item $\frac{x}{-y} \mapsto -\frac{x}{y}$
-    \item $\frac{-x}{-y} \mapsto \frac{x}{y}$
-    \item $\frac{x_1}{y_1} \cdot \ldots \cdot \frac{x_n}{y_n} \mapsto \frac{x_1 \cdot \ldots \cdot x_n}{y_1 \cdot \ldots \cdot y_n}$
-    \item $\frac{\frac{x}{y}}{\frac{z}{w}} \mapsto \frac{x \cdot w}{y \cdot z}$
-    \item $x^1 \mapsto x$
-    \item $1^n \mapsto 1$
-    \item constant folding for addition, multiplication, division, and powers whenever the result is defined, if the result is undefined give an error.
-    \item flatten nested additions and multiplications: $x_1 + \ldots + (y_1 + \ldots + y_m) + \ldots + x_n \mapsto x_1 + \ldots + y_1 + \ldots + y_m + \ldots + x_n$
-    \item combine affine terms: $a_1 \cdot x + \ldots + a_k \cdot x \mapsto (a_1 + \ldots + a_k) \cdot x$ when $a_i$ are constants
+  \item $x_1 + \ldots + 0 + \ldots + x_n \mapsto x_1 + \ldots + x_n$
+  \item $x_1 + \ldots + x + \ldots + (-x) + \ldots + x_n \mapsto x_1 + \ldots + x_n$
+  \item $-(-x) \mapsto x$
+  \item $x_1 \cdot \ldots \cdot 1 \cdot \ldots \cdot x_n \mapsto x_1 \cdot \ldots \cdot x_n$
+  \item $x_1 \cdot \ldots \cdot 0 \cdot \ldots \cdot x_n \mapsto 0$
+  \item $((-1)^{n_1} \cdot x_1) \cdot \ldots \cdot ((-1)^{n_k} \cdot x_k) \mapsto (-1)^{n_1 + \ldots + n_k} \cdot (x_1 \cdot \ldots \cdot x_k)$ where $n_i$ are integers
+  \item $\frac{x}{1} \mapsto x$
+  \item $\frac{-x}{y} \mapsto -\frac{x}{y}$
+  \item $\frac{x}{-y} \mapsto -\frac{x}{y}$
+  \item $\frac{-x}{-y} \mapsto \frac{x}{y}$
+  \item $\frac{x_1}{y_1} \cdot \ldots \cdot \frac{x_n}{y_n} \mapsto \frac{x_1 \cdot \ldots \cdot x_n}{y_1 \cdot \ldots \cdot y_n}$
+  \item $\frac{\frac{x}{y}}{\frac{z}{w}} \mapsto \frac{x \cdot w}{y \cdot z}$
+  \item $x^1 \mapsto x$
+  \item $1^n \mapsto 1$
+  \item constant folding for addition, multiplication, division, and powers whenever the result is defined, if the result is undefined give an error.
+  \item flatten nested additions and multiplications: $x_1 + \ldots + (y_1 + \ldots + y_m) + \ldots + x_n \mapsto x_1 + \ldots + y_1 + \ldots + y_m + \ldots + x_n$
+  \item combine terms: $y_1 \cdot x + \ldots + y_k \cdot x \mapsto (y_1 + \ldots + y_k) \cdot x$
 \end{itemize}
 
 \paragraph{Local simplifications requiring side conditions.}
 \begin{itemize}
-    \item $\frac{x}{x} \mapsto 1$ if $x \neq 0$
-    \item $\frac{0}{y} \mapsto 0$ if $y \neq 0$
-    \item $\frac{x \cdot y}{x \cdot z} \mapsto \frac{y}{z}$ if $x \neq 0$ and $z \neq 0$
-    \item $x^0 \mapsto 1$ if $x \neq 0$, or if $0^0$ is defined by convention
-    \item $0^n \mapsto 0$ for positive integers $n$
+  \item $\frac{x}{x} \mapsto 1$ if $x \neq 0$
+  \item $\frac{0}{y} \mapsto 0$ if $y \neq 0$
+  \item $\frac{x \cdot y}{x \cdot z} \mapsto \frac{y}{z}$ if $x \neq 0$ and $z \neq 0$
+  \item $\frac{x_1 \cdot \ldots \cdot x_i \cdot \ldots \cdot x_n}{y_1 \cdot \ldots \cdot x_i \cdot \ldots \cdot y_m} \mapsto \frac{x_1 \cdot \ldots \cdot x_{i-1} \cdot x_{i+1} \cdot \ldots \cdot x_n}{y_1 \cdot \ldots \cdot y_{i-1} \cdot y_{i+1} \cdot \ldots \cdot y_m}$ if $x_i \neq 0$ and $y_i \neq 0$
+  \item $x^0 \mapsto 1$ if $x \neq 0$, or if $0^0$ is defined by convention
+  \item $0^n \mapsto 0$ for positive integers $n$
 \end{itemize}
 
 \paragraph{Local simplifications algorithm.}
@@ -42,36 +43,36 @@ To apply all the local simplifications efficiently in a single pass over the exp
 
 When multiple simplification rules could apply within the smart constructor, they are evaluated in the following preference order to ensure termination and maximal simplification:
 \begin{enumerate}
-    \item \textbf{Constant folding:} If all operands are constants, immediately compute the result.
-    \item \textbf{Flattening:} For associative operations (addition and multiplication), flatten nested identical operations. This exposes all operands to the subsequent steps.
-    \item \textbf{Annihilators and Identities:} Apply rules involving $0$ and $1$ (e.g., $x \cdot 0 \mapsto 0$, $x + 0 \mapsto x$, $x^1 \mapsto x$).
-    \item \textbf{Sign and Fraction Normalization:} Push negations down or pull them up consistently, and simplify fractions (e.g., $-(-x) \mapsto x$, $\frac{-x}{-y} \mapsto \frac{x}{y}$).
-    \item \textbf{Combining like terms:} Group constants together (partial constant folding among siblings) and combine affine terms (e.g., $a\cdot x + b\cdot x \mapsto (a+b)\cdot x$).
+  \item \textbf{Flattening:} For associative operations (addition and multiplication), flatten nested identical operations. This exposes all operands to the subsequent steps.
+  \item \textbf{Constant folding:} If all operands are constants, immediately compute the result.
+  \item \textbf{Annihilators and Identities:} Apply rules involving $0$ and $1$ (e.g., $x \cdot 0 \mapsto 0$, $x + 0 \mapsto x$, $x^1 \mapsto x$).
+  \item \textbf{Sign and Fraction Normalization:} Push negations down or pull them up consistently, and simplify fractions (e.g., $-(-x) \mapsto x$, $\frac{-x}{-y} \mapsto \frac{x}{y}$).
+  \item \textbf{Combining like terms:} Group constants together (partial constant folding among siblings) and combine affine terms (e.g., $a\cdot x + b\cdot x \mapsto (a+b)\cdot x$).
 \end{enumerate}
 
 \begin{algorithm}[H]
-\caption{Bottom-up DAG simplification}
-\label{alg:dag-simplification}
-\begin{algorithmic}[1]
-\Require DAG node $v$, memoization cache $C$
-\Ensure A fully simplified DAG node
-\Function{Simplify}{$v, C$}
+  \caption{Bottom-up DAG simplification}
+  \label{alg:dag-simplification}
+  \begin{algorithmic}[1]
+    \Require DAG node $v$, memoization cache $C$
+    \Ensure A fully simplified DAG node
+    \Function{Simplify}{$v, C$}
     \If{$v \in C$}
-        \State \Return $C[v]$
+    \State \Return $C[v]$
     \EndIf
     \If{$v$ is a variable or constant}
-        \State $C[v] \gets v$
-        \State \Return $v$
+    \State $C[v] \gets v$
+    \State \Return $v$
     \EndIf
     \State Let $u_1, \dots, u_k$ be the children of $v$
     \For{$i = 1 \dots k$}
-        \State $u'_i \gets \Call{Simplify}{u_i, C}$
+    \State $u'_i \gets \Call{Simplify}{u_i, C}$
     \EndFor
     \State $v' \gets \Call{ConstructAndSimplify}{\text{operation of } v, u'_1, \dots, u'_k}$
     \State $C[v] \gets v'$
     \State \Return $v'$
-\EndFunction
-\end{algorithmic}
+    \EndFunction
+  \end{algorithmic}
 \end{algorithm}
 
 \subsection*{DFS for linear elimination order}
@@ -82,33 +83,33 @@ elimination is possible. Only then do we backtrack and try a different
 elimination choice from an earlier step.
 
 \begin{algorithm}[H]
-\caption{DFS search for a linear elimination order}
-\label{alg:dfs-linear-elimination}
-\begin{algorithmic}[1]
-\Require Polynomial system $P$
-\Ensure A reduced system $Q$ together with a substitution map $\Sigma$
-\Function{DFSLinearElimination}{$P, \Sigma$}
+  \caption{DFS search for a linear elimination order}
+  \label{alg:dfs-linear-elimination}
+  \begin{algorithmic}[1]
+    \Require Polynomial system $P$
+    \Ensure A reduced system $Q$ together with a substitution map $\Sigma$
+    \Function{DFSLinearElimination}{$P, \Sigma$}
     \State $L \gets \{(p, x) \mid p \in P,\ p \text{ is linear in } x\}$
     \If{$L = \emptyset$ or $P = \emptyset$}
-        \State \Return $(P, \Sigma)$
+    \State \Return $(P, \Sigma)$
     \EndIf
     \State $B \gets (P, \Sigma)$
     \ForAll{$(p, x) \in L$}
-        \State solve $p = 0$ for $x$ to obtain $x \gets f(\hat{x})$
-        \State $P' \gets P$ with $x \gets f(\hat{x})$ substituted in every equation
-        \State remove zero equations from $P'$
-        \State $\Sigma' \gets \Sigma \cup \{x \mapsto f(\hat{x})\}$
-        \State $R \gets \Call{DFSLinearElimination}{P', \Sigma'}$
-        \If{$R = (\emptyset, \Sigma'')$ for some $\Sigma''$}
-            \State \Return $R$
-        \EndIf
-        \If{$R$ is better than $B$}
-            \State $B \gets R$
-        \EndIf
+    \State solve $p = 0$ for $x$ to obtain $x \gets f(\hat{x})$
+    \State $P' \gets P$ with $x \gets f(\hat{x})$ substituted in every equation
+    \State remove zero equations from $P'$
+    \State $\Sigma' \gets \Sigma \cup \{x \mapsto f(\hat{x})\}$
+    \State $R \gets \Call{DFSLinearElimination}{P', \Sigma'}$
+    \If{$R = (\emptyset, \Sigma'')$ for some $\Sigma''$}
+    \State \Return $R$
+    \EndIf
+    \If{$R$ is better than $B$}
+    \State $B \gets R$
+    \EndIf
     \EndFor
     \State \Return $B$
-\EndFunction
-\end{algorithmic}
+    \EndFunction
+  \end{algorithmic}
 \end{algorithm}
 
 Here ``better'' means that the resulting system has fewer
