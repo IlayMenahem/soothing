@@ -1,0 +1,74 @@
+\section*{Complexity Analysis}
+
+This section analyzes the cost of the operations introduced in the previous section.
+
+\subsection*{Cost of the primitive operations}
+
+The basic subroutine is evaluation of a represented expression.
+
+\begin{lemma}
+    Evaluating the expression represented by $G$ at a fixed assignment takes $O(|G|)$ time.
+\end{lemma}
+\begin{proof}
+  The evaluation algorithm processes the nodes of $G$ in topological order.
+  Each node is visited once, and each visit performs only constant-time work beyond combining the already computed values of its children.
+\end{proof}
+
+\subsection*{Cost of the tests from the substitution-map representation}
+
+\begin{lemma}
+  Let $p$ be a represented polynomial with DAG $G$.
+  \begin{enumerate}
+    \item Testing whether $p \equiv 0$ by evaluating it at $c$ sampled points takes $O(|G|)$ time.
+    \item Testing whether $p$ is linear in a chosen variable $x_1$ takes $O(|G|)$ time.
+    \item If $p$ is linear in $x_1$, recovering the represented coefficients $a$ and $b$ in
+      \[
+        p(x_1,\dots,x_n) = a x_1 + b
+      \]
+      by the identities $b = p(0,x_2,\dots,x_n)$ and $a = p(1,x_2,\dots,x_n) - p(0,x_2,\dots,x_n)$ takes $O(|G|)$ time.
+  \end{enumerate}
+\end{lemma}
+\begin{proof}
+  For the zero test, we perform $c$ evaluations of $G$, one at each sampled point thus the total cost is $O(|G| \cdot c) = O(|G|)$.
+
+  For the linearity test, we perform a zero test for a polynomial with a constant number of additional nodes, thus the total cost is $O(|G|)$.
+
+  Coefficient recovery involves a constant number of copies and evaluations of $G$, thus the total cost is $O(|G|)$.
+\end{proof}
+
+\subsection*{One elimination step and overall growth}
+
+Let $N(Q,\Sigma)$ denote the total number of DAG nodes appearing in the equations in $Q$ and the substitution map $\Sigma$.
+We assume that arithmetic in the base field and memoized node lookup both take constant time.
+
+\begin{lemma}
+  One elimination step starting from $(Q_i,\Sigma_i)$ has cost $O(N_i)$, where $N_i = N(Q_i,\Sigma_i)$.
+\end{lemma}
+
+\begin{proof}
+Let $(p,x)$ be the chosen pair. By the previous lemma, testing whether $p$ is linear in $x$ and recovering the coefficients needed to solve for $x$ cost $O(|p|)$. Forming $p(0)$ and $p(1)$ and building the represented substitution
+\[
+  x \mapsto -\frac{b}{a}
+\]
+add only $O(|p|)$ work, since they duplicate or evaluate $p$ a constant number of times. Removing the active equations that have become zero costs $O(N_i)$, because each zero test is linear in the size of its DAG and the total size of the active equations is at most $N_i$. Since $|p| \leq N_i$, the whole step costs $O(N_i)$.
+\end{proof}
+
+Moreover, the substitution is stored symbolically rather than expanded through all active equations, so one successful elimination step adds only a constant number of represented expressions derived from $p$. Hence there is a constant $K$ such that
+\[
+  N_{i+1} \leq N_i + K|p| \leq (1+K)N_i.
+\]
+
+\begin{theorem}
+  The total running time of the elimination phase is
+  \[
+    O\!\left(\sum_{i=0}^{d-1} N_i\right) = O(N_0 c_0^d).
+  \]
+\end{theorem}
+\begin{proof}
+  First note that for $c_0 = 1 + K$ we have $N_{i+1} \leq c_0 N_i$ for every successful elimination step; iterating gives $N_d \leq c_0^d N_0$. 
+  Since each step costs $O(N_i)$, the total runtime is $O(\sum_{i=0}^{d-1} N_i) = O(N_0 c_0^d)$.
+\end{proof}
+
+In summary, all basic operations are linear in the size of the current represented state.
+Each successful elimination step adds only a constant amount of new represented structure, because substitutions are kept symbolic instead of being expanded throughout the system.
+As a result, the represented state grows by at most a constant factor per step, and the total runtime is exponential in the elimination depth.
