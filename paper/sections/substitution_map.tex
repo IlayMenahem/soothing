@@ -107,7 +107,10 @@ For the operation ``linearly eliminate a variable from a polynomial'', suppose t
 \[
 a x_1 + b = 0,
 \]
-where $x$ is the variable to be eliminated. Since the equation is linear in $x$, both $a$ and $b$ may depend on the other variables but not on $x$. These coefficients can be recovered by evaluation: $b = p(0, x_2, \dots, x_n)$ and $a = p(1, x_2, \dots, x_n) - p(0, x_2, \dots, x_n)$. 
+where $x$ is the variable to be eliminated. Since the equation is linear in $x$, both $a$ and $b$ may depend on the other variables but not on $x$. 
+These coefficients can be recovered by evaluation for $s, e, m \in \mathbb{F}$, $a = \frac{p(e, x_2, \dots, x_n) - p(s, x_2, \dots, x_n)}{e - s}$ and $b = p(m, x_2, \dots, x_n) - a m$.
+Usally we will choose $e = 1$ and $s = m = 0$, but we can choose other values to avoid division by zero.
+
 The substitution of $x$ will be divided into cases
 \begin{itemize}
     \item $a, b = 0$ we discard the equation
