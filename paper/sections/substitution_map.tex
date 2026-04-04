@@ -2,9 +2,9 @@
 
 For linear elimination we need to be able to do the following operations efficiently
 \begin{itemize}
-    \item is polynomial linear in a variable
-    \item is polynomial zero
-    \item linearly eliminate a variable from a polynomial
+  \item is polynomial linear in a variable
+  \item is polynomial zero
+  \item linearly eliminate a variable from a polynomial
 \end{itemize}
 
 To prevent an exponential blowup in the size of the equations, we store the current polynomial system in unexpanded form. Each polynomial expression is represented as a DAG, so common subexpressions are shared and elimination steps do not force an immediate expansion of all dependent equations. The algorithm therefore works directly with graph-represented polynomials.
@@ -18,25 +18,25 @@ The techniques outlined here can be immediately extended to rational functions.
 Let $G$ be a DAG representing a polynomial expression, and let $\alpha$ be an assignment of values to the variables occurring in $G$. To evaluate the represented expression, we process the nodes of $G$ in topological order, so that every child of a node is evaluated before the node itself.
 
 \begin{algorithm}[H]
-\caption{Evaluating a polynomial expression represented as a DAG}
-\begin{algorithmic}[1]
-\Require DAG $G$ with root $r$, and an assignment $\alpha$ of values to the variables of $G$
-\Ensure The value of the polynomial represented by $G$ at $\alpha$
-\For{each node $v$ of $G$ in topological order}
+  \caption{Evaluating a polynomial expression represented as a DAG}
+  \begin{algorithmic}[1]
+    \Require DAG $G$ with root $r$, and an assignment $\alpha$ of values to the variables of $G$
+    \Ensure The value of the polynomial represented by $G$ at $\alpha$
+    \For{each node $v$ of $G$ in topological order}
     \If{$v$ is a constant node with value $c$}
-        \State $\mathrm{val}(v) \gets c$
+    \State $\mathrm{val}(v) \gets c$
     \ElsIf{$v$ is a variable node labeled by $x$}
-        \State $\mathrm{val}(v) \gets \alpha(x)$
+    \State $\mathrm{val}(v) \gets \alpha(x)$
     \ElsIf{$v$ is an addition node with children $u_1,\dots,u_k$}
-        \State $\mathrm{val}(v) \gets \mathrm{val}(u_1) + \cdots + \mathrm{val}(u_k)$
+    \State $\mathrm{val}(v) \gets \mathrm{val}(u_1) + \cdots + \mathrm{val}(u_k)$
     \ElsIf{$v$ is a multiplication node with children $u_1,\dots,u_k$}
-        \State $\mathrm{val}(v) \gets \mathrm{val}(u_1)\cdots \mathrm{val}(u_k)$
+    \State $\mathrm{val}(v) \gets \mathrm{val}(u_1)\cdots \mathrm{val}(u_k)$
     \ElsIf{$v$ is a negation node with child $u$}
-        \State $\mathrm{val}(v) \gets -\mathrm{val}(u)$
+    \State $\mathrm{val}(v) \gets -\mathrm{val}(u)$
     \EndIf
-\EndFor
-\State \Return $\mathrm{val}(r)$
-\end{algorithmic}
+    \EndFor
+    \State \Return $\mathrm{val}(r)$
+  \end{algorithmic}
 \end{algorithm}
 
 Because the expression is represented as a DAG rather than a tree, a shared subexpression appears as a single node and is evaluated only once. The values computed at intermediate nodes can therefore be reused wherever that subexpression occurs, which makes repeated evaluations efficient and supports the tests for linearity and vanishing described above.
@@ -45,24 +45,24 @@ Because the expression is represented as a DAG rather than a tree, a shared sube
 For quick evaluation of polynomials, we will sample the random rational numbers $\frac{p}{q}$ such that $|p|, |q| < n$.
 
 \begin{lemma}
-    The number of destinct rational numbers we sample from is $4(\sum_{i=1}^{n} \phi(i)) - 1$, where $\phi(i)$ is the Euler's totient function. Asymptotically, this is $\frac{12}{\pi^2} n^2 + O(n \log n)$.
+  The number of destinct rational numbers we sample from is $4(\sum_{i=1}^{n} \phi(i)) - 1$, where $\phi(i)$ is the Euler's totient function. Asymptotically, this is $\frac{12}{\pi^2} n^2 + O(n \log n)$.
 \end{lemma}
 
 \begin{proof}
-    Consider the positive rational numbers $\frac{p}{q}$ in lowest terms (i.e., $\gcd(p, q) = 1$) such that $1 \le p, q \le n$. We can partition these into two sets: those where $p \le q$ and those where $p \ge q$. 
-    For a fixed denominator $q$, the number of numerators $p \le q$ coprime to $q$ is exactly Euler's totient function $\phi(q)$. Summing over all possible denominators $1 \le q \le n$, the number of fractions with $p \le q$ is $\sum_{i=1}^{n} \phi(i)$.
-    By symmetry, the number of fractions with $q \le p$ is also $\sum_{i=1}^{n} \phi(i)$. The only fraction counted twice is $\frac{1}{1}$, so the total number of strictly positive rational numbers is $2\sum_{i=1}^{n} \phi(i) - 1$.
-    
-    Since we can independently choose the sign of the rational number, there is an equal number of strictly negative rational numbers. Adding the single case of $0$ (represented as $\frac{0}{1}$), the total number of distinct rational numbers is:
-    \[
+  Consider the positive rational numbers $\frac{p}{q}$ in lowest terms (i.e., $\gcd(p, q) = 1$) such that $1 \le p, q \le n$. We can partition these into two sets: those where $p \le q$ and those where $p \ge q$.
+  For a fixed denominator $q$, the number of numerators $p \le q$ coprime to $q$ is exactly Euler's totient function $\phi(q)$. Summing over all possible denominators $1 \le q \le n$, the number of fractions with $p \le q$ is $\sum_{i=1}^{n} \phi(i)$.
+  By symmetry, the number of fractions with $q \le p$ is also $\sum_{i=1}^{n} \phi(i)$. The only fraction counted twice is $\frac{1}{1}$, so the total number of strictly positive rational numbers is $2\sum_{i=1}^{n} \phi(i) - 1$.
+
+  Since we can independently choose the sign of the rational number, there is an equal number of strictly negative rational numbers. Adding the single case of $0$ (represented as $\frac{0}{1}$), the total number of distinct rational numbers is:
+  \[
     2 \left( 2\sum_{i=1}^{n} \phi(i) - 1 \right) + 1 = 4\sum_{i=1}^{n} \phi(i) - 1.
-    \]
-    
-    For the asymptotic bound, it is a well-known result in number theory \cite{hardy2008introduction} that the summatory totient function grows as:
-    \[
+  \]
+
+  For the asymptotic bound, it is a well-known result in number theory \cite{hardy2008introduction} that the summatory totient function grows as:
+  \[
     \sum_{i=1}^{n} \phi(i) = \frac{3}{\pi^2} n^2 + O(n \log n).
-    \]
-    Multiplying this by 4 yields the final asymptotic bound of $\frac{12}{\pi^2} n^2 + O(n \log n)$.
+  \]
+  Multiplying this by 4 yields the final asymptotic bound of $\frac{12}{\pi^2} n^2 + O(n \log n)$.
 \end{proof}
 
 If a polynomial has $m$ free variables, then the number of points we can sample from is $|S| = (4(\sum_{i=1}^{n} \phi(i)) - 1)^m$.
@@ -74,46 +74,46 @@ The likelihood of a polynomial $p \neq 0$ evaluating to zero at $c$ sampled poin
 \subsection*{Is polynomial linear in a variable}
 The operation ``is polynomial linear in a variable'' can be viewed as determining if a polynomial is zero. let $p$ be a polynomial and without the loss of generality let $x_1$ be a variable, we will run the zero test on the following polynomial:
 \begin{align*}
-q(u, v, w, x_2, \dots, x_n) &= (p(w, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (v - u) \\
-&\quad - (p(v, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (w - u)
+  q(u, v, w, x_2, \dots, x_n) &= (p(w, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (v - u) \\
+  &\quad - (p(v, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (w - u)
 \end{align*}
 
 \begin{lemma}
-    The polynomial $q$ is zero if and only if $p$ is linear in $x_1$.
+  The polynomial $q$ is zero if and only if $p$ is linear in $x_1$.
 \end{lemma}
 \begin{proof}
-    If $p$ is linear in $x_1$, then there are $a, b$ constant in $x_1$ such that $p(x_1, x_2, \dots, x_n) = a x_1 + b$. Then 
-    \begin{align*}
+  If $p$ is linear in $x_1$, then there are $a, b$ constant in $x_1$ such that $p(x_1, x_2, \dots, x_n) = a x_1 + b$. Then
+  \begin{align*}
     q(u, v, w, x_2, \dots, x_n) &= (a w + b - (a u + b)) (v - u) - (a v + b - (a u + b)) (w - u) \\
     &= a (w - u) (v - u) - a (v - u) (w - u) \\
     &= 0.
-    \end{align*}
+  \end{align*}
 
-    Conversely, assume $q$ is zero, then for all $u, v, w, x_2, \dots, x_n$, we have
-    \begin{align*}
-        0 &= q(u, v, w, x_2, \dots, x_n) \\
-        &= (p(w, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (v - u) \\
-        &\quad - (p(v, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (w - u)
-    \end{align*}
-    Thus we have
-    \begin{align*}
-        \frac{p(w, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)}{w - u} = \frac{p(v, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)}{v - u}
-    \end{align*}
-    We get that there are $a, b$ constant in $x_1$ such that $p(x_1, x_2, \dots, x_n) = a x_1 + b$, and we get that $p$ is linear in $x_1$.
+  Conversely, assume $q$ is zero, then for all $u, v, w, x_2, \dots, x_n$, we have
+  \begin{align*}
+    0 &= q(u, v, w, x_2, \dots, x_n) \\
+    &= (p(w, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (v - u) \\
+    &\quad - (p(v, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)) (w - u)
+  \end{align*}
+  Thus we have
+  \begin{align*}
+    \frac{p(w, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)}{w - u} = \frac{p(v, x_2, \dots, x_n) - p(u, x_2, \dots, x_n)}{v - u}
+  \end{align*}
+  We get that there are $a, b$ constant in $x_1$ such that $p(x_1, x_2, \dots, x_n) = a x_1 + b$, and we get that $p$ is linear in $x_1$.
 \end{proof}
 
 \subsection*{Linearly eliminate a variable from a polynomial}
 For the operation ``linearly eliminate a variable from a polynomial'', suppose that the represented equation is linear in $x_1$, so it can be written as
 \[
-a x_1 + b = 0,
+  a x_1 + b = 0,
 \]
-where $x$ is the variable to be eliminated. Since the equation is linear in $x$, both $a$ and $b$ may depend on the other variables but not on $x$. 
+where $x$ is the variable to be eliminated. Since the equation is linear in $x$, both $a$ and $b$ may depend on the other variables but not on $x$.
 These coefficients can be recovered by evaluation for $s, e, m \in \mathbb{F}$, $a = \frac{p(e, x_2, \dots, x_n) - p(s, x_2, \dots, x_n)}{e - s}$ and $b = p(m, x_2, \dots, x_n) - a m$.
 Usally we will choose $e = 1$ and $s = m = 0$, but we can choose other values to avoid division by zero.
 
 The substitution of $x$ will be divided into cases
 \begin{itemize}
-    \item $a, b = 0$ we discard the equation
-    \item $a = 0$ and $b \neq 0$ This is an illegal step, because the equation cannot be solved for $x$
-    \item $a \neq 0$ we discard the equation and substitute $x \mapsto -\frac{b}{a}$ without expanding the expression.
+  \item $a, b = 0$ we discard the equation
+  \item $a = 0$ and $b \neq 0$ This is an illegal step, because the equation cannot be solved for $x$
+  \item $a \neq 0$ we discard the equation and substitute $x \mapsto -\frac{b}{a}$ without expanding the expression.
 \end{itemize}

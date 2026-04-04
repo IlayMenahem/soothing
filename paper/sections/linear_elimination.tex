@@ -3,16 +3,16 @@
 even in the case of very large non linear polynomial systems of equations, it is possible to eliminate variables in a linear fashion, which can significantly reduce the size of the system and the number of variables.
 
 \begin{algorithm}[H]
-\caption{Linear elimination by substitution}
-\label{alg:linear-elimination}
-\begin{algorithmic}[1]
-\Require Polynomial system $P=\{p_1,\dots,p_k\}\subseteq \mathbb{K}[x_1,\dots,x_m]$
-\Ensure Reduced system $Q$ where no $q\in Q$ is linear in any remaining variable; and a substitution map $\Sigma$ to recover eliminated variables
-\State $Q \gets P$
-\State $V \gets \{x_1,\dots,x_m\}$
-\State $\Sigma \gets \emptyset$
-\State $L \gets \{(x',p')\mid x'\in V,\ p'\in Q,\ p' \text{ is linear in } x'\}$
-\While{$L \neq \emptyset$}
+  \caption{Linear elimination by substitution}
+  \label{alg:linear-elimination}
+  \begin{algorithmic}[1]
+    \Require Polynomial system $P=\{p_1,\dots,p_k\}\subseteq \mathbb{K}[x_1,\dots,x_m]$
+    \Ensure Reduced system $Q$ where no $q\in Q$ is linear in any remaining variable; and a substitution map $\Sigma$ to recover eliminated variables
+    \State $Q \gets P$
+    \State $V \gets \{x_1,\dots,x_m\}$
+    \State $\Sigma \gets \emptyset$
+    \State $L \gets \{(x',p')\mid x'\in V,\ p'\in Q,\ p' \text{ is linear in } x'\}$
+    \While{$L \neq \emptyset$}
     \State Select any pair $(x,p)\in L$
     \State Solve $p=0$ for $x$ to obtain $x \gets f(\hat{x})$
     \State $\Sigma \gets \Sigma \cup \{x \mapsto f(\hat{x})\}$
@@ -21,19 +21,19 @@ even in the case of very large non linear polynomial systems of equations, it is
     \State Simplify the system $Q$ \Comment{Optional, but recommended}
     \State clear $Q$ of zero equations
     \State $L \gets \{(x',p')\mid x'\in V,\ p'\in Q,\ p' \text{ is linear in } x'\}$
-\EndWhile
-\If{$Q = \emptyset$ and $\Sigma \neq \emptyset$}
+    \EndWhile
+    \If{$Q = \emptyset$ and $\Sigma \neq \emptyset$}
     \State \textbf{Validate:} back-substitute $\Sigma$ into each $p \in P$; each resulting polynomial must be identically zero (probabilistic zero test in the implementation)
-\EndIf
-\State \Return $(Q,\Sigma)$
-\end{algorithmic}
+    \EndIf
+    \State \Return $(Q,\Sigma)$
+  \end{algorithmic}
 \end{algorithm}
 
 we have the freedom to choose which linear variable to eliminate at each step. good heuristics to choose which variable to eliminate include:
 \begin{list}{-}{}
-    \item \textbf{Lowest degree in the other equations:} eliminate the variable that appears with the lowest degree in the other equations first.
-    \item \textbf{Lowest degree after substitution:} eliminate the variable that will lead to the lowest degree in the other equations after substitution.
-    \item \textbf{Greatest or least number of occurrences:} eliminate the variable that appears in the greatest or least number of equations first.
+\item \textbf{Lowest degree in the other equations:} eliminate the variable that appears with the lowest degree in the other equations first.
+\item \textbf{Lowest degree after substitution:} eliminate the variable that will lead to the lowest degree in the other equations after substitution.
+\item \textbf{Greatest or least number of occurrences:} eliminate the variable that appears in the greatest or least number of equations first.
 \end{list}
 
 It is also possible to use DFS or BFS to search on the order of elimination.
@@ -44,5 +44,5 @@ After obtaining a solution, we can validate it by substituting the solution back
 
 To check whether the solution is of full dimension at certain points, we can use the following theorem:
 \begin{theorem}[Gatilov et al. \cite{gatilov2014using}]
-    Given a continuously differentiable system $F\in C^1$ (possibly polynomial) with a solution point $p$, the dimension of the solution space in the neighborhood of $p$ is $n - \text{rank}(J_F(p))$, where $J_F$ is the Jacobian matrix of $F$ at point $p$.
+  Given a continuously differentiable system $F\in C^1$ (possibly polynomial) with a solution point $p$, the dimension of the solution space in the neighborhood of $p$ is $n - \text{rank}(J_F(p))$, where $J_F$ is the Jacobian matrix of $F$ at point $p$.
 \end{theorem}
