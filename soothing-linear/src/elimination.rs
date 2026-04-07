@@ -6,6 +6,7 @@ use crate::mathematica_system::LoadedMathematicaSystem;
 use crate::predicates::{
     expr_finite_at_some_random_sample, is_linear_in, is_zero, PredicateError, SampleConfig,
 };
+use crate::simplify::{simplify, SimplifyError};
 use crate::substitution::{SubstitutionError, SubstitutionMap};
 use crate::system::PolynomialSystem;
 use rayon::prelude::*;
@@ -27,6 +28,8 @@ pub enum EliminationError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Predicate(#[from] crate::predicates::PredicateError),
+    #[error(transparent)]
+    Simplify(#[from] SimplifyError),
 }
 
 #[derive(Default)]
@@ -177,6 +180,7 @@ pub fn linear_elimination_greedy(
         .map(|&r| b.merge_root(&system.dag, r))
         .collect();
     let mut subst = SubstitutionMap::new();
+    simplify_equation_roots(&mut b, &mut eq_roots)?;
     let mut remaining: BTreeSet<VarId> =
         collect_vars(&b.snapshot(), &eq_roots).into_iter().collect();
 
@@ -253,11 +257,12 @@ where
 {
     let original = system.clone();
     let mut b = DagBuilder::new();
-    let eq_roots: Vec<NodeId> = system
+    let mut eq_roots: Vec<NodeId> = system
         .equations
         .iter()
         .map(|&r| b.merge_root(&system.dag, r))
         .collect();
+    simplify_equation_roots(&mut b, &mut eq_roots)?;
     let subst = SubstitutionMap::new();
     let result = match trace_writer {
         None => dfs_linear_elimination_inner(&b, eq_roots, subst, cfg, None, None, &is_solution)?,
@@ -472,6 +477,19 @@ fn other_vars(remaining: &BTreeSet<VarId>, x: VarId) -> Vec<VarId> {
 
 /// Drop equations that the sampling predicate classifies as identically zero. On predicate error,
 /// keep the equation.
+fn simplify_equation_roots(
+    builder: &mut DagBuilder,
+    eq_roots: &mut Vec<NodeId>,
+) -> Result<(), SimplifyError> {
+    let snap = builder.snapshot();
+    let mut new_roots = Vec::with_capacity(eq_roots.len());
+    for &r in eq_roots.iter() {
+        new_roots.push(simplify(builder, &snap, r)?);
+    }
+    *eq_roots = new_roots;
+    Ok(())
+}
+
 fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleConfig) {
     let keep: Vec<bool> = eq_roots
         .par_iter()
@@ -524,6 +542,7 @@ fn apply_one_elimination(
             .collect();
         let snap_taut = builder.snapshot();
         retain_nonzero_equations(&snap_taut, eq_roots, cfg);
+        simplify_equation_roots(builder, eq_roots)?;
         return Ok(());
     }
 
@@ -549,6 +568,7 @@ fn apply_one_elimination(
 
     let snap4 = builder.snapshot();
     retain_nonzero_equations(&snap4, eq_roots, cfg);
+    simplify_equation_roots(builder, eq_roots)?;
     Ok(())
 }
 

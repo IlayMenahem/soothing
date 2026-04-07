@@ -9,8 +9,17 @@ fn parse_roundtrip_format() {
     let s = "v1 * v0 + 1 / 2";
     let (dag, root) = Dag::from_rational_string(s).unwrap();
     let name = |v: VarId| format!("v{}", v.0);
-    let out = dag.format_root(root, &name);
+    let out = dag.format_root(root, name);
     assert_eq!(out, "v1 * v0 + 1 / 2");
+}
+
+/// `--3` parses as unary minus on literal `-3` (`Neg(Const(-3))`), not as two nested unary minuses on `3`.
+/// Formatting must print a single rational (`3`), not two minus signs (`--3`).
+#[test]
+fn format_neg_of_negative_literal_is_single_number() {
+    let (dag, root) = Dag::from_rational_string("--3").unwrap();
+    let out = dag.format_root(root, |v: VarId| format!("v{}", v.0));
+    assert_eq!(out, "3");
 }
 
 #[test]

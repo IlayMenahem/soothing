@@ -99,8 +99,25 @@ impl Dag {
             }
         }
 
-        fn fmt_neg(dag: &Dag, id: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
-            bracketed(dag, id, format!("-{}", dag.fmt_node(id, var_name)))
+        /// Unary minus. Operand is `child` (the [`Node::Neg`] payload).
+        ///
+        /// For `Neg(Const(c))`, emit a single rational `-c` in [`Q`] (so `-(-3)` is `3`, not `--3`).
+        /// For `Neg(Neg(..))`, parenthesize the inner node so we do not concatenate two `-` tokens.
+        fn fmt_neg(dag: &Dag, child: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
+            match dag.node(child) {
+                Node::Const(c) => format!("{}", -c.clone()),
+                Node::Neg(_) => format!("-({})", dag.fmt_node(child, var_name)),
+                _ => {
+                    let inner = dag.fmt_node(child, var_name);
+                    // If `inner` already begins with `-` (e.g. formatted negative rational), do not
+                    // concatenate another `-` (would yield `--3`). Parenthesize instead.
+                    if inner.starts_with('-') {
+                        format!("-({inner})")
+                    } else {
+                        bracketed(dag, child, format!("-{inner}"))
+                    }
+                }
+            }
         }
 
         fn fmt_add(dag: &Dag, ids: &[NodeId], var_name: &impl Fn(VarId) -> String) -> String {
