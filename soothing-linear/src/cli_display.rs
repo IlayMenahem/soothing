@@ -1,24 +1,13 @@
 //! Human-readable formatting for CLI binaries (substitution lines, simplified expressions).
 
-use crate::dag::{Dag, DagBuilder, NodeId, VarId};
-use crate::simplify::simplify_once;
+use crate::dag::{Dag, NodeId, VarId};
+use crate::simplify::simplify;
 use crate::substitution::SubstitutionMap;
 
-/// Fold local rewrites so [`Dag::format_root`] is readable (DAGs from elimination are not minimal).
-///
-/// # Panics
-///
-/// Panics if any fixed-point simplification step returns an unexpected [`crate::simplify::SimplifyError`].
-#[must_use]
 pub fn simplify_for_display(dag: &Dag, root: NodeId) -> (Dag, NodeId) {
-    let mut cur_dag = dag.clone();
-    let mut cur_root = root;
-    (0..16).for_each(|_| {
-        let mut b = DagBuilder::new();
-        cur_root = simplify_once(&mut b, &cur_dag, cur_root).expect("simplify display");
-        cur_dag = b.snapshot();
-    });
-    (cur_dag, cur_root)
+    let mut builder = crate::dag::DagBuilder::new();
+    let simplified_root = simplify(&mut builder, dag, root).expect("simplify display");
+    (builder.build(), simplified_root)
 }
 
 /// Print one line per binding in insertion order: `  name = expr`.

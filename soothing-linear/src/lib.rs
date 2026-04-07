@@ -67,6 +67,6 @@ pub use cli_display::{print_substitution_bindings, simplify_for_display};
 pub use predicates::is_linear_in as is_linear_in_variable;
 pub use predicates::is_zero as is_polynomial_zero;
 pub use predicates::recover_linear_coeffs as recover_linear_coefficients;
-pub use simplify::{simplify_once, SimplifyError};
+pub use simplify::{simplify, SimplifyError};
 pub use substitution::SubstitutionMap;
 pub use system::PolynomialSystem;
