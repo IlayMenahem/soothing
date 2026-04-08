@@ -62,7 +62,7 @@ fn recomputes_candidates() {
     let e2 = b.add(vec![vx2, c]);
     let sys = PolynomialSystem::new(b.build(), vec![e1, e2]);
     let r = linear_elimination_greedy(&sys, &SampleConfig::default()).unwrap();
-    assert!(r.substitution.len() >= 1);
+    assert!(!r.substitution.is_empty());
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn end_to_end() {
     let e = b.add(vec![vx, vy, c]);
     let sys = PolynomialSystem::new(b.build(), vec![e]);
     let r = linear_elimination_greedy(&sys, &SampleConfig::default()).unwrap();
-    assert!(r.substitution.len() >= 1);
+    assert!(!r.substitution.is_empty());
 }
 
 #[test]

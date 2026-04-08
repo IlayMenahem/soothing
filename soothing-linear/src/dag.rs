@@ -149,7 +149,10 @@ impl Dag {
             var_name: &impl Fn(VarId) -> String,
         ) -> String {
             let ns = dag.fmt_node(num, var_name);
-            let ds = dag.fmt_node(den, var_name);
+            let ds = match dag.node(den) {
+                Node::Mul(cs) if cs.len() >= 2 => format!("({})", fmt_mul(dag, cs, var_name)),
+                _ => dag.fmt_node(den, var_name),
+            };
             format!("{ns} / {ds}")
         }
 

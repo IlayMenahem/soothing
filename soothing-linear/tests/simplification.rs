@@ -169,3 +169,51 @@ fn builder_three_negs_around_mul_plus_three() {
     let s = bb.snapshot().format_root(r, |x| format!("v{}", x.0));
     assert_eq!(s, "-3 * v0", "Neg^3(Mul(3,v)) should be -3*v, got {s}");
 }
+
+#[test]
+fn nested_div_left_assoc_normalizes() {
+    let (d, root) = Dag::from_rational_string("v0 / v1 / v2").unwrap();
+    let mut bb = DagBuilder::new();
+    let r = simplify(&mut bb, &d, root).unwrap();
+    let out = bb.snapshot().format_root(r, |v| format!("v{}", v.0));
+    assert_eq!(out, "v0 / (v1 * v2)");
+}
+
+#[test]
+fn nested_div_in_denominator_normalizes() {
+    let (d, root) = Dag::from_rational_string("v0 / (v1 / v2)").unwrap();
+    let mut bb = DagBuilder::new();
+    let r = simplify(&mut bb, &d, root).unwrap();
+    let out = bb.snapshot().format_root(r, |v| format!("v{}", v.0));
+    assert_eq!(out, "v0 * v2 / v1");
+}
+
+#[test]
+fn nested_div_with_compound_subexpressions() {
+    let (d, root) = Dag::from_rational_string("(v0 * v1) / v2 / v3").unwrap();
+    let mut bb = DagBuilder::new();
+    let r = simplify(&mut bb, &d, root).unwrap();
+    let out = bb.snapshot().format_root(r, |v| format!("v{}", v.0));
+    assert_eq!(out, "v0 * v1 / (v2 * v3)");
+}
+
+#[test]
+fn nested_expressions() {
+    let (d, root) = Dag::from_rational_string("(v0 / (v1 * v2)) / v3").unwrap();
+    let mut bb = DagBuilder::new();
+    let r = simplify(&mut bb, &d, root).unwrap();
+    let out = bb.snapshot().format_root(r, |v| format!("v{}", v.0));
+    assert_eq!(out, "v0 / (v1 * v2 * v3)");
+}
+
+#[test]
+fn xr_simplify() {
+    let (d, root) = Dag::from_rational_string("((3 * DpDph1 * e) / (256 * (pi ^ 2))) / (-1 * DpDph1 * e / (256 * (pi ^ 2)) + (-3 * DpDph1 * e / (256 * (pi ^ 2))))").unwrap();
+    let mut bb = DagBuilder::new();
+    let r = simplify(&mut bb, &d, root).unwrap();
+    let out = bb.snapshot().format_root(r, |v| format!("v{}", v.0));
+    assert_eq!(
+        out,
+        "3 * v0 * v1 / (256 * (pi ^ 2) * (-1 * v0 * v1 / (256 * (pi ^ 2)) + -3 * v0 * v1 / (256 * (pi ^ 2))))"
+    );
+}

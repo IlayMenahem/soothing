@@ -181,7 +181,7 @@ fn parse_named_identifiers_roundtrip_under_custom_names() {
     map.insert(VarId(0), "alpha");
     map.insert(VarId(1), "beta");
     let name = |v: VarId| map.get(&v).copied().unwrap_or("?").to_string();
-    let out = dag.format_root(root, &name);
+    let out = dag.format_root(root, name);
     assert_eq!(out, "alpha + beta * alpha");
     let mut assign = HashMap::new();
     assign.insert(VarId(0), q(3, 1));

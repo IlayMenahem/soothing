@@ -190,6 +190,37 @@ fn rebuild_neg_node(
     Ok(builder.neg(rebuilt_base))
 }
 
+/// Flattened product of two rebuilt nodes (constants fold into a single rational when possible).
+fn mul_flat(builder: &mut DagBuilder, a: NodeId, b: NodeId) -> NodeId {
+    let flattened = flatten_rebuilt_children(builder, AssociativeOp::Mul, vec![a, b]);
+    fold_grouped_mul(builder, flattened)
+}
+
+/// Appendix: \((x/y)/z \mapsto x/(y\cdot z)\) and \(x/(y/z) \mapsto (x\cdot z)/y\) on rebuilt nodes.
+fn normalize_nested_div(
+    builder: &mut DagBuilder,
+    mut num: NodeId,
+    mut den: NodeId,
+) -> (NodeId, NodeId) {
+    loop {
+        let mut changed = false;
+        if let Node::Div(a, b) = builder.node(num).clone() {
+            num = a;
+            den = mul_flat(builder, b, den);
+            changed = true;
+        }
+        if let Node::Div(y, z) = builder.node(den).clone() {
+            num = mul_flat(builder, num, z);
+            den = y;
+            changed = true;
+        }
+        if !changed {
+            break;
+        }
+    }
+    (num, den)
+}
+
 fn rebuild_div_node(
     builder: &mut DagBuilder,
     source: &Dag,
@@ -199,7 +230,8 @@ fn rebuild_div_node(
 ) -> Result<NodeId, SimplifyError> {
     let rebuilt_num = rebuild_simplified_subdag(builder, source, n, rebuilt_nodes)?;
     let rebuilt_den = rebuild_simplified_subdag(builder, source, d, rebuilt_nodes)?;
-    match (builder.node(rebuilt_num), builder.node(rebuilt_den)) {
+    let (num, den) = normalize_nested_div(builder, rebuilt_num, rebuilt_den);
+    match (builder.node(num), builder.node(den)) {
         (Node::Const(a), Node::Const(b)) => {
             if b.is_zero() {
                 Err(SimplifyError::DivisionByZero)
@@ -207,7 +239,7 @@ fn rebuild_div_node(
                 Ok(builder.constant(a.clone() / b.clone()))
             }
         }
-        _ => Ok(builder.div(rebuilt_num, rebuilt_den)),
+        _ => Ok(builder.div(num, den)),
     }
 }
 
