@@ -1,6 +1,8 @@
 //! Substitution map and dependency ordering.
 
-use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
+use crate::expr_build::ExprBuilder;
+use crate::expr_lang::{RationalLang, VarId};
+use egg::{AstSize, EGraph, Extractor, Id};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
@@ -10,11 +12,11 @@ pub enum SubstitutionError {
     Cycle,
 }
 
-/// Maps eliminated variables to defining expressions (roots in the shared arena).
+/// Maps eliminated variables to defining expressions (e-class ids in the shared e-graph).
 #[derive(Clone, Debug)]
 pub struct SubstitutionMap {
-    builder: DagBuilder,
-    bindings: HashMap<VarId, NodeId>,
+    builder: ExprBuilder,
+    bindings: HashMap<VarId, Id>,
     insertion: Vec<VarId>,
 }
 
@@ -28,7 +30,7 @@ impl SubstitutionMap {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            builder: DagBuilder::new(),
+            builder: ExprBuilder::new(),
             bindings: HashMap::new(),
             insertion: Vec::new(),
         }
@@ -45,7 +47,7 @@ impl SubstitutionMap {
     }
 
     #[must_use]
-    pub fn get(&self, v: VarId) -> Option<NodeId> {
+    pub fn get(&self, v: VarId) -> Option<Id> {
         self.bindings.get(&v).copied()
     }
 
@@ -54,15 +56,15 @@ impl SubstitutionMap {
         self.bindings.contains_key(&v)
     }
 
-    /// Current DAG snapshot (all merged expressions).
+    /// Current e-graph snapshot (all merged expressions).
     #[must_use]
-    pub fn dag(&self) -> Dag {
+    pub fn egraph(&self) -> EGraph<RationalLang, ()> {
         self.builder.snapshot()
     }
 
-    /// Add `v \mapsto` expression copied from `expr_dag` at `expr_root`.
-    pub fn insert(&mut self, v: VarId, expr_dag: &Dag, expr_root: NodeId) {
-        let root = self.builder.merge_root(expr_dag, expr_root);
+    /// Add `v \mapsto` expression copied from `expr_graph` at `expr_root`.
+    pub fn insert(&mut self, v: VarId, expr_graph: &EGraph<RationalLang, ()>, expr_root: Id) {
+        let root = self.builder.merge_root(expr_graph, expr_root);
         if self.bindings.insert(v, root).is_some() {
             self.insertion.retain(|x| *x != v);
         }
@@ -81,10 +83,10 @@ impl SubstitutionMap {
     ///
     /// Returns [`SubstitutionError::Cycle`] when bindings contain a cyclic dependency.
     pub fn replay_order(&self) -> Result<Vec<VarId>, SubstitutionError> {
-        let dag = self.builder.snapshot();
+        let g = self.builder.snapshot();
         let mut deps: HashMap<VarId, Vec<VarId>> = HashMap::new();
         self.bindings.iter().for_each(|(&v, &root)| {
-            let ds: Vec<VarId> = vars_in_subgraph(&dag, root, &self.bindings)
+            let ds: Vec<VarId> = vars_in_subgraph(&g, root, &self.bindings)
                 .into_iter()
                 .filter(|u| *u != v)
                 .collect();
@@ -101,7 +103,6 @@ impl SubstitutionMap {
     }
 }
 
-/// `v` depends on each `u` in `deps[v]`; visit dependencies of `v` before appending `v`.
 fn dfs_deps_first(
     v: VarId,
     deps: &HashMap<VarId, Vec<VarId>>,
@@ -127,37 +128,36 @@ fn dfs_deps_first(
     Ok(())
 }
 
-fn vars_in_subgraph(dag: &Dag, root: NodeId, bound: &HashMap<VarId, NodeId>) -> HashSet<VarId> {
+fn vars_in_subgraph(
+    g: &EGraph<RationalLang, ()>,
+    root: Id,
+    bound: &HashMap<VarId, Id>,
+) -> HashSet<VarId> {
+    let extractor = Extractor::new(g, AstSize);
+    let (_, recexpr) = extractor.find_best(root);
     let mut out = HashSet::new();
-    let mut stack = vec![root];
+    let mut stack = vec![recexpr.root()];
     let mut seen = HashSet::new();
-
     while let Some(id) = stack.pop() {
         if !seen.insert(id) {
             continue;
         }
-
-        match dag.node(id) {
-            Node::Const(_) | Node::ConstPi => {}
-            Node::Var(x) => {
-                if bound.contains_key(x) {
-                    out.insert(*x);
+        match recexpr[id].clone() {
+            crate::expr_lang::RationalLang::Const(_) | crate::expr_lang::RationalLang::Pi => {}
+            crate::expr_lang::RationalLang::Var(x) => {
+                if bound.contains_key(&x) {
+                    out.insert(x);
                 }
             }
-            Node::Add(cs) | Node::Mul(cs) => {
-                stack.extend(cs);
+            crate::expr_lang::RationalLang::Add([a, b])
+            | crate::expr_lang::RationalLang::Mul([a, b])
+            | crate::expr_lang::RationalLang::Div([a, b])
+            | crate::expr_lang::RationalLang::Pow([a, b]) => {
+                stack.push(a);
+                stack.push(b);
             }
-            Node::Neg(x) => stack.push(*x),
-            Node::Div(n, d) => {
-                stack.push(*n);
-                stack.push(*d);
-            }
-            Node::Pow(b, e) => {
-                stack.push(*b);
-                stack.push(*e);
-            }
+            crate::expr_lang::RationalLang::Neg(x) => stack.push(x),
         }
     }
-
     out
 }

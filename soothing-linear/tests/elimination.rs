@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use num_traits::Zero;
 
 use soothing_linear::{
-    default_is_solution, dfs_linear_elimination, evaluate, is_solution_nonzero_kappah,
-    linear_elimination_greedy, q, Dag, DagBuilder, EliminationResult, PolynomialSystem,
-    SampleConfig, SubstitutionMap, VarId, Q,
+    default_is_solution, dfs_linear_elimination, evaluate, from_rational_string,
+    is_solution_nonzero_kappah, linear_elimination_greedy, q, EliminationResult, ExprBuilder,
+    PolynomialSystem, SampleConfig, SubstitutionMap, VarId, Q,
 };
 
 #[test]
@@ -15,17 +15,17 @@ fn nonzero_kappah_rejects_degenerate_expanded_kappah() {
     let d = VarId(0);
     let k = VarId(1);
     let mut subst = SubstitutionMap::new();
-    let mut b0 = DagBuilder::new();
+    let mut b0 = ExprBuilder::new();
     let zero = b0.constant(q(0, 1));
-    let d_dag = b0.build();
+    let d_dag = b0.into_egraph();
     subst.insert(d, &d_dag, zero);
-    let mut b1 = DagBuilder::new();
+    let mut b1 = ExprBuilder::new();
     let vd1 = b1.variable(d);
     let k_rhs = b1.mul(vec![vd1, vd1]);
-    let k_dag = b1.build();
+    let k_dag = b1.into_egraph();
     subst.insert(k, &k_dag, k_rhs);
 
-    let empty = DagBuilder::new().build();
+    let empty = ExprBuilder::new().into_egraph();
     let r = EliminationResult {
         reduced_system: PolynomialSystem::new(empty, vec![]),
         substitution: subst,
@@ -38,20 +38,20 @@ fn nonzero_kappah_rejects_degenerate_expanded_kappah() {
 
 #[test]
 fn single_step() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let vx = b.variable(x);
     let vy = b.variable(y);
     let e = b.add(vec![vx, vy]);
-    let sys = PolynomialSystem::new(b.build(), vec![e]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![e]);
     let r = linear_elimination_greedy(&sys, &SampleConfig::default()).unwrap();
     assert!(r.substitution.contains(x) || r.substitution.contains(y));
 }
 
 #[test]
 fn recomputes_candidates() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let vx = b.variable(x);
@@ -60,19 +60,19 @@ fn recomputes_candidates() {
     let vx2 = b.variable(x);
     let c = b.constant(q(1, 1));
     let e2 = b.add(vec![vx2, c]);
-    let sys = PolynomialSystem::new(b.build(), vec![e1, e2]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![e1, e2]);
     let r = linear_elimination_greedy(&sys, &SampleConfig::default()).unwrap();
     assert!(!r.substitution.is_empty());
 }
 
 #[test]
 fn removes_zero_equations() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let vx = b.variable(x);
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
-    let sys = PolynomialSystem::new(b.build(), vec![z]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![z]);
     let r = linear_elimination_greedy(&sys, &SampleConfig::default()).unwrap();
     assert!(r.reduced_system.equations.is_empty());
 }
@@ -80,12 +80,12 @@ fn removes_zero_equations() {
 /// Paper case \(a=b=0\) for affine \(a x + b\): identically zero linear equation is dropped, not solved.
 #[test]
 fn affine_tautology_drops_equation_without_substitution() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let vx = b.variable(x);
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
-    let sys = PolynomialSystem::new(b.build(), vec![z]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![z]);
     let r = linear_elimination_greedy(&sys, &SampleConfig::default()).unwrap();
     assert!(r.reduced_system.equations.is_empty());
     assert!(
@@ -97,13 +97,13 @@ fn affine_tautology_drops_equation_without_substitution() {
 /// Paper case with nonzero slope: substitution matches \(-b/a\) (e.g. `3*v0 + v1` implies `v0 = -v1/3` when `v0` is eliminated first).
 #[test]
 fn nonzero_slope_substitution_satisfies_original_linear_equation() {
-    let (dag, root) = Dag::from_rational_string("3 * v0 + v1").unwrap();
-    let mut b = DagBuilder::new();
+    let (dag, root) = from_rational_string("3 * v0 + v1").unwrap();
+    let mut b = ExprBuilder::new();
     let merged = b.merge_root(&dag, root);
-    let sys = PolynomialSystem::new(b.build(), vec![merged]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![merged]);
     let r = linear_elimination_greedy(&sys, &SampleConfig::default()).unwrap();
     assert_eq!(r.substitution.len(), 1);
-    let sub_dag = r.substitution.dag();
+    let sub_dag = r.substitution.egraph();
     let order = r.substitution.replay_order().unwrap();
     for seed in 0usize..8 {
         let mut a = HashMap::new();
@@ -122,26 +122,26 @@ fn nonzero_slope_substitution_satisfies_original_linear_equation() {
 
 #[test]
 fn end_to_end() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let vx = b.variable(x);
     let vy = b.variable(y);
     let c = b.constant(q(1, 1));
     let e = b.add(vec![vx, vy, c]);
-    let sys = PolynomialSystem::new(b.build(), vec![e]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![e]);
     let r = linear_elimination_greedy(&sys, &SampleConfig::default()).unwrap();
     assert!(!r.substitution.is_empty());
 }
 
 #[test]
 fn dfs_trace_writes_elapsed_lines() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let vx = b.variable(x);
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
-    let sys = PolynomialSystem::new(b.build(), vec![z]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![z]);
     let mut log = Vec::<u8>::new();
     let _ = dfs_linear_elimination(
         &sys,
@@ -159,12 +159,12 @@ fn dfs_trace_writes_elapsed_lines() {
 
 #[test]
 fn dfs_removes_zero_equations() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let vx = b.variable(x);
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
-    let sys = PolynomialSystem::new(b.build(), vec![z]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![z]);
     let r =
         dfs_linear_elimination(&sys, &SampleConfig::default(), None, default_is_solution).unwrap();
     assert!(r.reduced_system.equations.is_empty());
@@ -172,13 +172,13 @@ fn dfs_removes_zero_equations() {
 
 #[test]
 fn dfs_not_worse_than_greedy_on_single_linear() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let vx = b.variable(x);
     let vy = b.variable(y);
     let e = b.add(vec![vx, vy]);
-    let sys = PolynomialSystem::new(b.build(), vec![e]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![e]);
     let cfg = SampleConfig::default();
     let g = linear_elimination_greedy(&sys, &cfg).unwrap();
     let d = dfs_linear_elimination(&sys, &cfg, None, default_is_solution).unwrap();
@@ -190,13 +190,13 @@ fn dfs_not_worse_than_greedy_on_single_linear() {
 #[test]
 fn dfs_eliminates_fully_three_equation_demo_system() {
     let equation_strings = ["v1 + v0 - 1", "v2 - v0", "v1 * v2 + v0"];
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let mut equation_roots = Vec::with_capacity(equation_strings.len());
     for s in &equation_strings {
-        let (dag, root) = Dag::from_rational_string(s).unwrap();
+        let (dag, root) = from_rational_string(s).unwrap();
         equation_roots.push(b.merge_root(&dag, root));
     }
-    let sys = PolynomialSystem::new(b.build(), equation_roots);
+    let sys = PolynomialSystem::new(b.into_egraph(), equation_roots);
     let cfg = SampleConfig::default();
     let r = dfs_linear_elimination(&sys, &cfg, None, default_is_solution).unwrap();
     assert!(

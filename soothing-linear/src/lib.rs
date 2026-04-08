@@ -1,18 +1,19 @@
 //! Linear elimination by substitution for polynomial systems over `\mathbb{Q}`.
 //!
-//! DAG-stored expressions, exact rational evaluation, sampled zero/linearity checks, substitution
-//! maps, and greedy or DFS elimination.
+//! E-graph–stored expressions (`egg`), exact rational evaluation, sampled zero/linearity checks,
+//! substitution maps, and greedy or DFS elimination.
 //!
 //! ```
-//! use soothing_linear::{linear_elimination_greedy, DagBuilder, PolynomialSystem, SampleConfig, VarId};
+//! use soothing_linear::{linear_elimination_greedy, ExprBuilder, PolynomialSystem, SampleConfig, VarId};
+//! use egg::Id;
 //!
-//! let mut b = DagBuilder::new();
+//! let mut b = ExprBuilder::new();
 //! let x = VarId(0);
 //! let y = VarId(1);
 //! let vx = b.variable(x);
 //! let vy = b.variable(y);
 //! let eq = b.add(vec![vx, vy]);
-//! let sys = PolynomialSystem::new(b.build(), vec![eq]);
+//! let sys = PolynomialSystem::new(b.into_egraph(), vec![eq]);
 //! let _ = linear_elimination_greedy(&sys, &SampleConfig::default()).expect("ok");
 //! ```
 //!
@@ -34,10 +35,11 @@
 //!   [`elimination::EliminationError::DegenerateSubstitution`].
 
 pub mod cli_display;
-pub mod dag;
 mod dag_parse;
 pub mod elimination;
 pub mod eval;
+pub mod expr_build;
+pub mod expr_lang;
 pub mod field;
 pub mod mathematica_system;
 pub mod predicates;
@@ -45,12 +47,17 @@ pub mod simplify;
 pub mod substitution;
 pub mod system;
 
-pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
+pub use egg::Id;
 pub use elimination::{
     default_is_solution, dfs_linear_elimination, dfs_linear_elimination_solving_symbolic,
     is_solution_nonzero_kappah, linear_elimination_greedy, EliminationError, EliminationResult,
 };
 pub use eval::{evaluate, EvalError};
+pub use expr_build::ExprBuilder;
+pub use expr_lang::{
+    format_root, from_rational_string, from_rational_string_with_var_map, vars_in_root,
+    DagParseError, RationalLang, VarId,
+};
 pub use field::{q, Q};
 pub use mathematica_system::{
     default_systems_dir_from_manifest, load_mathematica_system_from_path,

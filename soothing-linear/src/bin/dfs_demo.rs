@@ -6,8 +6,8 @@
 //! `cargo run -p soothing-linear --bin dfs_demo`
 
 use soothing_linear::{
-    default_is_solution, dfs_linear_elimination, linear_elimination_greedy,
-    print_substitution_bindings, Dag, DagBuilder, PolynomialSystem, SampleConfig, SubstitutionMap,
+    default_is_solution, dfs_linear_elimination, from_rational_string, linear_elimination_greedy,
+    print_substitution_bindings, ExprBuilder, PolynomialSystem, SampleConfig, SubstitutionMap,
     VarId,
 };
 
@@ -34,18 +34,18 @@ fn run_three_equation_demo(cfg: &SampleConfig) {
     let x = VarId(1);
     let y = VarId(2);
     let equation_strings = ["v1 + v0 - 1", "v2 - v0", "v1 * v2 + v0"];
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let equation_roots: Vec<_> = equation_strings
         .iter()
         .map(|s| {
-            Dag::from_rational_string(s).unwrap_or_else(|e| {
+            from_rational_string(s).unwrap_or_else(|e| {
                 eprintln!("parse equation {s:?}: {e}");
                 std::process::exit(1);
             })
         })
-        .map(|(dag, root)| b.merge_root(&dag, root))
+        .map(|(egraph, root)| b.merge_root(&egraph, root))
         .collect();
-    let sys = PolynomialSystem::new(b.build(), equation_roots);
+    let sys = PolynomialSystem::new(b.into_egraph(), equation_roots);
 
     println!("System (same as `demo` binary):");
     println!("  x + z - 1 = 0");
@@ -94,22 +94,22 @@ fn run_two_linear_equations_demo(cfg: &SampleConfig) {
 
     let x = VarId(0);
     let y = VarId(1);
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let e0 = {
-        let (d, r) = Dag::from_rational_string("v0 + v1 - 1").unwrap_or_else(|e| {
+        let (d, r) = from_rational_string("v0 + v1 - 1").unwrap_or_else(|e| {
             eprintln!("parse: {e}");
             std::process::exit(1);
         });
         b.merge_root(&d, r)
     };
     let e1 = {
-        let (d, r) = Dag::from_rational_string("v0 - v1 + 1").unwrap_or_else(|e| {
+        let (d, r) = from_rational_string("v0 - v1 + 1").unwrap_or_else(|e| {
             eprintln!("parse: {e}");
             std::process::exit(1);
         });
         b.merge_root(&d, r)
     };
-    let sys = PolynomialSystem::new(b.build(), vec![e0, e1]);
+    let sys = PolynomialSystem::new(b.into_egraph(), vec![e0, e1]);
 
     let dfs = dfs_linear_elimination(&sys, cfg, None, default_is_solution).unwrap_or_else(|e| {
         eprintln!("DFS elimination failed: {e}");

@@ -5,9 +5,11 @@
 
 use num_traits::Zero;
 
+use egg::{EGraph, Id};
+use soothing_linear::RationalLang;
 use soothing_linear::{
-    assignment_seed, expr_finite_at_some_random_sample, is_linear_in, is_zero, q,
-    recover_linear_coeffs, Dag, DagBuilder, NodeId, PredicateError, SampleConfig, VarId,
+    assignment_seed, expr_finite_at_some_random_sample, from_rational_string, is_linear_in,
+    is_zero, q, recover_linear_coeffs, ExprBuilder, PredicateError, SampleConfig, VarId,
 };
 
 /// Stricter [`zero_samples`] than default for multivariate checks (`linear_*` fields are unused by
@@ -19,20 +21,20 @@ fn cfg_robust() -> SampleConfig {
     }
 }
 
-fn parse(s: &str) -> (Dag, NodeId) {
-    Dag::from_rational_string(s).unwrap()
+fn parse(s: &str) -> (EGraph<RationalLang, ()>, Id) {
+    from_rational_string(s).unwrap()
 }
 
 // ── is_zero (cf. test_is_zero) ─────────────────────────────────────────────
 
 #[test]
 fn is_zero_true() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let vx = b.variable(x);
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
-    let d = b.build();
+    let d = b.into_egraph();
     let cfg = SampleConfig {
         zero_samples: 4,
         ..Default::default()
@@ -42,10 +44,10 @@ fn is_zero_true() {
 
 #[test]
 fn is_zero_false() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let e = b.variable(x);
-    let d = b.build();
+    let d = b.into_egraph();
     let cfg = SampleConfig {
         zero_samples: 4,
         ..Default::default()
@@ -107,13 +109,13 @@ fn is_zero_ignores_removable_zero_over_denominator_singularity() {
 
 #[test]
 fn linear_true() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let v = b.variable(x);
     let w = b.variable(y);
     let e = b.add(vec![v, w]); // v, w already distinct nodes
-    let d = b.build();
+    let d = b.into_egraph();
     let cfg = SampleConfig::default();
     assert!(is_linear_in(&d, e, x, &[y], &cfg).unwrap());
 }
@@ -184,25 +186,25 @@ fn is_linear_constant_is_affine_in_x() {
 
 #[test]
 fn quadratic_in_x_not_linear_even_with_parameter_y() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let vx = b.variable(x);
     let vy = b.variable(y);
     let x2 = b.mul(vec![vx, vx]);
     let e = b.add(vec![x2, vy]);
-    let d = b.build();
+    let d = b.into_egraph();
     let cfg = SampleConfig::default();
     assert!(!is_linear_in(&d, e, x, &[y], &cfg).unwrap());
 }
 
 #[test]
 fn linear_false() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let vx = b.variable(x);
     let e = b.mul(vec![vx, vx]);
-    let d = b.build();
+    let d = b.into_egraph();
     let cfg = SampleConfig::default();
     assert!(!is_linear_in(&d, e, x, &[], &cfg).unwrap());
 }
@@ -320,7 +322,7 @@ fn is_linear_epsilon_cubic() {
 
 #[test]
 fn recover_coeffs_rational_slope() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let xv = b.variable(x);
@@ -328,7 +330,7 @@ fn recover_coeffs_rational_slope() {
     let half_x = b.mul(vec![half, xv]);
     let yv = b.variable(y);
     let e = b.add(vec![half_x, yv]);
-    let d = b.build();
+    let d = b.into_egraph();
     let base = assignment_seed(&[y], 0);
     let coeffs = recover_linear_coeffs(&d, e, x, &base).unwrap();
     assert_eq!(coeffs.a, q(1, 2));
@@ -337,7 +339,7 @@ fn recover_coeffs_rational_slope() {
 
 #[test]
 fn recover_coeffs_affine() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let xv = b.variable(x);
@@ -345,7 +347,7 @@ fn recover_coeffs_affine() {
     let two_x = b.mul(vec![c2, xv]);
     let yv = b.variable(y);
     let e = b.add(vec![two_x, yv]);
-    let d = b.build();
+    let d = b.into_egraph();
     let base = assignment_seed(&[y], 0);
     let c = recover_linear_coeffs(&d, e, x, &base).unwrap();
     assert_eq!(c.a, q(2, 1));
@@ -356,10 +358,10 @@ fn recover_coeffs_affine() {
 
 #[test]
 fn degenerate_or_insufficient() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let e = b.variable(x);
-    let d = b.build();
+    let d = b.into_egraph();
     let cfg = SampleConfig {
         zero_samples: 0,
         ..Default::default()

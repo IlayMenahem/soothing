@@ -1,6 +1,7 @@
 //! Iterative linear elimination by substitution; [`dfs_linear_elimination`] searches elimination orders.
 
-use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
+use crate::expr_build::ExprBuilder;
+use crate::expr_lang::{RationalLang, VarId};
 use crate::field::{q_one, q_zero};
 use crate::mathematica_system::LoadedMathematicaSystem;
 use crate::predicates::{
@@ -9,6 +10,7 @@ use crate::predicates::{
 use crate::simplify::{simplify, SimplifyError};
 use crate::substitution::{SubstitutionError, SubstitutionMap};
 use crate::system::PolynomialSystem;
+use egg::{EGraph, Id};
 use rayon::prelude::*;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -91,7 +93,7 @@ pub fn is_solution_nonzero_kappah(
     !expanded_zero
 }
 
-type ExpandedSubstitution = (Vec<VarId>, DagBuilder, HashMap<VarId, NodeId>);
+type ExpandedSubstitution = (Vec<VarId>, ExprBuilder, HashMap<VarId, Id>);
 
 /// Expand each substituted RHS by applying earlier bindings in [`SubstitutionMap::replay_order`]
 /// (same construction as elimination validation).
@@ -99,16 +101,16 @@ fn expand_substitution_bindings(
     result: &EliminationResult,
 ) -> Result<ExpandedSubstitution, SubstitutionError> {
     let order = result.substitution.replay_order()?;
-    let subst_dag = result.substitution.dag();
-    let mut b = DagBuilder::new();
-    let mut expanded_rhs: HashMap<VarId, NodeId> = HashMap::new();
+    let subst_eg = result.substitution.egraph();
+    let mut b = ExprBuilder::new();
+    let mut expanded_rhs: HashMap<VarId, Id> = HashMap::new();
     order.iter().copied().for_each(|v| {
         let rhs = result
             .substitution
             .get(v)
             .expect("expand_substitution_bindings: missing binding for variable in replay order");
 
-        let mut node = b.merge_root(&subst_dag, rhs);
+        let mut node = b.merge_root(&subst_eg, rhs);
         order.iter().copied().take_while(|&u| u != v).for_each(|u| {
             if let Some(&u_root) = expanded_rhs.get(&u) {
                 let snap_inner = b.snapshot();
@@ -136,7 +138,7 @@ fn validate_elimination_result(
         .expect("elimination validation: cyclic substitution map");
 
     original.equations.iter().enumerate().for_each(|(i, &eq_root)| {
-        let mut r = b.merge_root(&original.dag, eq_root);
+        let mut r = b.merge_root(&original.egraph, eq_root);
         order.iter().copied().for_each(|v| {
             let repl = *expanded_rhs
                 .get(&v)
@@ -145,7 +147,7 @@ fn validate_elimination_result(
             r = b.substitute_in_root(&snap, r, v, repl);
         });
         let snap = b.snapshot();
-        let free_vars = snap.vars_in_root(r);
+        let free_vars = crate::expr_lang::vars_in_root(&snap, r);
         let ok = match is_zero(&snap, r, &free_vars, cfg) {
             Ok(z) => z,
             Err(e) => panic!(
@@ -173,14 +175,16 @@ pub fn linear_elimination_greedy(
     cfg: &SampleConfig,
 ) -> Result<EliminationResult, EliminationError> {
     let original = system.clone();
-    let mut b = DagBuilder::new();
-    let mut eq_roots: Vec<NodeId> = system
+    let mut b = ExprBuilder::new();
+    let mut eq_roots: Vec<Id> = system
         .equations
         .iter()
-        .map(|&r| b.merge_root(&system.dag, r))
+        .map(|&r| b.merge_root(&system.egraph, r))
         .collect();
     let mut subst = SubstitutionMap::new();
     simplify_equation_roots(&mut b, &mut eq_roots)?;
+    let snap_after_simplify = b.snapshot();
+    retain_nonzero_equations(&snap_after_simplify, &mut eq_roots, cfg);
     let mut remaining: BTreeSet<VarId> =
         collect_vars(&b.snapshot(), &eq_roots).into_iter().collect();
 
@@ -212,9 +216,9 @@ pub fn linear_elimination_greedy(
         remaining = collect_vars(&b.snapshot(), &eq_roots).into_iter().collect();
     }
 
-    let final_dag = b.snapshot();
+    let final_eg = b.snapshot();
     let result = EliminationResult {
-        reduced_system: PolynomialSystem::new(final_dag, eq_roots),
+        reduced_system: PolynomialSystem::new(final_eg, eq_roots),
         substitution: subst,
     };
     validate_elimination_result(&original, &result, cfg);
@@ -256,13 +260,15 @@ where
     F: Fn(&EliminationResult) -> bool,
 {
     let original = system.clone();
-    let mut b = DagBuilder::new();
-    let mut eq_roots: Vec<NodeId> = system
+    let mut b = ExprBuilder::new();
+    let mut eq_roots: Vec<Id> = system
         .equations
         .iter()
-        .map(|&r| b.merge_root(&system.dag, r))
+        .map(|&r| b.merge_root(&system.egraph, r))
         .collect();
     simplify_equation_roots(&mut b, &mut eq_roots)?;
+    let snap_after_simplify = b.snapshot();
+    retain_nonzero_equations(&snap_after_simplify, &mut eq_roots, cfg);
     let subst = SubstitutionMap::new();
     let result = match trace_writer {
         None => dfs_linear_elimination_inner(&b, eq_roots, subst, cfg, None, None, &is_solution)?,
@@ -316,8 +322,8 @@ pub fn dfs_linear_elimination_solving_symbolic(
 }
 
 fn dfs_linear_elimination_inner<F>(
-    b: &DagBuilder,
-    eq_roots: Vec<NodeId>,
+    b: &ExprBuilder,
+    eq_roots: Vec<Id>,
     subst: SubstitutionMap,
     cfg: &SampleConfig,
     trace_w: Option<&RefCell<&mut dyn Write>>,
@@ -431,8 +437,8 @@ where
 ///
 /// Pairs for which the sampling predicate hard-errors are skipped.
 fn collect_linear_pairs(
-    dag: &Dag,
-    eq_roots: &[NodeId],
+    dag: &EGraph<RationalLang, ()>,
+    eq_roots: &[Id],
     remaining: &BTreeSet<VarId>,
     cfg: &SampleConfig,
 ) -> Vec<(VarId, usize)> {
@@ -466,8 +472,8 @@ fn is_better_elimination(a: &EliminationResult, b: &EliminationResult) -> bool {
     if na != nb {
         return na < nb;
     }
-    let free_a = collect_vars(&a.reduced_system.dag, &a.reduced_system.equations).len();
-    let free_b = collect_vars(&b.reduced_system.dag, &b.reduced_system.equations).len();
+    let free_a = collect_vars(&a.reduced_system.egraph, &a.reduced_system.equations).len();
+    let free_b = collect_vars(&b.reduced_system.egraph, &b.reduced_system.equations).len();
     free_a > free_b
 }
 
@@ -478,19 +484,23 @@ fn other_vars(remaining: &BTreeSet<VarId>, x: VarId) -> Vec<VarId> {
 /// Drop equations that the sampling predicate classifies as identically zero. On predicate error,
 /// keep the equation.
 fn simplify_equation_roots(
-    builder: &mut DagBuilder,
-    eq_roots: &mut Vec<NodeId>,
+    builder: &mut ExprBuilder,
+    eq_roots: &mut Vec<Id>,
 ) -> Result<(), SimplifyError> {
     let snap = builder.snapshot();
     let mut new_roots = Vec::with_capacity(eq_roots.len());
     for &r in eq_roots.iter() {
-        new_roots.push(simplify(builder, &snap, r)?);
+        new_roots.push(simplify(&mut builder.egraph, &snap, r)?);
     }
     *eq_roots = new_roots;
     Ok(())
 }
 
-fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleConfig) {
+fn retain_nonzero_equations(
+    dag: &EGraph<RationalLang, ()>,
+    eq_roots: &mut Vec<Id>,
+    cfg: &SampleConfig,
+) {
     let keep: Vec<bool> = eq_roots
         .par_iter()
         .map(|&r| {
@@ -511,8 +521,8 @@ fn retain_nonzero_equations(dag: &Dag, eq_roots: &mut Vec<NodeId>, cfg: &SampleC
 }
 
 fn apply_one_elimination(
-    builder: &mut DagBuilder,
-    eq_roots: &mut Vec<NodeId>,
+    builder: &mut ExprBuilder,
+    eq_roots: &mut Vec<Id>,
     subst: &mut SubstitutionMap,
     x: VarId,
     i: usize,
@@ -551,7 +561,7 @@ fn apply_one_elimination(
     let x_sol = builder.div(b_coeff, neg_a);
 
     let snap_check = builder.snapshot();
-    let x_sol_vars: Vec<VarId> = snap_check.vars_in_root(x_sol);
+    let x_sol_vars: Vec<VarId> = crate::expr_lang::vars_in_root(&snap_check, x_sol);
     if !expr_finite_at_some_random_sample(&snap_check, x_sol, &x_sol_vars, cfg) {
         return Err(EliminationError::DegenerateSubstitution { var: x });
     }
@@ -572,34 +582,10 @@ fn apply_one_elimination(
     Ok(())
 }
 
-fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
+fn collect_vars(egraph: &EGraph<RationalLang, ()>, roots: &[Id]) -> HashSet<VarId> {
     let mut out = HashSet::new();
-    let mut stack: Vec<NodeId> = roots.to_vec();
-    let mut seen = HashSet::new();
-    while let Some(id) = stack.pop() {
-        if !seen.insert(id) {
-            continue;
-        }
-        match dag.node(id) {
-            Node::Var(v) => {
-                out.insert(*v);
-            }
-            Node::Const(_) | Node::ConstPi => {}
-            Node::Add(cs) | Node::Mul(cs) => {
-                for c in cs {
-                    stack.push(*c);
-                }
-            }
-            Node::Neg(x) => stack.push(*x),
-            Node::Div(n, d) => {
-                stack.push(*n);
-                stack.push(*d);
-            }
-            Node::Pow(b, e) => {
-                stack.push(*b);
-                stack.push(*e);
-            }
-        }
+    for &r in roots {
+        out.extend(crate::expr_lang::vars_in_root(egraph, r));
     }
     out
 }
@@ -607,33 +593,33 @@ fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
 #[cfg(test)]
 mod tests {
     use super::is_better_elimination;
-    use crate::dag::DagBuilder;
+    use crate::expr_build::ExprBuilder;
     use crate::substitution::SubstitutionMap;
     use crate::system::PolynomialSystem;
     use crate::{EliminationResult, VarId};
 
     #[test]
     fn dfs_tie_break_prefers_more_free_variables() {
-        let mut left_builder = DagBuilder::new();
+        let mut left_builder = ExprBuilder::new();
         let x = VarId(0);
         let y = VarId(1);
         let left_x = left_builder.variable(x);
         let left_y = left_builder.variable(y);
         let left_eq = left_builder.add(vec![left_x, left_y]);
-        let left_system = PolynomialSystem::new(left_builder.build(), vec![left_eq]);
+        let left_system = PolynomialSystem::new(left_builder.into_egraph(), vec![left_eq]);
 
-        let mut right_builder = DagBuilder::new();
+        let mut right_builder = ExprBuilder::new();
         let right_x0 = right_builder.variable(x);
         let right_x1 = right_builder.variable(x);
         let right_eq = right_builder.mul2(right_x0, right_x1);
-        let right_system = PolynomialSystem::new(right_builder.build(), vec![right_eq]);
+        let right_system = PolynomialSystem::new(right_builder.into_egraph(), vec![right_eq]);
 
         let mut right_subst = SubstitutionMap::new();
-        let mut subst_builder = DagBuilder::new();
+        let mut subst_builder = ExprBuilder::new();
         let zero = subst_builder.constant(crate::Q::from_integer(0.into()));
-        let subst_dag = subst_builder.build();
-        right_subst.insert(x, &subst_dag, zero);
-        right_subst.insert(y, &subst_dag, zero);
+        let subst_eg = subst_builder.into_egraph();
+        right_subst.insert(x, &subst_eg, zero);
+        right_subst.insert(y, &subst_eg, zero);
 
         let left = EliminationResult {
             reduced_system: left_system,

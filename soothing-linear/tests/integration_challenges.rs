@@ -6,8 +6,8 @@
 use num_traits::Zero;
 
 use soothing_linear::{
-    evaluate, linear_elimination_greedy, q, Dag, DagBuilder, EliminationError, PolynomialSystem,
-    SampleConfig, VarId, Q,
+    evaluate, format_root, from_rational_string, linear_elimination_greedy, q, vars_in_root,
+    EliminationError, ExprBuilder, PolynomialSystem, SampleConfig, VarId, Q,
 };
 use std::collections::HashMap;
 
@@ -20,9 +20,9 @@ fn default_cfg() -> SampleConfig {
 
 #[test]
 fn empty_system_no_work() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let _ = b.constant(q(0, 1));
-    let d = b.build();
+    let d = b.into_egraph();
     let sys = PolynomialSystem::new(d, vec![]);
     let r = linear_elimination_greedy(&sys, &default_cfg()).unwrap();
     assert!(r.reduced_system.equations.is_empty());
@@ -31,7 +31,7 @@ fn empty_system_no_work() {
 
 #[test]
 fn four_variable_linear_chain_eliminates_all() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let z = VarId(2);
@@ -43,7 +43,7 @@ fn four_variable_linear_chain_eliminates_all() {
     let e0 = b.add(vec![vx, vy]);
     let e1 = b.add(vec![vy, vz]);
     let e2 = b.add(vec![vz, vw]);
-    let d = b.build();
+    let d = b.into_egraph();
     let sys = PolynomialSystem::new(d, vec![e0, e1, e2]);
     let r = linear_elimination_greedy(&sys, &default_cfg()).unwrap();
     assert!(r.reduced_system.equations.is_empty());
@@ -52,7 +52,7 @@ fn four_variable_linear_chain_eliminates_all() {
 
 #[test]
 fn partial_system_keeps_quadratic() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let z = VarId(2);
@@ -66,7 +66,7 @@ fn partial_system_keeps_quadratic() {
     let sum = b.add(vec![x2, z2]);
     let neg_c1 = b.neg(c1);
     let quad = b.add(vec![sum, neg_c1]);
-    let d = b.build();
+    let d = b.into_egraph();
     let sys = PolynomialSystem::new(d, vec![linear, quad]);
     let r = linear_elimination_greedy(&sys, &default_cfg()).unwrap();
     assert_eq!(r.substitution.len(), 1);
@@ -75,7 +75,7 @@ fn partial_system_keeps_quadratic() {
 
 #[test]
 fn quadratic_systems_stall_without_linearities() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let vx = b.variable(x);
@@ -83,13 +83,13 @@ fn quadratic_systems_stall_without_linearities() {
     let x2 = b.mul(vec![vx, vx]);
     let neg_one = b.neg(one);
     let e0 = b.add(vec![x2, neg_one]);
-    let d = b.build();
+    let d = b.into_egraph();
     let sys = PolynomialSystem::new(d, vec![e0]);
     let r = linear_elimination_greedy(&sys, &default_cfg()).unwrap();
     assert!(r.substitution.is_empty());
     assert_eq!(r.reduced_system.equations.len(), 1);
 
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let vx = b.variable(x);
     let vy = b.variable(y);
     let x2 = b.mul(vec![vx, vx]);
@@ -100,7 +100,7 @@ fn quadratic_systems_stall_without_linearities() {
     let e0 = b.add(vec![sum, minus_one]);
     let minus_y_squared = b.neg(y2);
     let diff = b.add(vec![x2, minus_y_squared]);
-    let d = b.build();
+    let d = b.into_egraph();
     let sys = PolynomialSystem::new(d, vec![e0, diff]);
     let r = linear_elimination_greedy(&sys, &default_cfg()).unwrap();
     assert!(r.substitution.is_empty());
@@ -109,7 +109,7 @@ fn quadratic_systems_stall_without_linearities() {
 
 #[test]
 fn illegitimate_elimination_when_equation_independent_of_target() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let z = VarId(2);
@@ -118,7 +118,7 @@ fn illegitimate_elimination_when_equation_independent_of_target() {
     let vz = b.variable(z);
     let e0 = vy;
     let e1 = b.add(vec![vx, vz]);
-    let d = b.build();
+    let d = b.into_egraph();
     let sys = PolynomialSystem::new(d, vec![e0, e1]);
     let res = linear_elimination_greedy(&sys, &default_cfg());
     assert!(matches!(
@@ -129,7 +129,7 @@ fn illegitimate_elimination_when_equation_independent_of_target() {
 
 #[test]
 fn substitution_residuals_vanish_for_single_linear_equation() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let vx = b.variable(x);
@@ -137,11 +137,11 @@ fn substitution_residuals_vanish_for_single_linear_equation() {
     let c2 = b.constant(q(2, 1));
     let two_y = b.mul(vec![c2, vy]);
     let eq = b.add(vec![vx, two_y]);
-    let d = b.build();
+    let d = b.into_egraph();
     let sys = PolynomialSystem::new(d, vec![eq]);
     let r = linear_elimination_greedy(&sys, &default_cfg()).unwrap();
     assert_eq!(r.substitution.len(), 1);
-    let sub_dag = r.substitution.dag();
+    let sub_dag = r.substitution.egraph();
     let order = r.substitution.replay_order().unwrap();
     let free = if r.substitution.contains(x) { y } else { x };
     for seed in 0usize..12 {
@@ -161,27 +161,27 @@ fn substitution_residuals_vanish_for_single_linear_equation() {
 
 #[test]
 fn vars_in_root_collects_nested_shared_subgraphs() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let y = VarId(1);
     let vx = b.variable(x);
     let vy = b.variable(y);
     let shared = b.add(vec![vx, vy]);
     let prod = b.mul(vec![shared, shared]);
-    let d = b.build();
-    let v = d.vars_in_root(prod);
+    let d = b.into_egraph();
+    let v = vars_in_root(&d, prod);
     assert_eq!(v, vec![x, y]);
 }
 
 #[test]
 fn parse_named_identifiers_roundtrip_under_custom_names() {
     let s = "alpha + beta * alpha";
-    let (dag, root) = Dag::from_rational_string(s).unwrap();
+    let (dag, root) = from_rational_string(s).unwrap();
     let mut map: HashMap<VarId, &'static str> = HashMap::new();
     map.insert(VarId(0), "alpha");
     map.insert(VarId(1), "beta");
     let name = |v: VarId| map.get(&v).copied().unwrap_or("?").to_string();
-    let out = dag.format_root(root, name);
+    let out = format_root(&dag, root, name);
     assert_eq!(out, "alpha + beta * alpha");
     let mut assign = HashMap::new();
     assign.insert(VarId(0), q(3, 1));
@@ -192,13 +192,13 @@ fn parse_named_identifiers_roundtrip_under_custom_names() {
 
 #[test]
 fn format_parentheses_non_atomic_subexpressions() {
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let x = VarId(0);
     let vx = b.variable(x);
     let one = b.constant(q(1, 1));
     let sum = b.add(vec![vx, one]);
     let sq = b.mul(vec![sum, sum]);
-    let d = b.build();
-    let out = d.format_root(sq, |v| format!("v{}", v.0));
+    let d = b.into_egraph();
+    let out = format_root(&d, sq, |v| format!("v{}", v.0));
     assert_eq!(out, "(v0 + 1) * (v0 + 1)");
 }

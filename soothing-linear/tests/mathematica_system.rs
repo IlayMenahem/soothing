@@ -5,7 +5,8 @@ use std::path::Path;
 
 use soothing_linear::{
     default_is_solution, default_systems_dir_from_manifest, dfs_linear_elimination,
-    load_mathematica_system_from_path, load_mathematica_system_from_str, Dag, SampleConfig,
+    load_mathematica_system_from_path, load_mathematica_system_from_str, vars_in_root,
+    SampleConfig,
 };
 
 #[test]
@@ -23,7 +24,7 @@ fn full_rhs_keeps_denominator_variables() {
     let sys = load_mathematica_system_from_str(s).unwrap();
     assert_eq!(sys.equations.len(), 1);
     let &root = sys.equations.first().unwrap();
-    let vars = Dag::vars_in_root(&sys.dag, root);
+    let vars = vars_in_root(&sys.egraph, root);
     let set: HashSet<_> = vars.into_iter().collect();
     assert_eq!(set.len(), 4, "a, b, c, d from (lhs)-(full rhs)");
 }

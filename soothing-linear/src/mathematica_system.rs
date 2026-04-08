@@ -5,8 +5,11 @@
 //! wrapping `integer/(` as `(integer)/(` so rational literals do not swallow parenthesized denominators.
 //! The full rational structure of `rhs` is preserved (no numerator-only rewriting).
 
-use crate::dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
+use crate::dag_parse::parse_rational_expression_with_var_map;
+use crate::expr_build::ExprBuilder;
+use crate::expr_lang::{DagParseError, VarId};
 use crate::system::PolynomialSystem;
+use egg::Id;
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -279,17 +282,17 @@ pub fn load_mathematica_system_from_str_with_var_names(
     all_names.sort();
     all_names.dedup();
     let var_map = build_var_map(&all_names);
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let roots = equations.into_iter().try_fold(
         Vec::new(),
-        |mut roots, eq| -> Result<Vec<NodeId>, MathematicaLoadError> {
-            let (dag, root) = Dag::from_rational_string_with_var_map(&eq, &var_map)?;
-            roots.push(b.merge_root(&dag, root));
+        |mut roots, eq| -> Result<Vec<Id>, MathematicaLoadError> {
+            let (egraph, root) = parse_rational_expression_with_var_map(&eq, &var_map)?;
+            roots.push(b.merge_root(&egraph, root));
             Ok(roots)
         },
     )?;
     Ok(LoadedMathematicaSystem {
-        system: PolynomialSystem::new(b.build(), roots),
+        system: PolynomialSystem::new(b.into_egraph(), roots),
         var_names: all_names,
     })
 }

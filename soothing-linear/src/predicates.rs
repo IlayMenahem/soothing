@@ -1,13 +1,15 @@
-//! Sampled “is zero” and “is linear in `x`” predicates on DAG expressions, evaluated exactly in
+//! Sampled “is zero” and “is linear in `x`” predicates on e-graph expressions, evaluated exactly in
 //! [`Q`].
 //!
 //! For polynomial inputs, these predicates implement the paper's evaluation-based tests. The public
-//! APIs also accept the crate's broader expression DAGs, so rational expressions are tolerated by
-//! skipping sampled assignments that hit a division-by-zero pole.
+//! APIs also accept rational expressions (division / powers) by skipping sampled assignments that
+//! hit a division-by-zero pole.
 
-use crate::dag::{Dag, DagBuilder, NodeId, VarId};
 use crate::eval::{evaluate, EvalError};
+use crate::expr_build::ExprBuilder;
+use crate::expr_lang::{vars_in_root, RationalLang, VarId};
 use crate::field::Q;
+use egg::{EGraph, Id};
 use num_integer::Integer;
 use num_traits::{One, Zero};
 use rand::rngs::StdRng;
@@ -50,16 +52,15 @@ fn mix_seed(base: u64, a: usize, b: u32) -> u64 {
         ^ u64::from(b).wrapping_mul(0xC6BC_2796_92B5_C323)
 }
 
-fn rng_for_zero(cfg: &SampleConfig, root: NodeId) -> StdRng {
-    StdRng::seed_from_u64(mix_seed(cfg.random_seed, root.0, 0x5EED_5EED))
+fn rng_for_zero(cfg: &SampleConfig, root: Id) -> StdRng {
+    StdRng::seed_from_u64(mix_seed(cfg.random_seed, usize::from(root), 0x5EED_5EED))
 }
 
-fn rng_for_linearity_q(cfg: &SampleConfig, q_root: NodeId, x: VarId) -> StdRng {
-    StdRng::seed_from_u64(mix_seed(cfg.random_seed, q_root.0, x.0))
+fn rng_for_linearity_q(cfg: &SampleConfig, q_root: Id, x: VarId) -> StdRng {
+    StdRng::seed_from_u64(mix_seed(cfg.random_seed, usize::from(q_root), x.0))
 }
 
 fn random_sample_q(rng: &mut StdRng) -> Q {
-    // rejection sampling of numerators and denominators such that $\gcd(numer, denom) = 1$ and $|denom|, |numer| \leq RANDOM_SAMPLE_ABS_MAX$
     let (numer, denom) = std::iter::repeat_with(|| {
         (
             rng.gen_range(-RANDOM_SAMPLE_ABS_MAX..=RANDOM_SAMPLE_ABS_MAX),
@@ -76,34 +77,34 @@ fn random_assignment_q(vars: &[VarId], rng: &mut StdRng) -> HashMap<VarId, Q> {
     vars.iter().map(|&v| (v, random_sample_q(rng))).collect()
 }
 
-fn max_var_id(dag: &Dag, root: NodeId, other_vars: &[VarId]) -> u32 {
+fn max_var_id(egraph: &EGraph<RationalLang, ()>, root: Id, other_vars: &[VarId]) -> u32 {
     other_vars
         .iter()
         .map(|v| v.0)
-        .chain(dag.vars_in_root(root).into_iter().map(|v| v.0))
+        .chain(vars_in_root(egraph, root).into_iter().map(|v| v.0))
         .max()
         .unwrap_or(0)
 }
 
 /// Builds \(q = (p(w)-p(u))(v-u) - (p(v)-p(u))(w-u)\) with fresh `u,v,w` symbols (see paper).
-#[allow(clippy::similar_names)] // symmetric `p(w)-p(u)` and `p(v)-p(u)` factors
+#[allow(clippy::similar_names)]
 fn build_linearity_q_polynomial(
-    dag: &Dag,
-    root: NodeId,
+    egraph: &EGraph<RationalLang, ()>,
+    root: Id,
     x: VarId,
     other_vars: &[VarId],
-) -> (Dag, NodeId, VarId, VarId, VarId) {
-    let base = max_var_id(dag, root, other_vars);
+) -> (EGraph<RationalLang, ()>, Id, VarId, VarId, VarId) {
+    let base = max_var_id(egraph, root, other_vars);
     let u_id = VarId(base + 1);
     let v_id = VarId(base + 2);
     let w_id = VarId(base + 3);
-    let mut b = DagBuilder::new();
+    let mut b = ExprBuilder::new();
     let nu = b.variable(u_id);
     let nv = b.variable(v_id);
     let nw = b.variable(w_id);
-    let p_u = b.substitute_in_root(dag, root, x, nu);
-    let p_v = b.substitute_in_root(dag, root, x, nv);
-    let p_w = b.substitute_in_root(dag, root, x, nw);
+    let p_u = b.substitute_in_root(egraph, root, x, nu);
+    let p_v = b.substitute_in_root(egraph, root, x, nv);
+    let p_w = b.substitute_in_root(egraph, root, x, nw);
     let p_wu = b.sub(p_w, p_u);
     let p_vu = b.sub(p_v, p_u);
     let v_minus_u = b.sub(nv, nu);
@@ -111,7 +112,7 @@ fn build_linearity_q_polynomial(
     let term1 = b.mul2(p_wu, v_minus_u);
     let term2 = b.mul2(p_vu, w_minus_u);
     let q_root = b.sub(term1, term2);
-    (b.build(), q_root, u_id, v_id, w_id)
+    (b.into_egraph(), q_root, u_id, v_id, w_id)
 }
 
 fn random_assignment_with_uvw(
@@ -131,18 +132,10 @@ fn random_assignment_with_uvw(
 }
 
 /// True if at least one random exact assignment yields a well-defined [`evaluate`] value.
-///
-/// This uses a bounded retry budget so expressions that are defined only on a tiny subset of the
-/// sample space can still report `false`.
-///
-/// # Panics
-///
-/// Panics if the attempt index does not fit in `u32`. With the current bounded loop
-/// (`SUBSTITUTION_NUMERIC_CHECK_SAMPLES` × `ZERO_TEST_ATTEMPT_MULTIPLIER`) this cannot occur.
 #[must_use]
 pub fn expr_finite_at_some_random_sample(
-    dag: &Dag,
-    root: NodeId,
+    egraph: &EGraph<RationalLang, ()>,
+    root: Id,
     free_vars: &[VarId],
     cfg: &SampleConfig,
 ) -> bool {
@@ -150,11 +143,11 @@ pub fn expr_finite_at_some_random_sample(
     (0..max_attempts).into_par_iter().any(|attempt| {
         let mut rng = StdRng::seed_from_u64(mix_seed(
             cfg.random_seed.wrapping_add(attempt as u64),
-            root.0,
+            usize::from(root),
             u32::try_from(attempt).unwrap(),
         ));
         let a = random_assignment_q(free_vars, &mut rng);
-        evaluate(dag, root, &a).is_ok()
+        evaluate(egraph, root, &a).is_ok()
     })
 }
 
@@ -185,21 +178,9 @@ impl From<EvalError> for PredicateError {
 }
 
 /// `free_vars`: all variables that may appear in the expression (caller supplies).
-///
-/// One exact random draw per sample.
-///
-/// For polynomial inputs, this is the paper's sampled zero test. For the crate's broader DAGs,
-/// division failures are skipped so the same API can probe rational expressions without turning a
-/// sampled pole into a hard predicate error. If too many samples are undefined the predicate
-/// reports [`Ok(false)`].
-///
-/// # Errors
-///
-/// Returns [`PredicateError::InsufficientSamples`] when `cfg.zero_samples == 0`, and other
-/// [`PredicateError`] variants when evaluation fails in a way that is not treated as a skipped sample.
 pub fn is_zero(
-    dag: &Dag,
-    root: NodeId,
+    egraph: &EGraph<RationalLang, ()>,
+    root: Id,
     free_vars: &[VarId],
     cfg: &SampleConfig,
 ) -> Result<bool, PredicateError> {
@@ -207,24 +188,24 @@ pub fn is_zero(
         return Err(PredicateError::InsufficientSamples);
     }
     let mut rng = rng_for_zero(cfg, root);
-    probabilistic_zero_on_assignments(dag, root, cfg, &mut rng, |rng| {
+    probabilistic_zero_on_assignments(egraph, root, cfg, &mut rng, |rng| {
         random_assignment_q(free_vars, rng)
     })
 }
 
 fn probabilistic_zero_on_assignments(
-    dag: &Dag,
-    root: NodeId,
+    egraph: &EGraph<RationalLang, ()>,
+    root: Id,
     cfg: &SampleConfig,
     rng: &mut StdRng,
-    mut next_assignment: impl FnMut(&mut StdRng) -> HashMap<VarId, Q>,
+    mut next_assignment: impl FnMut(&mut StdRng) -> HashMap<crate::expr_lang::VarId, Q>,
 ) -> Result<bool, PredicateError> {
     let mut successes = 0;
     let max_attempts = cfg.zero_samples * ZERO_TEST_ATTEMPT_MULTIPLIER;
 
     for _ in 0..max_attempts {
         let assignment = next_assignment(rng);
-        let v = match evaluate(dag, root, &assignment) {
+        let v = match evaluate(egraph, root, &assignment) {
             Ok(val) => val,
             Err(EvalError::DivisionByZero) => continue,
             Err(e) => return Err(e.into()),
@@ -240,16 +221,9 @@ fn probabilistic_zero_on_assignments(
     Ok(false)
 }
 
-/// Whether `p` is affine in `x`: builds the paper’s auxiliary polynomial `q` and runs the same
-/// sampled exact zero test as [`is_zero`] on `q` (see repository
-/// `paper/sections/substitution_map.tex`).
-///
-/// # Errors
-///
-/// Same as [`is_zero`]: [`PredicateError::InsufficientSamples`] when `cfg.zero_samples == 0`, etc.
 pub fn is_linear_in(
-    dag: &Dag,
-    root: NodeId,
+    egraph: &EGraph<RationalLang, ()>,
+    root: Id,
     x: VarId,
     other_vars: &[VarId],
     cfg: &SampleConfig,
@@ -258,21 +232,17 @@ pub fn is_linear_in(
         return Err(PredicateError::InsufficientSamples);
     }
 
-    let (q_dag, q_root, u_id, v_id, w_id) = build_linearity_q_polynomial(dag, root, x, other_vars);
+    let (q_egraph, q_root, u_id, v_id, w_id) =
+        build_linearity_q_polynomial(egraph, root, x, other_vars);
     let mut rng = rng_for_linearity_q(cfg, q_root, x);
-    probabilistic_zero_on_assignments(&q_dag, q_root, cfg, &mut rng, |rng| {
+    probabilistic_zero_on_assignments(&q_egraph, q_root, cfg, &mut rng, |rng| {
         random_assignment_with_uvw(other_vars, u_id, v_id, w_id, rng)
     })
 }
 
-/// Recover `a`, `b` with `p = a*x + b` in `x` (other variables fixed by `base`).
-///
-/// # Errors
-///
-/// Returns [`PredicateError`] when evaluation fails (missing variable, division by zero, etc.).
 pub fn recover_linear_coeffs<S: BuildHasher + Clone>(
-    dag: &Dag,
-    root: NodeId,
+    egraph: &EGraph<RationalLang, ()>,
+    root: Id,
     x: VarId,
     base: &HashMap<VarId, Q, S>,
 ) -> Result<LinearCoeffs, PredicateError> {
@@ -282,8 +252,8 @@ pub fn recover_linear_coeffs<S: BuildHasher + Clone>(
     a0.insert(x, Q::zero());
     a1.insert(x, Q::one());
 
-    let b = evaluate(dag, root, &a0)?;
-    let at_one = evaluate(dag, root, &a1)?;
+    let b = evaluate(egraph, root, &a0)?;
+    let at_one = evaluate(egraph, root, &a1)?;
     let a = at_one - b.clone();
 
     Ok(LinearCoeffs { a, b })

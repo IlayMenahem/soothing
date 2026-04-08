@@ -21,6 +21,7 @@ num-bigint = "0.4"
 rand = "0.8"
 rayon = "1"
 thiserror = "1.0"
+egg = "0.10"
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }

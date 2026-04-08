@@ -7,7 +7,7 @@
 use serde::Deserialize;
 use soothing_linear::{
     default_systems_dir_from_manifest, dfs_linear_elimination_solving_symbolic,
-    load_mathematica_system_from_path_with_var_names, Dag, SampleConfig,
+    load_mathematica_system_from_path_with_var_names, vars_in_root, SampleConfig,
 };
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -75,7 +75,7 @@ fn rust_elimination_stats() -> PythonEliminationStats {
     let n_eq = loaded.system.equations.len();
     let mut equation_symbols: HashSet<soothing_linear::VarId> = HashSet::new();
     for &r in &loaded.system.equations {
-        equation_symbols.extend(Dag::vars_in_root(&loaded.system.dag, r));
+        equation_symbols.extend(vars_in_root(&loaded.system.egraph, r));
     }
 
     let cfg = SampleConfig::default();

@@ -43,7 +43,7 @@ fn main() {
         .system
         .equations
         .iter()
-        .flat_map(|&r| soothing_linear::Dag::vars_in_root(&loaded.system.dag, r))
+        .flat_map(|&r| soothing_linear::vars_in_root(&loaded.system.egraph, r))
         .collect();
     let var_names = loaded.var_names.clone();
     println!(

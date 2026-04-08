@@ -1,14 +1,16 @@
-//! Expression parsing for [`Dag::from_rational_string`](crate::dag::Dag::from_rational_string).
+//! Expression parsing for [`crate::expr_lang::from_rational_string`].
 //! Parsing is delegated to [`arithmetic_parser`]; this module only defines a rational literal
-//! grammar and lowers the AST into a [`DagBuilder`].
+//! grammar and lowers the AST into an [`crate::expr_build::ExprBuilder`].
 
-use crate::dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
+use crate::expr_build::ExprBuilder;
+use crate::expr_lang::{DagParseError, RationalLang, VarId};
 use crate::field::Q;
 use arithmetic_parser::{
     grammars::{Features, Parse, ParseLiteral, Untyped},
     BinaryOp, Error as ApError, ErrorKind as ApErrorKind, Expr, InputSpan, NomResult, Spanned,
     SpannedExpr, UnaryOp,
 };
+use egg::{EGraph, Id};
 use nom::{
     character::complete::{char as tag_char, digit1},
     combinator::{map_res, opt, recognize},
@@ -55,7 +57,9 @@ impl Parse for RationalGrammar {
     const FEATURES: Features = Features::empty();
 }
 
-pub(crate) fn parse_rational_expression(s: &str) -> Result<(Dag, NodeId), DagParseError> {
+pub(crate) fn parse_rational_expression(
+    s: &str,
+) -> Result<(EGraph<RationalLang, ()>, Id), DagParseError> {
     let block = RationalGrammar::parse_statements(s).map_err(|e| map_ap_error(s, &e))?;
     if !block.statements.is_empty() {
         return Err(DagParseError::Unsupported {
@@ -66,18 +70,18 @@ pub(crate) fn parse_rational_expression(s: &str) -> Result<(Dag, NodeId), DagPar
     let Some(ret) = block.return_value else {
         return Err(DagParseError::UnexpectedEof);
     };
-    let mut builder = DagBuilder::new();
+    let mut builder = ExprBuilder::new();
     let mut name_to_var = HashMap::new();
     let mut next_free = 0u32;
     let root = lower_expr_allocating(&ret, &mut builder, &mut name_to_var, &mut next_free)?;
-    Ok((builder.build(), root))
+    Ok((builder.into_egraph(), root))
 }
 
 /// Parse using a fixed variable name → [`VarId`] map (no fresh ids). Unknown identifiers error.
 pub fn parse_rational_expression_with_var_map(
     s: &str,
     var_map: &HashMap<String, VarId>,
-) -> Result<(Dag, NodeId), DagParseError> {
+) -> Result<(EGraph<RationalLang, ()>, Id), DagParseError> {
     let block = RationalGrammar::parse_statements(s).map_err(|e| map_ap_error(s, &e))?;
     if !block.statements.is_empty() {
         return Err(DagParseError::Unsupported {
@@ -88,9 +92,9 @@ pub fn parse_rational_expression_with_var_map(
     let Some(ret) = block.return_value else {
         return Err(DagParseError::UnexpectedEof);
     };
-    let mut builder = DagBuilder::new();
+    let mut builder = ExprBuilder::new();
     let root = lower_expr_fixed_map(&ret, &mut builder, var_map)?;
-    Ok((builder.build(), root))
+    Ok((builder.into_egraph(), root))
 }
 
 fn map_ap_error(s: &str, e: &ApError) -> DagParseError {
@@ -151,10 +155,10 @@ fn var_for_ident(
 
 fn lower_expr_allocating(
     sp: &SpannedExpr<'_, Untyped<RationalGrammar>>,
-    b: &mut DagBuilder,
+    b: &mut ExprBuilder,
     name_to_var: &mut HashMap<String, VarId>,
     next_free: &mut u32,
-) -> Result<NodeId, DagParseError> {
+) -> Result<Id, DagParseError> {
     let pos = sp.location_offset();
     match &sp.extra {
         Expr::Literal(q) => Ok(b.constant(q.clone())),
@@ -215,9 +219,9 @@ fn lower_expr_allocating(
 
 fn lower_expr_fixed_map(
     sp: &SpannedExpr<'_, Untyped<RationalGrammar>>,
-    b: &mut DagBuilder,
+    b: &mut ExprBuilder,
     var_map: &HashMap<String, VarId>,
-) -> Result<NodeId, DagParseError> {
+) -> Result<Id, DagParseError> {
     let pos = sp.location_offset();
     match &sp.extra {
         Expr::Literal(q) => Ok(b.constant(q.clone())),
