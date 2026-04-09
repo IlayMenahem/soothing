@@ -23,5 +23,6 @@ __pycache__/
 .pytest_cache/
 
 target/
+examples.md
 
 .gitignore
