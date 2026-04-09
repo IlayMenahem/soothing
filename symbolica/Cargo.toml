@@ -1,0 +1,20 @@
+[package]
+name = "soothing-symbolica-elim"
+version = "0.1.0"
+edition = "2021"
+description = "DFS linear elimination using Symbolica (standalone; no soothing-linear dependency)."
+license = "MIT"
+
+[[bin]]
+name = "solve_simplified_mathematica"
+path = "src/bin/solve_simplified_mathematica.rs"
+
+[dependencies]
+ahash = "0.8"
+num-integer = "0.1"
+num-rational = "0.4"
+num-traits = "0.2"
+rand = "0.8"
+regex = "1"
+symbolica = "1.5"
+thiserror = "1"
