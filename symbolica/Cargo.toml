@@ -9,6 +9,10 @@ license = "MIT"
 name = "solve_simplified_mathematica"
 path = "src/bin/solve_simplified_mathematica.rs"
 
+[profile.release]
+opt-level = 3
+lto = "fat"
+
 [dependencies]
 ahash = "0.8"
 rayon = "1.10"
