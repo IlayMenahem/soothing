@@ -6,6 +6,7 @@ use std::io::Write;
 use std::ops::{Div, Sub};
 use std::time::Instant;
 
+use rayon::prelude::*;
 use symbolica::atom::{Atom, AtomCore, Symbol};
 use thiserror::Error;
 
@@ -94,7 +95,9 @@ pub fn is_solution_nonzero_kappah(
             let Some(expanded_atom) = expanded_rhs.get(&kappah) else {
                 return false;
             };
-            let vs: Vec<VarId> = vars_in_atom(expanded_atom, sym_to_vid).into_iter().collect();
+            let vs: Vec<VarId> = vars_in_atom(expanded_atom, sym_to_vid)
+                .into_iter()
+                .collect();
             is_zero(expanded_atom, &vs, cfg, id_to_sym).unwrap_or(true)
         }
         Err(SubstitutionError::Cycle) => return false,
@@ -172,7 +175,11 @@ where
     F: Fn(&EliminationResult) -> bool,
 {
     let original = system.clone();
-    let eqs: Vec<Atom> = system.equations.iter().map(|e| e.clone().expand()).collect();
+    let eqs: Vec<Atom> = system
+        .equations
+        .par_iter()
+        .map(|e| e.clone().expand())
+        .collect();
     let subst = SubstitutionMap::new();
     let result = match trace_writer {
         None => dfs_linear_elimination_inner(
@@ -337,7 +344,7 @@ fn collect_linear_pairs(
         })
         .collect();
     let linear_ok: Vec<bool> = candidates
-        .iter()
+        .par_iter()
         .map(|&(i, x)| {
             let others: Vec<VarId> = remaining.iter().filter(|&&v| v != x).copied().collect();
             matches!(
@@ -379,9 +386,9 @@ fn is_better_elimination(
 }
 
 fn simplify_equations(eqs: &mut [Atom]) {
-    for e in eqs.iter_mut() {
+    eqs.par_iter_mut().for_each(|e| {
         *e = e.clone().expand();
-    }
+    });
 }
 
 fn retain_nonzero_equations(
@@ -390,9 +397,12 @@ fn retain_nonzero_equations(
     id_to_sym: &[Symbol],
     sym_to_vid: &HashMap<Symbol, VarId>,
 ) {
-    let keep: Vec<bool> = eq_roots
-        .iter()
-        .map(|eq| {
+    let n = eq_roots.len();
+    let eq_slice: &[Atom] = eq_roots.as_slice();
+    let keep: Vec<bool> = (0..n)
+        .into_par_iter()
+        .map(|idx| {
+            let eq = &eq_slice[idx];
             let vs: Vec<VarId> = vars_in_atom(eq, sym_to_vid).into_iter().collect();
             match is_zero(eq, &vs, cfg, id_to_sym) {
                 Ok(true) => false,
@@ -434,10 +444,11 @@ fn apply_one_elimination(
         return Err(EliminationError::IllegitimateElimination { var: x });
     }
     if a_is_zero && b_is_zero {
-        *eq_roots = eq_roots
-            .iter()
-            .enumerate()
-            .filter_map(|(j, e)| (j != i).then_some(e.clone()))
+        let eq_slice: &[Atom] = eq_roots.as_slice();
+        *eq_roots = (0..eq_slice.len())
+            .into_par_iter()
+            .filter(|&j| j != i)
+            .map(|j| eq_slice[j].clone())
             .collect();
         retain_nonzero_equations(eq_roots, cfg, id_to_sym, sym_to_vid);
         simplify_equations(eq_roots);
@@ -454,11 +465,12 @@ fn apply_one_elimination(
 
     subst.insert(x, x_sol.clone());
 
-    *eq_roots = eq_roots
-        .iter()
-        .enumerate()
-        .filter(|&(j, _)| j != i)
-        .map(|(_, e)| substitute_symbol(e, x_sym, x_sol.clone()).expand())
+    let x_sol_cloned = x_sol.clone();
+    let eq_slice: &[Atom] = eq_roots.as_slice();
+    *eq_roots = (0..eq_slice.len())
+        .into_par_iter()
+        .filter(|&j| j != i)
+        .map(|j| substitute_symbol(&eq_slice[j], x_sym, x_sol_cloned.clone()).expand())
         .collect();
 
     retain_nonzero_equations(eq_roots, cfg, id_to_sym, sym_to_vid);

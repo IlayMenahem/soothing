@@ -7,6 +7,7 @@ use num_integer::Integer;
 use num_rational::Ratio;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rayon::prelude::*;
 use symbolica::atom::{Atom, AtomCore, Symbol};
 
 use crate::atom_util::{evaluate_atom, parse_identifier, substitute_symbol};
@@ -172,21 +173,9 @@ pub fn is_linear_in(
     let w_vid = VarId(base as u32 + 2);
 
     let mut extended_syms: Vec<Symbol> = id_to_sym.to_vec();
-    extended_syms.push(
-        u_atom
-            .get_symbol()
-            .ok_or(PredicateError::Eval(u_name))?,
-    );
-    extended_syms.push(
-        v_atom
-            .get_symbol()
-            .ok_or(PredicateError::Eval(v_name))?,
-    );
-    extended_syms.push(
-        w_atom
-            .get_symbol()
-            .ok_or(PredicateError::Eval(w_name))?,
-    );
+    extended_syms.push(u_atom.get_symbol().ok_or(PredicateError::Eval(u_name))?);
+    extended_syms.push(v_atom.get_symbol().ok_or(PredicateError::Eval(v_name))?);
+    extended_syms.push(w_atom.get_symbol().ok_or(PredicateError::Eval(w_name))?);
 
     let mut rng = rng_for_linearity_q(cfg, q.to_plain_string().len(), x);
     probabilistic_zero_on_assignments(
@@ -205,7 +194,7 @@ pub fn expr_finite_at_some_random_sample(
     id_to_sym: &[Symbol],
 ) -> bool {
     let max_attempts = SUBSTITUTION_NUMERIC_CHECK_SAMPLES * ZERO_TEST_ATTEMPT_MULTIPLIER;
-    (0..max_attempts).any(|attempt| {
+    (0..max_attempts).into_par_iter().any(|attempt| {
         let mut rng = StdRng::seed_from_u64(
             cfg.random_seed
                 .wrapping_add(attempt as u64)

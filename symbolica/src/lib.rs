@@ -9,7 +9,7 @@ pub mod system;
 pub mod var_id;
 
 pub use elimination::{
-    dfs_linear_elimination_solving_symbolic, default_is_solution, is_solution_nonzero_kappah,
+    default_is_solution, dfs_linear_elimination_solving_symbolic, is_solution_nonzero_kappah,
     EliminationError, EliminationResult,
 };
 pub use mathematica::{

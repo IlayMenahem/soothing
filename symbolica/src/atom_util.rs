@@ -42,10 +42,7 @@ pub fn substitute_symbol(expr: &Atom, x: Symbol, rhs: Atom) -> Atom {
 }
 
 /// Variables from `expr` that appear in `sym_to_vid`.
-pub fn vars_in_atom(
-    expr: &Atom,
-    sym_to_vid: &HashMap<Symbol, VarId>,
-) -> HashSet<VarId> {
+pub fn vars_in_atom(expr: &Atom, sym_to_vid: &HashMap<Symbol, VarId>) -> HashSet<VarId> {
     expr.get_all_symbols(false)
         .into_iter()
         .filter_map(|s| sym_to_vid.get(&s).copied())
@@ -64,9 +61,5 @@ pub fn evaluate_atom(
         let qf = q.to_f64().unwrap_or(f64::NAN);
         const_map.insert(Atom::var(sym), qf);
     }
-    expr.evaluate(
-        |r: &Rational| r.to_f64(),
-        &const_map,
-        &AHashMap::default(),
-    )
+    expr.evaluate(|r: &Rational| r.to_f64(), &const_map, &AHashMap::default())
 }

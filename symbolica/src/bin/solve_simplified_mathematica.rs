@@ -44,9 +44,7 @@ fn main() {
         .system
         .equations
         .iter()
-        .flat_map(|eq| {
-            soothing_symbolica_elim::atom_util::vars_in_atom(eq, &loaded.sym_to_vid)
-        })
+        .flat_map(|eq| soothing_symbolica_elim::atom_util::vars_in_atom(eq, &loaded.sym_to_vid))
         .collect();
     let var_names = loaded.var_names.clone();
     println!(

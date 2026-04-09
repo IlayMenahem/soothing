@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use rayon::prelude::*;
 use regex::Regex;
 use thiserror::Error;
 
@@ -240,14 +241,16 @@ pub(crate) fn equation_strings_from_mathematica(
 
 /// One [`Symbol`] per `var_names` entry (parse order must match equation parsing).
 pub fn symbols_for_var_names(var_names: &[String]) -> Result<Vec<Symbol>, MathematicaLoadError> {
-    var_names
-        .iter()
-        .map(|n| {
+    let parsed: Vec<Result<Symbol, MathematicaLoadError>> = (0..var_names.len())
+        .into_par_iter()
+        .map(|i| {
+            let n = &var_names[i];
             let a = parse_identifier(n).map_err(MathematicaLoadError::Parse)?;
             a.get_symbol()
                 .ok_or_else(|| MathematicaLoadError::Parse(format!("not a symbol: {n}")))
         })
-        .collect()
+        .collect();
+    parsed.into_iter().collect()
 }
 
 #[derive(Clone, Debug)]
@@ -276,11 +279,15 @@ pub fn load_mathematica_system_from_str_with_var_names(
         .map(|(i, s)| (*s, VarId(i as u32)))
         .collect();
 
-    let mut equations: Vec<Atom> = Vec::with_capacity(equation_strings.len());
-    for eq in equation_strings {
-        let atom = parse_expression(eq).map_err(MathematicaLoadError::Parse)?;
-        equations.push(atom.expand());
-    }
+    let parsed: Vec<Result<Atom, MathematicaLoadError>> = equation_strings
+        .into_par_iter()
+        .map(|eq| {
+            parse_expression(eq)
+                .map_err(MathematicaLoadError::Parse)
+                .map(|atom| atom.expand())
+        })
+        .collect();
+    let equations: Vec<Atom> = parsed.into_iter().collect::<Result<Vec<_>, _>>()?;
 
     Ok(LoadedMathematicaSystem {
         system: PolynomialSystem::new(equations),
