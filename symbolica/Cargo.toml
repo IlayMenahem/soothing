@@ -1,7 +1,7 @@
 [package]
 name = "soothing-symbolica-elim"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "DFS linear elimination using Symbolica (standalone; no soothing-linear dependency)."
 license = "MIT"
 
