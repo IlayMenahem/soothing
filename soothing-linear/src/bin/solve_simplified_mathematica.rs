@@ -17,7 +17,7 @@ use soothing_linear::{
 };
 
 /// Trace output path relative to the current working directory.
-const TRACE_LOG_FILE: &str = "elimination_trace.log";
+const TRACE_LOG_FILE: &str = "elimination_trace_dag.log";
 
 fn main() {
     let path: PathBuf = std::env::args().nth(1).map_or_else(

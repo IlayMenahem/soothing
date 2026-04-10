@@ -9,7 +9,7 @@ use soothing_symbolica_elim::{
     load_mathematica_system_from_path_with_var_names, SampleConfig, SubstitutionMap, VarId,
 };
 
-const TRACE_LOG_FILE: &str = "elimination_trace.log";
+const TRACE_LOG_FILE: &str = "elimination_trace_symbolica.log";
 
 fn print_substitution_bindings(sub: &SubstitutionMap, var_name: &dyn Fn(VarId) -> String) {
     sub.insertion_order().iter().copied().for_each(|v| {
