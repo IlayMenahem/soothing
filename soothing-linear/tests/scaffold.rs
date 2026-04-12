@@ -1,6 +1,6 @@
 #![allow(clippy::many_single_char_names)]
 
-use soothing_linear::{q, DagBuilder, PolynomialSystem, VarId};
+use soothing_linear::{DagBuilder, PolynomialSystem, VarId, q};
 
 #[test]
 fn crate_smoke_rational_system_and_dag() {

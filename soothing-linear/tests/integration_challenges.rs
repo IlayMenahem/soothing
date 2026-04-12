@@ -6,8 +6,8 @@
 use num_traits::Zero;
 
 use soothing_linear::{
-    evaluate, linear_elimination_greedy, q, Dag, DagBuilder, EliminationError, PolynomialSystem,
-    SampleConfig, VarId, Q,
+    Dag, DagBuilder, EliminationError, PolynomialSystem, Q, SampleConfig, VarId, evaluate,
+    linear_elimination_greedy, q,
 };
 use std::collections::HashMap;
 

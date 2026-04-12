@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use soothing_linear::{evaluate, q, Dag, DagParseError, VarId, Q};
+use soothing_linear::{Dag, DagParseError, Q, VarId, evaluate, q};
 
 #[test]
 fn parse_roundtrip_format() {

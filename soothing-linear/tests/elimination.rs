@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use num_traits::Zero;
 
 use soothing_linear::{
+    Dag, DagBuilder, EliminationResult, PolynomialSystem, Q, SampleConfig, SubstitutionMap, VarId,
     default_is_solution, dfs_linear_elimination, evaluate, is_solution_nonzero_kappah,
-    linear_elimination_greedy, q, Dag, DagBuilder, EliminationResult, PolynomialSystem,
-    SampleConfig, SubstitutionMap, VarId, Q,
+    linear_elimination_greedy, q,
 };
 
 #[test]

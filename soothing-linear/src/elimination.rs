@@ -4,9 +4,9 @@ use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
 use crate::mathematica_system::LoadedMathematicaSystem;
 use crate::predicates::{
-    expr_finite_at_some_random_sample, is_linear_in, is_zero, PredicateError, SampleConfig,
+    PredicateError, SampleConfig, expr_finite_at_some_random_sample, is_linear_in, is_zero,
 };
-use crate::simplify::{simplify, SimplifyError};
+use crate::simplify::{SimplifyError, simplify};
 use crate::substitution::{SubstitutionError, SubstitutionMap};
 use crate::system::PolynomialSystem;
 use rayon::prelude::*;
@@ -18,11 +18,15 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EliminationError {
-    #[error("missing variable \"kappah\" in loaded system (required for solving_symbolic-style elimination)")]
+    #[error(
+        "missing variable \"kappah\" in loaded system (required for solving_symbolic-style elimination)"
+    )]
     MissingKappah,
     #[error("illegitimate elimination: a=0 and b≠0 for variable {var:?}")]
     IllegitimateElimination { var: VarId },
-    #[error("degenerate substitution: RHS never evaluates successfully at random exact samples (variable {var:?})")]
+    #[error(
+        "degenerate substitution: RHS never evaluates successfully at random exact samples (variable {var:?})"
+    )]
     DegenerateSubstitution { var: VarId },
     #[error(transparent)]
     Io(#[from] std::io::Error),

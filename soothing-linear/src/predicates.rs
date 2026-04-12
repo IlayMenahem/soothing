@@ -6,7 +6,7 @@
 //! skipping sampled assignments that hit a division-by-zero pole.
 
 use crate::dag::{Dag, DagBuilder, NodeId, VarId};
-use crate::eval::{evaluate, EvalError};
+use crate::eval::{EvalError, evaluate};
 use crate::field::Q;
 use num_integer::Integer;
 use num_traits::{One, Zero};

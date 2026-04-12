@@ -6,9 +6,8 @@
 //! `cargo run -p soothing-linear --bin dfs_demo`
 
 use soothing_linear::{
-    default_is_solution, dfs_linear_elimination, linear_elimination_greedy,
-    print_substitution_bindings, Dag, DagBuilder, PolynomialSystem, SampleConfig, SubstitutionMap,
-    VarId,
+    Dag, DagBuilder, PolynomialSystem, SampleConfig, SubstitutionMap, VarId, default_is_solution,
+    dfs_linear_elimination, linear_elimination_greedy, print_substitution_bindings,
 };
 
 fn var_name(vid: VarId, z: VarId, x: VarId, y: VarId) -> String {

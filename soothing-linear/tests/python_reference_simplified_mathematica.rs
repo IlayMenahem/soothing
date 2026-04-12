@@ -6,8 +6,8 @@
 
 use serde::Deserialize;
 use soothing_linear::{
-    default_systems_dir_from_manifest, dfs_linear_elimination_solving_symbolic,
-    load_mathematica_system_from_path_with_var_names, Dag, SampleConfig,
+    Dag, SampleConfig, default_systems_dir_from_manifest, dfs_linear_elimination_solving_symbolic,
+    load_mathematica_system_from_path_with_var_names,
 };
 use std::collections::HashSet;
 use std::path::PathBuf;

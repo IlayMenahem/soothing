@@ -6,8 +6,8 @@
 use num_traits::Zero;
 
 use soothing_linear::{
-    assignment_seed, expr_finite_at_some_random_sample, is_linear_in, is_zero, q,
-    recover_linear_coeffs, Dag, DagBuilder, NodeId, PredicateError, SampleConfig, VarId,
+    Dag, DagBuilder, NodeId, PredicateError, SampleConfig, VarId, assignment_seed,
+    expr_finite_at_some_random_sample, is_linear_in, is_zero, q, recover_linear_coeffs,
 };
 
 /// Stricter [`zero_samples`] than default for multivariate checks (`linear_*` fields are unused by

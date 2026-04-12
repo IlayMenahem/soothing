@@ -5,15 +5,15 @@
 use crate::dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 use crate::field::Q;
 use arithmetic_parser::{
-    grammars::{Features, Parse, ParseLiteral, Untyped},
     BinaryOp, Error as ApError, ErrorKind as ApErrorKind, Expr, InputSpan, NomResult, Spanned,
     SpannedExpr, UnaryOp,
+    grammars::{Features, Parse, ParseLiteral, Untyped},
 };
 use nom::{
+    Err as NomErr, Slice,
     character::complete::{char as tag_char, digit1},
     combinator::{map_res, opt, recognize},
     sequence::tuple,
-    Err as NomErr, Slice,
 };
 use num_bigint::BigInt;
 use num_traits::Zero;

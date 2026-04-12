@@ -1,6 +1,6 @@
 #![allow(clippy::many_single_char_names)]
 
-use soothing_linear::{q, DagBuilder, SubstitutionMap, VarId};
+use soothing_linear::{DagBuilder, SubstitutionMap, VarId, q};
 
 #[test]
 fn single_binding() {

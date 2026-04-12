@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use soothing_linear::{
-    default_systems_dir_from_manifest, dfs_linear_elimination_solving_symbolic,
-    load_mathematica_system_from_path_with_var_names, print_substitution_bindings, SampleConfig,
-    VarId,
+    SampleConfig, VarId, default_systems_dir_from_manifest,
+    dfs_linear_elimination_solving_symbolic, load_mathematica_system_from_path_with_var_names,
+    print_substitution_bindings,
 };
 
 /// Trace output path relative to the current working directory.

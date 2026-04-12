@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId};
-use crate::field::{q_pow_integer, Q};
+use crate::field::{Q, q_pow_integer};
 use num_traits::{One, Zero};
 use thiserror::Error;
 
@@ -139,7 +139,9 @@ fn negate_rebuilt_expr(builder: &mut DagBuilder, id: NodeId) -> NodeId {
     match builder.node(id).clone() {
         Node::Const(c) => builder.constant(-c),
         Node::Mul(cs) => {
-            if let Some(&first) = cs.first() && let Node::Const(c) = builder.node(first) {
+            if let Some(&first) = cs.first()
+                && let Node::Const(c) = builder.node(first)
+            {
                 let mut ncs = cs;
                 ncs[0] = builder.constant(-c.clone());
                 return builder.mul(ncs);
@@ -173,11 +175,13 @@ fn rebuild_neg_node(
         return Ok(builder.constant(-c.clone()));
     }
     if let Node::Mul(cs) = builder.node(rebuilt_base)
-        && let Some(&first) = cs.first() && let Node::Const(c) = builder.node(first) {
-            let mut new_cs = cs.clone();
-            new_cs[0] = builder.constant(-c.clone());
-            return Ok(builder.mul(new_cs));
-        }
+        && let Some(&first) = cs.first()
+        && let Node::Const(c) = builder.node(first)
+    {
+        let mut new_cs = cs.clone();
+        new_cs[0] = builder.constant(-c.clone());
+        return Ok(builder.mul(new_cs));
+    }
     if let Node::Div(n, d) = builder.node(rebuilt_base).clone() {
         let neg_n = negate_rebuilt_expr(builder, n);
         return Ok(builder.div(neg_n, d));

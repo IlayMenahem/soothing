@@ -1,6 +1,6 @@
 #![allow(clippy::many_single_char_names)]
 
-use soothing_linear::{q, simplify, Dag, DagBuilder, VarId};
+use soothing_linear::{Dag, DagBuilder, VarId, q, simplify};
 
 #[test]
 fn flatten_nested_mul() {

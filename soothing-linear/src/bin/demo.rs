@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 
 use soothing_linear::{
-    assignment_seed, evaluate, linear_elimination_greedy, print_substitution_bindings,
-    simplify_for_display, Dag, DagBuilder, PolynomialSystem, SampleConfig, VarId, Q,
+    Dag, DagBuilder, PolynomialSystem, Q, SampleConfig, VarId, assignment_seed, evaluate,
+    linear_elimination_greedy, print_substitution_bindings, simplify_for_display,
 };
 
 #[allow(clippy::many_single_char_names)]

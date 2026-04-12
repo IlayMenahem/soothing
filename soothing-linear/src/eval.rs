@@ -4,7 +4,7 @@
 //! expressions and integer powers.
 
 use crate::dag::{Dag, Node, NodeId, VarId};
-use crate::field::{pi_approx_q, q_pow_integer, Q};
+use crate::field::{Q, pi_approx_q, q_pow_integer};
 use num_traits::Zero;
 use std::collections::HashMap;
 use std::collections::HashSet;

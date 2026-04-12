@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use soothing_linear::{
-    default_is_solution, default_systems_dir_from_manifest, dfs_linear_elimination,
-    load_mathematica_system_from_path, load_mathematica_system_from_str, Dag, SampleConfig,
+    Dag, SampleConfig, default_is_solution, default_systems_dir_from_manifest,
+    dfs_linear_elimination, load_mathematica_system_from_path, load_mathematica_system_from_str,
 };
 
 #[test]
