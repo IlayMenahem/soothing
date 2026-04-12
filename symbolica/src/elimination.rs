@@ -7,7 +7,7 @@ use std::ops::{Div, Sub};
 use std::time::Instant;
 
 use rayon::prelude::*;
-use symbolica::atom::{Atom, Symbol};
+use symbolica::atom::{Atom, AtomCore, Symbol};
 use thiserror::Error;
 
 use crate::atom_util::{substitute_symbol, vars_in_atom};
@@ -71,7 +71,7 @@ fn expanded_rhs_map(
                 node = substitute_symbol(&node, usym, ur.clone());
             }
         }
-        expanded.insert(v, node);
+        expanded.insert(v, node.expand());
     }
     Ok(expanded)
 }
@@ -175,7 +175,11 @@ where
     F: Fn(&EliminationResult) -> bool,
 {
     let original = system.clone();
-    let eqs: Vec<Atom> = system.equations.par_iter().cloned().collect();
+    let eqs: Vec<Atom> = system
+        .equations
+        .par_iter()
+        .map(|e| e.clone().expand())
+        .collect();
     let subst = SubstitutionMap::new();
     let result = match trace_writer {
         None => dfs_linear_elimination_inner(
@@ -381,6 +385,12 @@ fn is_better_elimination(
     free_a.len() > free_b.len()
 }
 
+fn simplify_equations(eqs: &mut [Atom]) {
+    eqs.par_iter_mut().for_each(|e| {
+        *e = e.clone().expand();
+    });
+}
+
 fn retain_nonzero_equations(
     eq_roots: &mut Vec<Atom>,
     cfg: &SampleConfig,
@@ -424,7 +434,7 @@ fn apply_one_elimination(
     let one = Atom::num(1i64);
     let b_coeff = substitute_symbol(eq, x_sym, zero);
     let p_at_one = substitute_symbol(eq, x_sym, one);
-    let a_coeff = p_at_one.sub(&b_coeff);
+    let a_coeff = p_at_one.sub(&b_coeff).expand();
 
     let free: Vec<VarId> = remaining.iter().filter(|&&v| v != x).copied().collect();
     let a_is_zero = is_zero(&a_coeff, &free, cfg, id_to_sym)?;
@@ -441,11 +451,12 @@ fn apply_one_elimination(
             .map(|j| eq_slice[j].clone())
             .collect();
         retain_nonzero_equations(eq_roots, cfg, id_to_sym, sym_to_vid);
+        simplify_equations(eq_roots);
         return Ok(());
     }
 
-    let neg_a = Atom::num(0i64).sub(&a_coeff);
-    let x_sol = b_coeff.div(&neg_a);
+    let neg_a = Atom::num(0i64).sub(&a_coeff).expand();
+    let x_sol = b_coeff.div(&neg_a).expand();
 
     let x_sol_vars: Vec<VarId> = vars_in_atom(&x_sol, sym_to_vid).into_iter().collect();
     if !expr_finite_at_some_random_sample(&x_sol, &x_sol_vars, cfg, id_to_sym) {
@@ -459,9 +470,10 @@ fn apply_one_elimination(
     *eq_roots = (0..eq_slice.len())
         .into_par_iter()
         .filter(|&j| j != i)
-        .map(|j| substitute_symbol(&eq_slice[j], x_sym, x_sol_cloned.clone()))
+        .map(|j| substitute_symbol(&eq_slice[j], x_sym, x_sol_cloned.clone()).expand())
         .collect();
 
     retain_nonzero_equations(eq_roots, cfg, id_to_sym, sym_to_vid);
+    simplify_equations(eq_roots);
     Ok(())
 }

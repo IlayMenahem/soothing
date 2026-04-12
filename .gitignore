@@ -24,5 +24,6 @@ __pycache__/
 
 target/
 examples.md
+res
 
 .gitignore

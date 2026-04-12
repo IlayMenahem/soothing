@@ -3,8 +3,9 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+use symbolica::LicenseManager;
 
-use soothing_symbolica_elim::{
+use symbolica_elim::{
     default_systems_dir_from_manifest, dfs_linear_elimination_solving_symbolic,
     load_mathematica_system_from_path_with_var_names, SampleConfig, SubstitutionMap, VarId,
 };
@@ -21,6 +22,9 @@ fn print_substitution_bindings(sub: &SubstitutionMap, var_name: &dyn Fn(VarId) -
 }
 
 fn main() {
+    let key = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
+    let _ = LicenseManager::set_license_key(key).unwrap();
+
     let path: PathBuf = std::env::args().nth(1).map_or_else(
         || default_systems_dir_from_manifest().join("simplified_mathematica_system.txt"),
         PathBuf::from,
@@ -28,7 +32,7 @@ fn main() {
 
     let trace_path = Path::new(TRACE_LOG_FILE);
 
-    println!("soothing-symbolica-elim — DFS elimination on Mathematica system (Symbolica)\n");
+    println!("symbolica-elim — DFS elimination on Mathematica system (Symbolica)\n");
     println!("Loading {}", path.display());
     println!("Tracing elimination to {}", trace_path.display());
     let loaded = match load_mathematica_system_from_path_with_var_names(&path) {
@@ -44,7 +48,7 @@ fn main() {
         .system
         .equations
         .iter()
-        .flat_map(|eq| soothing_symbolica_elim::atom_util::vars_in_atom(eq, &loaded.sym_to_vid))
+        .flat_map(|eq| symbolica_elim::atom_util::vars_in_atom(eq, &loaded.sym_to_vid))
         .collect();
     let var_names = loaded.var_names.clone();
     println!(
