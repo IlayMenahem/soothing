@@ -6,8 +6,8 @@ use std::time::Instant;
 use symbolica::LicenseManager;
 
 use symbolica_elim::{
-    default_systems_dir_from_manifest, dfs_linear_elimination_solving_symbolic,
-    load_mathematica_system_from_path_with_var_names, SampleConfig, SubstitutionMap, VarId,
+    SampleConfig, SubstitutionMap, VarId, default_systems_dir_from_manifest,
+    dfs_linear_elimination_solving_symbolic, load_mathematica_system_from_path_with_var_names,
 };
 
 const TRACE_LOG_FILE: &str = "elimination_trace_symbolica.log";
@@ -23,7 +23,7 @@ fn print_substitution_bindings(sub: &SubstitutionMap, var_name: &dyn Fn(VarId) -
 
 fn main() {
     let key = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
-    let _ = LicenseManager::set_license_key(key).unwrap();
+    LicenseManager::set_license_key(key).unwrap();
 
     let path: PathBuf = std::env::args().nth(1).map_or_else(
         || default_systems_dir_from_manifest().join("simplified_mathematica_system.txt"),

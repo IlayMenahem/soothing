@@ -13,7 +13,7 @@ use thiserror::Error;
 use crate::atom_util::{substitute_symbol, vars_in_atom};
 use crate::mathematica::LoadedMathematicaSystem;
 use crate::predicates::{
-    expr_finite_at_some_random_sample, is_linear_in, is_zero, PredicateError, SampleConfig,
+    PredicateError, SampleConfig, expr_finite_at_some_random_sample, is_linear_in, is_zero,
 };
 use crate::substitution::{SubstitutionError, SubstitutionMap};
 use crate::system::PolynomialSystem;
@@ -25,7 +25,9 @@ pub enum EliminationError {
     MissingKappah,
     #[error("illegitimate elimination: a=0 and b≠0 for variable {var:?}")]
     IllegitimateElimination { var: VarId },
-    #[error("degenerate substitution: RHS never evaluates successfully at random exact samples (variable {var:?})")]
+    #[error(
+        "degenerate substitution: RHS never evaluates successfully at random exact samples (variable {var:?})"
+    )]
     DegenerateSubstitution { var: VarId },
     #[error(transparent)]
     Io(#[from] std::io::Error),
