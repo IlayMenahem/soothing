@@ -153,8 +153,8 @@ fn substitution_residuals_vanish_for_single_linear_equation() {
                 a.insert(v, val);
             }
         }
-        let value_at_x = a.get(&x).unwrap().clone();
-        let value_at_y = a.get(&y).unwrap().clone();
+        let value_at_x = *a.get(&x).unwrap();
+        let value_at_y = *a.get(&y).unwrap();
         assert_eq!(value_at_x + q(2, 1) * value_at_y, Q::zero());
     }
 }

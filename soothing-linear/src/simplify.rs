@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId};
-use crate::field::{Q, q_pow_integer};
-use num_traits::{One, Zero};
+use crate::field::Q;
+use num_traits::{One, Pow, Zero};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Error)]
@@ -62,7 +62,7 @@ fn fold_grouped_add(builder: &mut DagBuilder, flattened: Vec<NodeId>) -> NodeId 
     let mut non_const = Vec::new();
     for id in flattened {
         match builder.node(id) {
-            Node::Const(c) => const_sum += c.clone(),
+            Node::Const(c) => const_sum += *c,
             _ => non_const.push(id),
         }
     }
@@ -82,7 +82,7 @@ fn fold_grouped_mul(builder: &mut DagBuilder, flattened: Vec<NodeId>) -> NodeId 
     let mut non_const = Vec::new();
     for id in flattened {
         match builder.node(id) {
-            Node::Const(c) => prod *= c.clone(),
+            Node::Const(c) => prod *= *c,
             _ => non_const.push(id),
         }
     }
@@ -143,7 +143,7 @@ fn negate_rebuilt_expr(builder: &mut DagBuilder, id: NodeId) -> NodeId {
                 && let Node::Const(c) = builder.node(first)
             {
                 let mut ncs = cs;
-                ncs[0] = builder.constant(-c.clone());
+                ncs[0] = builder.constant(-*c);
                 return builder.mul(ncs);
             }
             builder.neg(id)
@@ -172,14 +172,14 @@ fn rebuild_neg_node(
         return Ok(rebuilt_base);
     }
     if let Node::Const(c) = builder.node(rebuilt_base) {
-        return Ok(builder.constant(-c.clone()));
+        return Ok(builder.constant(-*c));
     }
     if let Node::Mul(cs) = builder.node(rebuilt_base)
         && let Some(&first) = cs.first()
         && let Node::Const(c) = builder.node(first)
     {
         let mut new_cs = cs.clone();
-        new_cs[0] = builder.constant(-c.clone());
+        new_cs[0] = builder.constant(-*c);
         return Ok(builder.mul(new_cs));
     }
     if let Node::Div(n, d) = builder.node(rebuilt_base).clone() {
@@ -235,7 +235,7 @@ fn rebuild_div_node(
             if b.is_zero() {
                 Err(SimplifyError::DivisionByZero)
             } else {
-                Ok(builder.constant(a.clone() / b.clone()))
+                Ok(builder.constant(*a / *b))
             }
         }
         _ => Ok(builder.div(num, den)),
@@ -256,9 +256,12 @@ fn rebuild_pow_node(
             if !exp.is_integer() {
                 return Err(SimplifyError::NonIntegerExponent);
             }
-            q_pow_integer(base.clone(), exp.numer())
-                .map(|v| builder.constant(v))
-                .ok_or(SimplifyError::DivisionByZero)
+            let k = *exp.numer();
+            if k < 0 && base.is_zero() {
+                return Err(SimplifyError::DivisionByZero);
+            }
+            let exp_i32 = i32::try_from(k).map_err(|_| SimplifyError::DivisionByZero)?;
+            Ok(builder.constant(Pow::pow(*base, exp_i32)))
         }
         _ => Ok(builder.pow(rebuilt_base, rebuilt_exp)),
     }
@@ -275,7 +278,7 @@ fn rebuild_simplified_subdag(
     }
 
     let rebuilt = match source.node(node) {
-        Node::Const(c) => builder.constant(c.clone()),
+        Node::Const(c) => builder.constant(*c),
         Node::ConstPi => builder.const_pi(),
         Node::Var(v) => builder.variable(*v),
         Node::Add(children) => rebuild_add_node(builder, source, children, rebuilt_nodes)?,

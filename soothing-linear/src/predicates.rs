@@ -69,7 +69,7 @@ fn random_sample_q(rng: &mut StdRng) -> Q {
     .find(|(n, d)| n.abs().gcd(d) == 1)
     .expect("coprime pair exists in bounded range");
 
-    Q::new(numer.into(), denom.into())
+    Q::new(i128::from(numer), i128::from(denom))
 }
 
 fn random_assignment_q(vars: &[VarId], rng: &mut StdRng) -> HashMap<VarId, Q> {
@@ -284,7 +284,7 @@ pub fn recover_linear_coeffs<S: BuildHasher + Clone>(
 
     let b = evaluate(dag, root, &a0)?;
     let at_one = evaluate(dag, root, &a1)?;
-    let a = at_one - b.clone();
+    let a = at_one - b;
 
     Ok(LinearCoeffs { a, b })
 }
@@ -302,7 +302,7 @@ pub fn assignment_seed(vars: &[VarId], seed: usize) -> HashMap<VarId, Q> {
         .enumerate()
         .map(|(i, v)| {
             let t = (seed + 1) as i64 * (i as i64 + 1);
-            (*v, Q::new(t.into(), 1.into()))
+            (*v, Q::new(i128::from(t), 1))
         })
         .collect()
 }

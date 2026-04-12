@@ -36,7 +36,7 @@ fn parse_pow_left_assoc() {
     let (dag, root) = Dag::from_rational_string("2 ^ 3 ^ 2").unwrap();
     let assign = HashMap::new();
     let got = evaluate(&dag, root, &assign).unwrap();
-    assert_eq!(got, Q::from_integer(64.into()));
+    assert_eq!(got, Q::from_integer(64));
 }
 
 #[test]

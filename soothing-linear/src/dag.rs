@@ -105,7 +105,7 @@ impl Dag {
         /// For `Neg(Neg(..))`, parenthesize the inner node so we do not concatenate two `-` tokens.
         fn fmt_neg(dag: &Dag, child: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
             match dag.node(child) {
-                Node::Const(c) => format!("{}", -c.clone()),
+                Node::Const(c) => format!("{}", -*c),
                 Node::Neg(_) => format!("-({})", dag.fmt_node(child, var_name)),
                 _ => {
                     let inner = dag.fmt_node(child, var_name);
@@ -189,7 +189,7 @@ impl Dag {
     /// custom rational literal grammar (decimal integers or `p/q`), no statements or semicolons, and
     /// features limited to basic arithmetic (no tuples, blocks, `//` is a line comment).
     ///
-    /// - **Rational literals:** integers or `p/q` with arbitrary-size integer numerator and denominator.
+    /// - **Rational literals:** integers or `p/q` with `i128` numerator and denominator (parse errors if out of range).
     /// - **Variables:** `vN` for `N` decimal digits maps to [`VarId`]`(N)`. Any other identifier
     ///   gets a fresh [`VarId`] on first occurrence (stable across the string).
     /// - **Operators:** `+`, `-` (binary and unary), `*`, `/`, `^` (right-associative), parentheses.
@@ -361,7 +361,7 @@ impl DagBuilder {
         }
 
         let mapped = match source.node(id) {
-            Node::Const(c) => self.constant(c.clone()),
+            Node::Const(c) => self.constant(*c),
             Node::ConstPi => self.const_pi(),
             Node::Var(v) => self.variable(*v),
             Node::Add(cs) => {
@@ -441,7 +441,7 @@ impl DagBuilder {
         }
         let mapped = match source.node(id) {
             Node::Var(v) if *v == var => repl,
-            Node::Const(c) => self.constant(c.clone()),
+            Node::Const(c) => self.constant(*c),
             Node::ConstPi => self.const_pi(),
             Node::Var(v) => self.variable(*v),
             Node::Add(cs) => {

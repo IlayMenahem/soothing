@@ -21,7 +21,7 @@ const TRACE_LOG_FILE: &str = "elimination_trace_dag.log";
 
 fn main() {
     let path: PathBuf = std::env::args().nth(1).map_or_else(
-        || default_systems_dir_from_manifest().join("simplified_mathematica_system.txt"),
+        || default_systems_dir_from_manifest().join("system.txt"),
         PathBuf::from,
     );
 

@@ -114,8 +114,8 @@ fn nonzero_slope_substitution_satisfies_original_linear_equation() {
                 a.insert(v, val);
             }
         }
-        let v0 = a.get(&VarId(0)).unwrap().clone();
-        let v1 = a.get(&VarId(1)).unwrap().clone();
+        let v0 = *a.get(&VarId(0)).unwrap();
+        let v1 = *a.get(&VarId(1)).unwrap();
         assert_eq!(q(3, 1) * v0 + v1, Q::zero());
     }
 }

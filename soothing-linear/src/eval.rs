@@ -4,8 +4,8 @@
 //! expressions and integer powers.
 
 use crate::dag::{Dag, Node, NodeId, VarId};
-use crate::field::{Q, pi_approx_q, q_pow_integer};
-use num_traits::Zero;
+use crate::field::{Q, pi_approx_q};
+use num_traits::{Pow, Zero};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::hash::BuildHasher;
@@ -55,7 +55,7 @@ fn eval_node<S: BuildHasher>(
     values: &[Option<Q>],
 ) -> Result<Q, EvalError> {
     match dag.node(id) {
-        Node::Const(c) => Ok(c.clone()),
+        Node::Const(c) => Ok(*c),
         Node::ConstPi => Ok(pi_approx_q()),
         Node::Var(x) => assignment
             .get(x)
@@ -84,7 +84,12 @@ fn eval_node<S: BuildHasher>(
             if !exp.is_integer() {
                 return Err(EvalError::NonIntegerExponent);
             }
-            q_pow_integer(base.clone(), exp.numer()).ok_or(EvalError::DivisionByZero)
+            let k = *exp.numer();
+            if k < 0 && base.is_zero() {
+                return Err(EvalError::DivisionByZero);
+            }
+            let exp_i32 = i32::try_from(k).map_err(|_| EvalError::DivisionByZero)?;
+            Ok(Pow::pow(*base, exp_i32))
         }
     }
 }

@@ -15,7 +15,6 @@ use nom::{
     combinator::{map_res, opt, recognize},
     sequence::tuple,
 };
-use num_bigint::BigInt;
 use num_traits::Zero;
 use std::collections::HashMap;
 
@@ -28,14 +27,14 @@ impl ParseLiteral for RationalGrammar {
     type Lit = Q;
 
     fn parse_literal(input: InputSpan<'_>) -> NomResult<'_, Self::Lit> {
-        let mut parse_bigint = map_res(
+        let mut parse_i128 = map_res(
             recognize(tuple((opt(tag_char('-')), digit1))),
-            |s: InputSpan<'_>| s.fragment().parse::<BigInt>().map_err(ApErrorKind::literal),
+            |s: InputSpan<'_>| s.fragment().parse::<i128>().map_err(ApErrorKind::literal),
         );
-        let (rest, num) = parse_bigint(input)?;
+        let (rest, num) = parse_i128(input)?;
         if rest.fragment().starts_with('/') {
             let after_slash = rest.slice(1..);
-            let (rest2, den) = parse_bigint(after_slash)?;
+            let (rest2, den) = parse_i128(after_slash)?;
             if den.is_zero() {
                 let frag = after_slash.fragment();
                 let sp = Spanned::from_str(frag, 0..frag.len());
@@ -45,7 +44,7 @@ impl ParseLiteral for RationalGrammar {
             }
             Ok((rest2, Q::new(num, den)))
         } else {
-            Ok((rest, Q::new(num, 1.into())))
+            Ok((rest, Q::new(num, 1)))
         }
     }
 }
@@ -157,7 +156,7 @@ fn lower_expr_allocating(
 ) -> Result<NodeId, DagParseError> {
     let pos = sp.location_offset();
     match &sp.extra {
-        Expr::Literal(q) => Ok(b.constant(q.clone())),
+        Expr::Literal(q) => Ok(b.constant(*q)),
         Expr::Variable => {
             let name: &str = sp.fragment();
             if name == "pi" {
@@ -220,7 +219,7 @@ fn lower_expr_fixed_map(
 ) -> Result<NodeId, DagParseError> {
     let pos = sp.location_offset();
     match &sp.extra {
-        Expr::Literal(q) => Ok(b.constant(q.clone())),
+        Expr::Literal(q) => Ok(b.constant(*q)),
         Expr::Variable => {
             let name: &str = sp.fragment();
             if name == "pi" {

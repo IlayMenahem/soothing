@@ -634,7 +634,7 @@ mod tests {
 
         let mut right_subst = SubstitutionMap::new();
         let mut subst_builder = DagBuilder::new();
-        let zero = subst_builder.constant(crate::Q::from_integer(0.into()));
+        let zero = subst_builder.constant(crate::Q::from_integer(0));
         let subst_dag = subst_builder.build();
         right_subst.insert(x, &subst_dag, zero);
         right_subst.insert(y, &subst_dag, zero);
