@@ -1,4 +1,7 @@
-//! DFS linear elimination using exact polynomial predicates ([`crate::exact`]).
+//! Depth-first linear elimination using exact polynomial predicates ([`crate::exact`]).
+//!
+//! Same search shape as [`crate::elimination::dfs_eliminate`], but linearity and
+//! zero-testing use exact rational checks instead of randomized sampling.
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -14,15 +17,12 @@ use crate::elimination::EliminationResult;
 use crate::exact::{
     ExactPredicateError, is_linear_in_exact, is_zero_exact, rhs_denominator_nonzero_exact,
 };
-use crate::mathematica::LoadedMathematicaSystem;
 use crate::substitution::{SubstitutionError, SubstitutionMap};
 use crate::system::PolynomialSystem;
 use crate::var_id::VarId;
 
 #[derive(Debug, Error)]
 pub enum EliminationExactError {
-    #[error("missing variable \"kappah\" in loaded system")]
-    MissingKappah,
     #[error("illegitimate elimination: a=0 and b≠0 for variable {var:?}")]
     IllegitimateElimination { var: VarId },
     #[error(
@@ -68,6 +68,8 @@ fn expanded_rhs_map(
     Ok(expanded)
 }
 
+/// Like [`crate::elimination::is_solution_nonzero_kappah`], but uses exact zero
+/// tests on the expanded RHS for `kappah`.
 #[must_use]
 pub fn is_solution_nonzero_kappah_exact(
     r: &EliminationResult,
@@ -126,28 +128,8 @@ fn validate_elimination_result(
     }
 }
 
-pub fn dfs_linear_elimination_solving_symbolic_exact(
-    loaded: &LoadedMathematicaSystem,
-    trace_writer: Option<&mut dyn Write>,
-) -> Result<EliminationResult, EliminationExactError> {
-    let kappah = loaded
-        .var_names
-        .iter()
-        .position(|n| n == "kappah")
-        .map(|i| VarId(u32::try_from(i).unwrap()))
-        .ok_or(EliminationExactError::MissingKappah)?;
-    let sym_to_vid = &loaded.sym_to_vid;
-    let id_to_sym = &loaded.id_to_sym;
-    dfs_linear_elimination_exact(
-        &loaded.system,
-        trace_writer,
-        |r| is_solution_nonzero_kappah_exact(r, kappah, sym_to_vid, id_to_sym),
-        sym_to_vid,
-        id_to_sym,
-    )
-}
-
-pub fn dfs_linear_elimination_exact<F>(
+/// Exact-predicate variant of [`crate::elimination::dfs_eliminate`].
+pub fn dfs_eliminate_exact<F>(
     system: &PolynomialSystem,
     trace_writer: Option<&mut dyn Write>,
     is_solution: F,
@@ -165,19 +147,13 @@ where
         .collect();
     let subst = SubstitutionMap::new();
     let result = match trace_writer {
-        None => dfs_linear_elimination_inner(
-            eqs,
-            subst,
-            None,
-            None,
-            &is_solution,
-            sym_to_vid,
-            id_to_sym,
-        )?,
+        None => {
+            dfs_eliminate_exact_inner(eqs, subst, None, None, &is_solution, sym_to_vid, id_to_sym)?
+        }
         Some(w) => {
             let trace_w = RefCell::new(w);
             let trace_st = RefCell::new(EliminationTraceState::default());
-            dfs_linear_elimination_inner(
+            dfs_eliminate_exact_inner(
                 eqs,
                 subst,
                 Some(&trace_w),
@@ -192,8 +168,9 @@ where
     Ok(result)
 }
 
+/// Recursive step for [`dfs_eliminate_exact`].
 #[allow(clippy::too_many_arguments)]
-fn dfs_linear_elimination_inner<F>(
+fn dfs_eliminate_exact_inner<F>(
     eq_roots: Vec<Atom>,
     subst: SubstitutionMap,
     trace_w: Option<&RefCell<&mut dyn Write>>,
@@ -284,7 +261,7 @@ where
             out.flush()?;
         }
 
-        let r = dfs_linear_elimination_inner(
+        let r = dfs_eliminate_exact_inner(
             eq_branch,
             subst_branch,
             trace_w,

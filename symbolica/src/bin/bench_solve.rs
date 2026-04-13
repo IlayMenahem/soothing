@@ -6,7 +6,7 @@ use std::time::Instant;
 use symbolica::LicenseManager;
 
 use symbolica_elim::{
-    SubstitutionMap, VarId, default_systems_dir_from_manifest, dfs_linear_elimination_exact,
+    SubstitutionMap, VarId, default_systems_dir_from_manifest, dfs_eliminate_exact,
     load_mathematica_system_from_path_with_var_names,
 };
 
@@ -66,7 +66,7 @@ fn main() {
     };
 
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination_exact(
+    let res = match dfs_eliminate_exact(
         &loaded.system,
         Some(&mut trace_file),
         |_| false,
@@ -75,7 +75,7 @@ fn main() {
     ) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("dfs_linear_elimination_exact error: {e}");
+            eprintln!("dfs_eliminate_exact error: {e}");
             std::process::exit(1);
         }
     };

@@ -11,12 +11,11 @@ pub mod system;
 pub mod var_id;
 
 pub use elimination::{
-    EliminationError, EliminationResult, default_is_solution,
-    dfs_linear_elimination_solving_symbolic, is_solution_nonzero_kappah,
+    EliminationError, EliminationResult, default_is_solution, dfs_eliminate,
+    is_solution_nonzero_kappah,
 };
 pub use elimination_exact::{
-    EliminationExactError, dfs_linear_elimination_exact,
-    dfs_linear_elimination_solving_symbolic_exact, is_solution_nonzero_kappah_exact,
+    EliminationExactError, dfs_eliminate_exact, is_solution_nonzero_kappah_exact,
 };
 pub use exact::{
     ExactPredicateError, is_linear_in_exact, is_zero_exact, rhs_denominator_nonzero_exact,

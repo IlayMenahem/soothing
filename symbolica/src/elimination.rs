@@ -11,7 +11,6 @@ use symbolica::atom::{Atom, AtomCore, Symbol};
 use thiserror::Error;
 
 use crate::atom_util::{substitute_symbol, vars_in_atom};
-use crate::mathematica::LoadedMathematicaSystem;
 use crate::predicates::{
     PredicateError, SampleConfig, expr_finite_at_some_random_sample, is_linear_in, is_zero,
 };
@@ -21,8 +20,6 @@ use crate::var_id::VarId;
 
 #[derive(Debug, Error)]
 pub enum EliminationError {
-    #[error("missing variable \"kappah\" in loaded system")]
-    MissingKappah,
     #[error("illegitimate elimination: a=0 and b≠0 for variable {var:?}")]
     IllegitimateElimination { var: VarId },
     #[error(
@@ -78,6 +75,8 @@ fn expanded_rhs_map(
     Ok(expanded)
 }
 
+/// True when the elimination fully solves the system and the expanded RHS for
+/// `kappah` is not identically zero (random exact sampling).
 #[must_use]
 pub fn is_solution_nonzero_kappah(
     r: &EliminationResult,
@@ -142,30 +141,10 @@ fn validate_elimination_result(
     }
 }
 
-pub fn dfs_linear_elimination_solving_symbolic(
-    loaded: &LoadedMathematicaSystem,
-    cfg: &SampleConfig,
-    trace_writer: Option<&mut dyn Write>,
-) -> Result<EliminationResult, EliminationError> {
-    let kappah = loaded
-        .var_names
-        .iter()
-        .position(|n| n == "kappah")
-        .map(|i| VarId(u32::try_from(i).unwrap()))
-        .ok_or(EliminationError::MissingKappah)?;
-    let sym_to_vid = &loaded.sym_to_vid;
-    let id_to_sym = &loaded.id_to_sym;
-    dfs_linear_elimination(
-        &loaded.system,
-        cfg,
-        trace_writer,
-        |r| is_solution_nonzero_kappah(r, kappah, cfg, sym_to_vid, id_to_sym),
-        sym_to_vid,
-        id_to_sym,
-    )
-}
-
-pub fn dfs_linear_elimination<F>(
+/// DFS over affine elimination steps. `is_solution` decides when to return a
+/// branch immediately; otherwise the search keeps the best partial result
+/// (fewest remaining equations, then fewest free variables among residuals).
+pub fn dfs_eliminate<F>(
     system: &PolynomialSystem,
     cfg: &SampleConfig,
     trace_writer: Option<&mut dyn Write>,
@@ -184,7 +163,7 @@ where
         .collect();
     let subst = SubstitutionMap::new();
     let result = match trace_writer {
-        None => dfs_linear_elimination_inner(
+        None => dfs_eliminate_inner(
             eqs,
             subst,
             cfg,
@@ -197,7 +176,7 @@ where
         Some(w) => {
             let trace_w = RefCell::new(w);
             let trace_st = RefCell::new(EliminationTraceState::default());
-            dfs_linear_elimination_inner(
+            dfs_eliminate_inner(
                 eqs,
                 subst,
                 cfg,
@@ -213,8 +192,10 @@ where
     Ok(result)
 }
 
+/// Recursive step for [`dfs_eliminate`]: try each linear pair, recurse, accept
+/// when `is_solution` holds or keep the best partial elimination.
 #[allow(clippy::too_many_arguments)]
-fn dfs_linear_elimination_inner<F>(
+fn dfs_eliminate_inner<F>(
     eq_roots: Vec<Atom>,
     subst: SubstitutionMap,
     cfg: &SampleConfig,
@@ -307,7 +288,7 @@ where
             out.flush()?;
         }
 
-        let r = dfs_linear_elimination_inner(
+        let r = dfs_eliminate_inner(
             eq_branch,
             subst_branch,
             cfg,

@@ -6,8 +6,8 @@ use std::time::Instant;
 use symbolica::LicenseManager;
 
 use symbolica_elim::{
-    SampleConfig, SubstitutionMap, VarId, default_systems_dir_from_manifest,
-    dfs_linear_elimination_solving_symbolic, load_mathematica_system_from_path_with_var_names,
+    SampleConfig, SubstitutionMap, VarId, default_systems_dir_from_manifest, dfs_eliminate,
+    is_solution_nonzero_kappah, load_mathematica_system_from_path_with_var_names,
 };
 
 const TRACE_LOG_FILE: &str = "elimination_trace_symbolica.log";
@@ -58,6 +58,13 @@ fn main() {
     );
 
     let cfg = SampleConfig::default();
+    let kappah = match loaded.var_names.iter().position(|n| n == "kappah") {
+        Some(i) => VarId(u32::try_from(i).unwrap()),
+        None => {
+            eprintln!("missing variable \"kappah\" in loaded system");
+            std::process::exit(1);
+        }
+    };
 
     let mut trace_file = match File::create(trace_path) {
         Ok(f) => f,
@@ -68,10 +75,17 @@ fn main() {
     };
 
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination_solving_symbolic(&loaded, &cfg, Some(&mut trace_file)) {
+    let res = match dfs_eliminate(
+        &loaded.system,
+        &cfg,
+        Some(&mut trace_file),
+        |r| is_solution_nonzero_kappah(r, kappah, &cfg, &loaded.sym_to_vid, &loaded.id_to_sym),
+        &loaded.sym_to_vid,
+        &loaded.id_to_sym,
+    ) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("dfs_linear_elimination_solving_symbolic error: {e}");
+            eprintln!("dfs_eliminate error: {e}");
             std::process::exit(1);
         }
     };
