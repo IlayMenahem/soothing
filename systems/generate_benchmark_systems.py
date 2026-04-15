@@ -12,18 +12,25 @@ References (per family):
   * **nash** — 2×2 game; row/column indifference (linear polynomials in ``p``, ``q``).
   * **adjacent_minors** — vanishing adjacent 2×2 minors of an ``r×c`` matrix.
   * **sparse_toric** — sparse binomial fewnomial system ``x_i^2 * x_{i+1} - 1`` (cyclic indices).
+  * **random_distances** — seeded planar kinematics after algebraization on a random connected
+    link graph (``c_e``, ``s_e`` per spanning-tree edge, unit circles, chord loop closures, optional
+    consistent end-position closure).
+  * **chemical_steady_state_random** — seeded mass-action ``S * v(x) = 0`` plus conservation rows from
+    ``ker(S^T)`` (pre-reduction).
 """
 
 from __future__ import annotations
 
 import argparse
+import math
+import random
 import re
 import sys
+import itertools
 from pathlib import Path
 from typing import Callable, Sequence
 
-from sympy import Expr, Integer, Rational, Symbol, expand, prod, signsimp, symbols
-
+from sympy import Expr, Integer, Matrix, Rational, Symbol, expand, prod, signsimp, symbols
 
 def sympy_to_dag_string(expr: Expr) -> str:
     """Emit syntax compatible with ``soothing-linear`` rational DAG: ``^`` for powers, ``/`` for divide."""
@@ -169,6 +176,86 @@ def sparse_toric(n: int) -> list[Expr]:
     return eqs
 
 
+def random_distances(joints: int, *, seed: int) -> list[Expr]:
+    def random_graph(joints: int, prob: float, seed: int) -> list[tuple[int, int]]:
+        edges = []
+
+        for i, j in itertools.combinations(range(joints), 2):
+            if rng.random() < prob:
+                edges.append((i, j))
+
+        return edges
+
+    if joints < 2:
+        raise ValueError("random_distances requires joints >= 2")
+
+    rng = random.Random(seed)
+
+    prob = math.log(joints) / joints
+    edges = random_graph(joints, prob, seed)
+
+    distances = {edge: rng.choice(range(1, 10)) for edge in edges}
+
+    eqs: list[Expr] = []
+    xs = [Symbol(f"x{i}") for i in range(joints)]
+    ys = [Symbol(f"y{i}") for i in range(joints)]
+    zs = [Symbol(f"z{i}") for i in range(joints)]
+
+    eqs.extend([xs[0] - 0, ys[0] - 0, zs[0] - 0])
+    
+    for edge in edges:
+        i, j = edge
+        eqs.append((xs[i] - xs[j])**2 + (ys[i] - ys[j])**2 + (zs[i] - zs[j])**2 - distances[edge]**2)
+
+    return eqs
+
+def chemical_steady_state_random(species: int, reactions: int, *, seed: int) -> list[Expr]:
+    """
+    Mass-action: ``d x / d t = S * v(x)`` with polynomial rates ``v_j``; steady state ``S * v(x) = 0``.
+
+    Rates are zeroth order (constant) or first order in a single species (no bimolecular terms),
+    so ``v_j`` are affine in ``x``. Conservation rows ``w^T x = T`` come from ``ker(S^T)``
+    (``Matrix(S).T.nullspace()``), matching pre-reduction models that keep redundant linear laws.
+    """
+    if species < 1:
+        raise ValueError("chemical_steady_state_random requires species >= 1")
+    if reactions < 1:
+        raise ValueError("chemical_steady_state_random requires reactions >= 1")
+
+    rng = random.Random(seed)
+    xs = [Symbol(f"x{i}") for i in range(1, species + 1)]
+    s_entries: list[list[int]] = [
+        [rng.randint(-2, 2) for _ in range(reactions)] for _ in range(species)
+    ]
+    ks = [Rational(rng.randint(1, 9), rng.randint(1, 9)) for _ in range(reactions)]
+
+    rates: list[Expr] = []
+    for j in range(reactions):
+        typ = rng.randint(0, 1)
+        if typ == 0:
+            rates.append(ks[j])
+        else:
+            idx = rng.randrange(species)
+            rates.append(ks[j] * xs[idx])
+
+    eqs: list[Expr] = []
+    for i in range(species):
+        acc: Expr = Integer(0)
+        for j in range(reactions):
+            acc += s_entries[i][j] * rates[j]
+        eqs.append(expand(acc))
+
+    m = Matrix(s_entries)
+    for v in m.T.nullspace():
+        lin = Integer(0)
+        for i in range(species):
+            lin += v[i, 0] * xs[i]
+        total = Rational(rng.randint(1, 24), rng.randint(1, 6))
+        eqs.append(expand(lin - total))
+
+    return eqs
+
+
 FAMILY_HANDLERS: dict[str, Callable[[int], list[Expr]]] = {
     "cyclic": cyclic,
     "katsura": katsura,
@@ -177,7 +264,17 @@ FAMILY_HANDLERS: dict[str, Callable[[int], list[Expr]]] = {
     "sparse_toric": sparse_toric,
 }
 
-ALL_FAMILIES: tuple[str, ...] = tuple(sorted((*FAMILY_HANDLERS.keys(), "nash", "adjacent_minors")))
+ALL_FAMILIES: tuple[str, ...] = tuple(
+    sorted(
+        (
+            *FAMILY_HANDLERS.keys(),
+            "nash",
+            "adjacent_minors",
+            "random_distances",
+            "chemical_steady_state_random",
+        ),
+    ),
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -197,7 +294,7 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Primary size parameter (cyclic, katsura, noonburg, eco, sparse_toric). "
-        "Ignored for nash.",
+        "Ignored for nash, adjacent_minors, random_distances, chemical_steady_state_random.",
     )
     
     p.add_argument(
@@ -212,6 +309,34 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Matrix column count for adjacent_minors (>=2).",
+    )
+
+    p.add_argument(
+        "--joints",
+        type=int,
+        default=None,
+        help="Number of revolute joints for random_distances (>=1).",
+    )
+
+    p.add_argument(
+        "--species",
+        type=int,
+        default=None,
+        help="Number of species for chemical_steady_state_random (>=1).",
+    )
+
+    p.add_argument(
+        "--reactions",
+        type=int,
+        default=None,
+        help="Number of reactions for chemical_steady_state_random (>=1).",
+    )
+
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="RNG seed for random_distances and chemical_steady_state_random (default: 42).",
     )
     
     p.add_argument(
@@ -236,6 +361,29 @@ if __name__ == "__main__":
             print("adjacent_minors requires --rows and --cols", file=sys.stderr)
             sys.exit(2)
         eqs = adjacent_minors(args.rows, args.cols)
+    elif fam == "random_distances":
+        if args.joints is None:
+            print(
+                "random_distances requires --joints",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        eqs = random_distances(
+            args.joints,
+            seed=args.seed,
+        )
+    elif fam == "chemical_steady_state_random":
+        if args.species is None or args.reactions is None:
+            print(
+                "chemical_steady_state_random requires --species and --reactions",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        eqs = chemical_steady_state_random(
+            args.species,
+            args.reactions,
+            seed=args.seed,
+        )
     else:
         if args.n is None:
             print(f"{fam} requires --n", file=sys.stderr)
