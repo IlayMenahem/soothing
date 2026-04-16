@@ -17,6 +17,10 @@ path = "src/bin/solve_exact.rs"
 name = "bench_solve"
 path = "src/bin/bench_solve.rs"
 
+[[bin]]
+name = "groebner"
+path = "src/bin/groebner.rs"
+
 [profile.release]
 opt-level = 3
 lto = "fat"
