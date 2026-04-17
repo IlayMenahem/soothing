@@ -47,8 +47,8 @@ pub mod system;
 
 pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 pub use elimination::{
-    EliminationError, EliminationResult, default_is_solution, dfs_linear_elimination,
-    dfs_linear_elimination_solving_symbolic, is_solution_nonzero_kappah, linear_elimination_greedy,
+    EliminationError, EliminationResult, default_is_solution, dfs_eliminate,
+    is_solution_nonzero_kappah, linear_elimination_greedy,
 };
 pub use eval::{EvalError, evaluate};
 pub use field::{Q, q};

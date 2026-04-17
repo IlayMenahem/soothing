@@ -6,7 +6,7 @@ use num_traits::Zero;
 
 use soothing_linear::{
     Dag, DagBuilder, EliminationResult, PolynomialSystem, Q, SampleConfig, SubstitutionMap, VarId,
-    default_is_solution, dfs_linear_elimination, evaluate, is_solution_nonzero_kappah,
+    default_is_solution, dfs_eliminate, evaluate, is_solution_nonzero_kappah,
     linear_elimination_greedy, q,
 };
 
@@ -143,7 +143,7 @@ fn dfs_trace_writes_elapsed_lines() {
     let z = b.add(vec![vx, nx]);
     let sys = PolynomialSystem::new(b.build(), vec![z]);
     let mut log = Vec::<u8>::new();
-    let _ = dfs_linear_elimination(
+    let _ = dfs_eliminate(
         &sys,
         &SampleConfig::default(),
         Some(&mut log),
@@ -165,8 +165,7 @@ fn dfs_removes_zero_equations() {
     let nx = b.neg(vx);
     let z = b.add(vec![vx, nx]);
     let sys = PolynomialSystem::new(b.build(), vec![z]);
-    let r =
-        dfs_linear_elimination(&sys, &SampleConfig::default(), None, default_is_solution).unwrap();
+    let r = dfs_eliminate(&sys, &SampleConfig::default(), None, default_is_solution).unwrap();
     assert!(r.reduced_system.equations.is_empty());
 }
 
@@ -181,7 +180,7 @@ fn dfs_not_worse_than_greedy_on_single_linear() {
     let sys = PolynomialSystem::new(b.build(), vec![e]);
     let cfg = SampleConfig::default();
     let g = linear_elimination_greedy(&sys, &cfg).unwrap();
-    let d = dfs_linear_elimination(&sys, &cfg, None, default_is_solution).unwrap();
+    let d = dfs_eliminate(&sys, &cfg, None, default_is_solution).unwrap();
     assert!(d.reduced_system.equations.len() <= g.reduced_system.equations.len());
 }
 
@@ -198,7 +197,7 @@ fn dfs_eliminates_fully_three_equation_demo_system() {
     }
     let sys = PolynomialSystem::new(b.build(), equation_roots);
     let cfg = SampleConfig::default();
-    let r = dfs_linear_elimination(&sys, &cfg, None, default_is_solution).unwrap();
+    let r = dfs_eliminate(&sys, &cfg, None, default_is_solution).unwrap();
     assert!(
         r.reduced_system.equations.is_empty(),
         "expected full elimination for z+x-1=0, y-z=0, x*y+z=0"

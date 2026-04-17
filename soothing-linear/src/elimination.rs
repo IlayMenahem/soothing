@@ -1,8 +1,7 @@
-//! Iterative linear elimination by substitution; [`dfs_linear_elimination`] searches elimination orders.
+//! Iterative linear elimination by substitution; [`dfs_eliminate`] searches elimination orders.
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
-use crate::mathematica_system::LoadedMathematicaSystem;
 use crate::predicates::{
     PredicateError, SampleConfig, expr_finite_at_some_random_sample, is_linear_in, is_zero,
 };
@@ -18,10 +17,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EliminationError {
-    #[error(
-        "missing variable \"kappah\" in loaded system (required for solving_symbolic-style elimination)"
-    )]
-    MissingKappah,
     #[error("illegitimate elimination: a=0 and b≠0 for variable {var:?}")]
     IllegitimateElimination { var: VarId },
     #[error(
@@ -56,13 +51,8 @@ pub fn default_is_solution(r: &EliminationResult) -> bool {
     r.reduced_system.equations.is_empty()
 }
 
-/// Specialized symbolic acceptance predicate used to mirror the Python / `SymPy` solving stack.
-///
-/// This is an implementation-specific extension, not part of the paper's default elimination
-/// contract. It behaves like [`default_is_solution`], but if `kappah` appears in the substitution
-/// map, reject when its **fully expanded** RHS (after applying other bindings in
-/// [`SubstitutionMap::replay_order`]) is identically zero — matching SymPy’s
-/// `substitution_map[kappah] == 0` in `soothing/linear_substitution_order.py` (`_is_kappah_zero`).
+/// Like [`default_is_solution`], but if `kappah` appears in the substitution map, reject when its
+/// fully expanded RHS (after [`SubstitutionMap::replay_order`] substitutions) is identically zero.
 #[must_use]
 pub fn is_solution_nonzero_kappah(
     r: &EliminationResult,
@@ -166,7 +156,7 @@ fn validate_elimination_result(
 /// Run linear elimination until no equation is linear in any remaining variable.
 ///
 /// At each step the **first** linear pair `(equation, variable)` in a fixed deterministic order is
-/// chosen (greedy). For search over orders, see [`dfs_linear_elimination`].
+/// chosen (greedy). For search over orders, see [`dfs_eliminate`].
 ///
 /// # Errors
 ///
@@ -241,16 +231,13 @@ pub fn linear_elimination_greedy(
 /// every line) for performance diagnosis.
 ///
 /// `is_solution` decides when a leaf counts as a successful terminal state for early exit; use
-/// [`default_is_solution`] unless you need a stricter condition (e.g. [`is_solution_nonzero_kappah`]).
-///
-/// For the same stack as `python/scripts/solving_symbolic.py` and
-/// `tests/python_reference_simplified_mathematica.rs`, use [`dfs_linear_elimination_solving_symbolic`].
+/// [`default_is_solution`] unless you supply a custom predicate.
 ///
 /// # Errors
 ///
 /// Same as [`linear_elimination_greedy`]: [`EliminationError`] from predicates, bad elimination
 /// steps, or I/O.
-pub fn dfs_linear_elimination<F>(
+pub fn dfs_eliminate<F>(
     system: &PolynomialSystem,
     cfg: &SampleConfig,
     trace_writer: Option<&mut dyn Write>,
@@ -269,11 +256,11 @@ where
     simplify_equation_roots(&mut b, &mut eq_roots)?;
     let subst = SubstitutionMap::new();
     let result = match trace_writer {
-        None => dfs_linear_elimination_inner(&b, eq_roots, subst, cfg, None, None, &is_solution)?,
+        None => dfs_eliminate_inner(&b, eq_roots, subst, cfg, None, None, &is_solution)?,
         Some(w) => {
             let trace_w = RefCell::new(w);
             let trace_st = RefCell::new(EliminationTraceState::default());
-            dfs_linear_elimination_inner(
+            dfs_eliminate_inner(
                 &b,
                 eq_roots,
                 subst,
@@ -288,38 +275,7 @@ where
     Ok(result)
 }
 
-/// [`dfs_linear_elimination`] configured like `python/scripts/solving_symbolic.py` and
-/// `tests/python_reference_simplified_mathematica.rs`.
-///
-/// This entry point is kept for symbolic parity with the Python stack; it is not the paper's
-/// default elimination API.
-///
-/// # Errors
-///
-/// Returns [`EliminationError::MissingKappah`] if the loaded system has no `kappah` variable, or any
-/// error from [`dfs_linear_elimination`].
-///
-/// # Panics
-///
-/// Panics if the index of `kappah` in `var_names` does not fit in `u32` (cannot occur when
-/// [`VarId`] indices match the platform’s normal variable counts).
-pub fn dfs_linear_elimination_solving_symbolic(
-    loaded: &LoadedMathematicaSystem,
-    cfg: &SampleConfig,
-    trace_writer: Option<&mut dyn Write>,
-) -> Result<EliminationResult, EliminationError> {
-    let kappah = loaded
-        .var_names
-        .iter()
-        .position(|n| n == "kappah")
-        .map(|i| VarId(u32::try_from(i).unwrap()))
-        .ok_or(EliminationError::MissingKappah)?;
-    dfs_linear_elimination(&loaded.system, cfg, trace_writer, |r| {
-        is_solution_nonzero_kappah(r, kappah, cfg)
-    })
-}
-
-fn dfs_linear_elimination_inner<F>(
+fn dfs_eliminate_inner<F>(
     b: &DagBuilder,
     eq_roots: Vec<NodeId>,
     subst: SubstitutionMap,
@@ -408,7 +364,7 @@ where
             out.flush()?;
         }
 
-        let r = dfs_linear_elimination_inner(
+        let r = dfs_eliminate_inner(
             &b_branch,
             eq_branch,
             subst_branch,

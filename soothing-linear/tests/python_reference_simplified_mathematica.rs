@@ -1,12 +1,12 @@
 #![allow(clippy::many_single_char_names)]
 
-//! Parity with `python/scripts/solving_symbolic.py` on `systems/simplified_mathematica_system.txt`:
-//! same DFS outcome as `best_linear_substitutions_order` — remaining equations, elimination count
-//! (`n_initial - n_remaining`), free-variable count, and substitution size.
+//! Compare summary stats with Python `best_linear_substitutions_order` on
+//! `systems/simplified_mathematica_system.txt` (remaining equations, elimination count, etc.).
+//! Rust uses [`soothing_linear::dfs_eliminate`] with [`soothing_linear::default_is_solution`].
 
 use serde::Deserialize;
 use soothing_linear::{
-    Dag, SampleConfig, default_systems_dir_from_manifest, dfs_linear_elimination_solving_symbolic,
+    Dag, SampleConfig, default_is_solution, default_systems_dir_from_manifest, dfs_eliminate,
     load_mathematica_system_from_path_with_var_names,
 };
 use std::collections::HashSet;
@@ -79,7 +79,7 @@ fn rust_elimination_stats() -> PythonEliminationStats {
     }
 
     let cfg = SampleConfig::default();
-    let res = dfs_linear_elimination_solving_symbolic(&loaded, &cfg, None).expect("dfs");
+    let res = dfs_eliminate(&loaded.system, &cfg, None, default_is_solution).expect("dfs");
 
     let remaining = res.reduced_system.equations.len();
     let substitutions = res.substitution.len();
@@ -103,7 +103,6 @@ fn dfs_matches_python_solving_symbolic_on_simplified_mathematica() {
 
     assert_eq!(
         py, rust,
-        "Rust DFS must match Python best_linear_substitutions_order summary stats \
-         (see python/scripts/solving_symbolic.py)"
+        "Rust DFS summary stats vs Python best_linear_substitutions_order (acceptance predicates may differ)"
     );
 }

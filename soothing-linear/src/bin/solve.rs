@@ -1,8 +1,7 @@
 //! Load `systems/simplified_mathematica_system.txt` and run DFS linear elimination.
 //!
-//! Uses [`soothing_linear::dfs_linear_elimination_solving_symbolic`] — same stack as
-//! `python/scripts/solving_symbolic.py` and `tests/python_reference_simplified_mathematica.rs`
-//! (Python-aligned DFS order, `SampleConfig::default()`, κ≠0 acceptance).
+//! Uses [`soothing_linear::dfs_eliminate`] with [`soothing_linear::is_solution_nonzero_kappah`]
+//! (κ≠0 in expanded substitution), aligned with `python/scripts/solving_symbolic.py`.
 //!
 //! From repo root: `cargo run -p soothing-linear --bin solve_simplified_mathematica`
 
@@ -11,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use soothing_linear::{
-    SampleConfig, VarId, default_systems_dir_from_manifest,
-    dfs_linear_elimination_solving_symbolic, load_mathematica_system_from_path_with_var_names,
+    SampleConfig, VarId, default_systems_dir_from_manifest, dfs_eliminate,
+    is_solution_nonzero_kappah, load_mathematica_system_from_path_with_var_names,
     print_substitution_bindings,
 };
 
@@ -21,7 +20,7 @@ const TRACE_LOG_FILE: &str = "elimination_trace_dag.log";
 
 fn main() {
     let path: PathBuf = std::env::args().nth(1).map_or_else(
-        || default_systems_dir_from_manifest().join("system.txt"),
+        || default_systems_dir_from_manifest().join("simplified_mathematica_system.txt"),
         PathBuf::from,
     );
 
@@ -54,6 +53,14 @@ fn main() {
 
     let cfg = SampleConfig::default();
 
+    let kappah = match loaded.var_names.iter().position(|n| n == "kappah") {
+        Some(i) => VarId(u32::try_from(i).unwrap()),
+        None => {
+            eprintln!("missing variable \"kappah\" in loaded system");
+            std::process::exit(1);
+        }
+    };
+
     let mut trace_file = match File::create(trace_path) {
         Ok(f) => f,
         Err(e) => {
@@ -63,10 +70,12 @@ fn main() {
     };
 
     let t0 = Instant::now();
-    let res = match dfs_linear_elimination_solving_symbolic(&loaded, &cfg, Some(&mut trace_file)) {
+    let res = match dfs_eliminate(&loaded.system, &cfg, Some(&mut trace_file), |r| {
+        is_solution_nonzero_kappah(r, kappah, &cfg)
+    }) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("dfs_linear_elimination_solving_symbolic error: {e}");
+            eprintln!("dfs_eliminate error: {e}");
             std::process::exit(1);
         }
     };

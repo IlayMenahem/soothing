@@ -1,4 +1,4 @@
-//! Showcase [`soothing_linear::dfs_linear_elimination`]: explores all linear elimination branches
+//! Showcase [`soothing_linear::dfs_eliminate`]: explores all linear elimination branches
 //! at each step (depth-first), returns early if the system is fully eliminated, otherwise the best
 //! residual by equation count (tie-break: more free variables).
 //!
@@ -7,7 +7,7 @@
 
 use soothing_linear::{
     Dag, DagBuilder, PolynomialSystem, SampleConfig, SubstitutionMap, VarId, default_is_solution,
-    dfs_linear_elimination, linear_elimination_greedy, print_substitution_bindings,
+    dfs_eliminate, linear_elimination_greedy, print_substitution_bindings,
 };
 
 fn var_name(vid: VarId, z: VarId, x: VarId, y: VarId) -> String {
@@ -56,7 +56,7 @@ fn run_three_equation_demo(cfg: &SampleConfig) {
         eprintln!("greedy elimination failed: {e}");
         std::process::exit(1);
     });
-    let dfs = dfs_linear_elimination(&sys, cfg, None, default_is_solution).unwrap_or_else(|e| {
+    let dfs = dfs_eliminate(&sys, cfg, None, default_is_solution).unwrap_or_else(|e| {
         eprintln!("DFS elimination failed: {e}");
         std::process::exit(1);
     });
@@ -110,7 +110,7 @@ fn run_two_linear_equations_demo(cfg: &SampleConfig) {
     };
     let sys = PolynomialSystem::new(b.build(), vec![e0, e1]);
 
-    let dfs = dfs_linear_elimination(&sys, cfg, None, default_is_solution).unwrap_or_else(|e| {
+    let dfs = dfs_eliminate(&sys, cfg, None, default_is_solution).unwrap_or_else(|e| {
         eprintln!("DFS elimination failed: {e}");
         std::process::exit(1);
     });
