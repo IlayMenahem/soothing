@@ -428,9 +428,7 @@ fn cmp_elimination_state(
     cmp_residual_preference(&d1, e1, &d2, e2)
 }
 
-fn sort_states_by_residual_preference(
-    states: &mut [(DagBuilder, Vec<NodeId>, SubstitutionMap)],
-) {
+fn sort_states_by_residual_preference(states: &mut [(DagBuilder, Vec<NodeId>, SubstitutionMap)]) {
     states.sort_by(|(b1, e1, _), (b2, e2, _)| cmp_elimination_state(b1, e1, b2, e2));
 }
 

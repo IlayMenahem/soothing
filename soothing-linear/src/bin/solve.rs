@@ -15,7 +15,7 @@ use std::time::Instant;
 use soothing_linear::{
     EliminationResult, SampleConfig, VarId, beam_eliminate, default_systems_dir_from_manifest,
     dfs_eliminate, is_solution_nonzero_kappah, load_mathematica_system_from_path_with_var_names,
-    print_substitution_bindings,
+    print_substitution_bindings, simplify_for_display,
 };
 
 /// Trace output path relative to the current working directory.
@@ -48,7 +48,7 @@ fn parse_cli() -> (PathBuf, Option<usize>) {
             path = Some(PathBuf::from(a));
         }
     }
-    let path = path.unwrap_or_else(|| default_systems_dir_from_manifest().join("simplified_mathematica_system.txt"));
+    let path = path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt"));
     (path, beam)
 }
 
@@ -108,7 +108,7 @@ fn main() {
     };
 
     let t0 = Instant::now();
-    let is_sol = |r: &EliminationResult| is_solution_nonzero_kappah(r, kappah, &cfg);
+    let is_sol = |r: &EliminationResult| r.reduced_system.equations.len() == 0;
 
     let res = if use_beam {
         match beam_eliminate(
@@ -151,17 +151,28 @@ fn main() {
             elapsed
         );
     }
-    if !res.reduced_system.equations.is_empty() {
-        println!("Note: residual is non-empty (expected for highly nonlinear systems).");
-    }
 
-    println!("Substitutions:");
     let vn = |v: VarId| {
         var_names
             .get(v.0 as usize)
             .cloned()
             .unwrap_or_else(|| format!("v{}", v.0))
     };
+
+    if !res.reduced_system.equations.is_empty() {
+        println!(
+            "Residual ({} equation(s), expected for highly nonlinear systems):",
+            res.reduced_system.equations.len()
+        );
+        let dag = &res.reduced_system.dag;
+        for (i, &root) in res.reduced_system.equations.iter().enumerate() {
+            let (disp_dag, disp_root) = simplify_for_display(dag, root);
+            let expr = disp_dag.format_root(disp_root, vn);
+            println!("  [{}] {} = 0", i + 1, expr);
+        }
+    }
+
+    println!("Substitutions:");
     print_substitution_bindings(&res.substitution, &vn);
 
     println!("\nDone.");

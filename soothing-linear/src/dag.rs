@@ -91,32 +91,10 @@ impl Dag {
     }
 
     fn fmt_node(&self, id: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
-        fn bracketed(dag: &Dag, id: NodeId, str: String) -> String {
-            if dag.is_atomic(id) {
-                str
-            } else {
-                format!("({str})")
-            }
-        }
-
-        /// Unary minus. Operand is `child` (the [`Node::Neg`] payload).
-        ///
-        /// For `Neg(Const(c))`, emit a single rational `-c` in [`Q`] (so `-(-3)` is `3`, not `--3`).
-        /// For `Neg(Neg(..))`, parenthesize the inner node so we do not concatenate two `-` tokens.
         fn fmt_neg(dag: &Dag, child: NodeId, var_name: &impl Fn(VarId) -> String) -> String {
             match dag.node(child) {
                 Node::Const(c) => format!("{}", -*c),
-                Node::Neg(_) => format!("-({})", dag.fmt_node(child, var_name)),
-                _ => {
-                    let inner = dag.fmt_node(child, var_name);
-                    // If `inner` already begins with `-` (e.g. formatted negative rational), do not
-                    // concatenate another `-` (would yield `--3`). Parenthesize instead.
-                    if inner.starts_with('-') {
-                        format!("-({inner})")
-                    } else {
-                        bracketed(dag, child, format!("-{inner}"))
-                    }
-                }
+                _ => format!("-({})", dag.fmt_node(child, var_name)),
             }
         }
 
@@ -136,7 +114,7 @@ impl Dag {
                 "1".to_string()
             } else {
                 ids.iter()
-                    .map(|c| bracketed(dag, *c, dag.fmt_node(*c, var_name)))
+                    .map(|c| format!("({})", dag.fmt_node(*c, var_name)))
                     .collect::<Vec<_>>()
                     .join(" * ")
             }
@@ -149,11 +127,8 @@ impl Dag {
             var_name: &impl Fn(VarId) -> String,
         ) -> String {
             let ns = dag.fmt_node(num, var_name);
-            let ds = match dag.node(den) {
-                Node::Mul(cs) if cs.len() >= 2 => format!("({})", fmt_mul(dag, cs, var_name)),
-                _ => dag.fmt_node(den, var_name),
-            };
-            format!("{ns} / {ds}")
+            let ds = dag.fmt_node(den, var_name);
+            format!("({ns} / {ds})")
         }
 
         fn fmt_pow(
@@ -177,10 +152,6 @@ impl Dag {
             Node::Div(n, d) => fmt_div(self, *n, *d, var_name),
             Node::Pow(b, e) => fmt_pow(self, *b, *e, var_name),
         }
-    }
-
-    fn is_atomic(&self, id: NodeId) -> bool {
-        matches!(self.node(id), Node::Const(_) | Node::ConstPi | Node::Var(_))
     }
 
     /// Parse a rational expression into a DAG and its root.
