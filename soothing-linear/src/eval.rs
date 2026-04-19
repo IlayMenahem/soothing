@@ -9,6 +9,7 @@ use num_traits::{Pow, Zero};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::hash::BuildHasher;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Evaluation error.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,10 +27,20 @@ pub enum EvalError {
 /// [`EvalError::DivisionByZero`] for a zero divisor, and [`EvalError::NonIntegerExponent`] when a
 /// power requires a non-integer exponent in `Q`.
 ///
-/// # Panics
-///
-/// Panics if `root` does not receive a value after topological evaluation (internal DAG invariant).
+/// [`EvalError::DivisionByZero`] is also returned if exact `i128` rational arithmetic unwinds (for
+/// example overflow during reduction), so predicates can skip a sample instead of aborting search.
 pub fn evaluate<S: BuildHasher>(
+    dag: &Dag,
+    root: NodeId,
+    assignment: &HashMap<VarId, Q, S>,
+) -> Result<Q, EvalError> {
+    match catch_unwind(AssertUnwindSafe(|| evaluate_unwind(dag, root, assignment))) {
+        Ok(r) => r,
+        Err(_) => Err(EvalError::DivisionByZero),
+    }
+}
+
+fn evaluate_unwind<S: BuildHasher>(
     dag: &Dag,
     root: NodeId,
     assignment: &HashMap<VarId, Q, S>,

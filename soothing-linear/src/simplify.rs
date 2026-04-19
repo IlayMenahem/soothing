@@ -6,6 +6,7 @@
 //! propagates constants upward.
 
 use std::collections::HashMap;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId};
 use crate::field::Q;
@@ -57,47 +58,57 @@ fn rebuild_children(
         .collect()
 }
 
-fn fold_grouped_add(builder: &mut DagBuilder, flattened: Vec<NodeId>) -> NodeId {
+fn fold_grouped_add(
+    builder: &mut DagBuilder,
+    flattened: Vec<NodeId>,
+) -> Result<NodeId, SimplifyError> {
     let mut const_sum = Q::zero();
     let mut non_const = Vec::new();
     for id in flattened {
         match builder.node(id) {
-            Node::Const(c) => const_sum += *c,
+            Node::Const(c) => {
+                const_sum += *c;
+            }
             _ => non_const.push(id),
         }
     }
     if non_const.is_empty() {
-        return builder.constant(const_sum);
+        return Ok(builder.constant(const_sum));
     }
     let mut out = Vec::new();
     if !const_sum.is_zero() {
         out.push(builder.constant(const_sum));
     }
     out.extend(non_const);
-    builder.add(out)
+    Ok(builder.add(out))
 }
 
-fn fold_grouped_mul(builder: &mut DagBuilder, flattened: Vec<NodeId>) -> NodeId {
+fn fold_grouped_mul(
+    builder: &mut DagBuilder,
+    flattened: Vec<NodeId>,
+) -> Result<NodeId, SimplifyError> {
     let mut prod = Q::one();
     let mut non_const = Vec::new();
     for id in flattened {
         match builder.node(id) {
-            Node::Const(c) => prod *= *c,
+            Node::Const(c) => {
+                prod *= *c;
+            }
             _ => non_const.push(id),
         }
     }
     if prod.is_zero() {
-        return builder.constant(Q::zero());
+        return Ok(builder.constant(Q::zero()));
     }
     if non_const.is_empty() {
-        return builder.constant(prod);
+        return Ok(builder.constant(prod));
     }
     let mut out = Vec::new();
-    if prod != Q::one() {
+    if !One::is_one(&prod) {
         out.push(builder.constant(prod));
     }
     out.extend(non_const);
-    builder.mul(out)
+    Ok(builder.mul(out))
 }
 
 fn rebuild_add_node(
@@ -108,7 +119,7 @@ fn rebuild_add_node(
 ) -> Result<NodeId, SimplifyError> {
     let rebuilt_children = rebuild_children(builder, source, children, rebuilt_nodes)?;
     let flattened = flatten_rebuilt_children(builder, AssociativeOp::Add, rebuilt_children);
-    Ok(fold_grouped_add(builder, flattened))
+    fold_grouped_add(builder, flattened)
 }
 
 fn rebuild_mul_node(
@@ -119,7 +130,7 @@ fn rebuild_mul_node(
 ) -> Result<NodeId, SimplifyError> {
     let rebuilt_children = rebuild_children(builder, source, children, rebuilt_nodes)?;
     let flattened = flatten_rebuilt_children(builder, AssociativeOp::Mul, rebuilt_children);
-    Ok(fold_grouped_mul(builder, flattened))
+    fold_grouped_mul(builder, flattened)
 }
 
 /// Peel consecutive [`Node::Neg`] wrappers starting at `id` in `source`.
@@ -190,7 +201,7 @@ fn rebuild_neg_node(
 }
 
 /// Flattened product of two rebuilt nodes (constants fold into a single rational when possible).
-fn mul_flat(builder: &mut DagBuilder, a: NodeId, b: NodeId) -> NodeId {
+fn mul_flat(builder: &mut DagBuilder, a: NodeId, b: NodeId) -> Result<NodeId, SimplifyError> {
     let flattened = flatten_rebuilt_children(builder, AssociativeOp::Mul, vec![a, b]);
     fold_grouped_mul(builder, flattened)
 }
@@ -200,16 +211,16 @@ fn normalize_nested_div(
     builder: &mut DagBuilder,
     mut num: NodeId,
     mut den: NodeId,
-) -> (NodeId, NodeId) {
+) -> Result<(NodeId, NodeId), SimplifyError> {
     loop {
         let mut changed = false;
         if let Node::Div(a, b) = builder.node(num).clone() {
             num = a;
-            den = mul_flat(builder, b, den);
+            den = mul_flat(builder, b, den)?;
             changed = true;
         }
         if let Node::Div(y, z) = builder.node(den).clone() {
-            num = mul_flat(builder, num, z);
+            num = mul_flat(builder, num, z)?;
             den = y;
             changed = true;
         }
@@ -217,7 +228,7 @@ fn normalize_nested_div(
             break;
         }
     }
-    (num, den)
+    Ok((num, den))
 }
 
 fn rebuild_div_node(
@@ -229,7 +240,7 @@ fn rebuild_div_node(
 ) -> Result<NodeId, SimplifyError> {
     let rebuilt_num = rebuild_simplified_subdag(builder, source, n, rebuilt_nodes)?;
     let rebuilt_den = rebuild_simplified_subdag(builder, source, d, rebuilt_nodes)?;
-    let (num, den) = normalize_nested_div(builder, rebuilt_num, rebuilt_den);
+    let (num, den) = normalize_nested_div(builder, rebuilt_num, rebuilt_den)?;
     match (builder.node(num), builder.node(den)) {
         (Node::Const(a), Node::Const(b)) => {
             if b.is_zero() {
@@ -296,11 +307,29 @@ fn rebuild_simplified_subdag(
 ///
 /// Always runs the bottom-up rebuild so negation and constant grouping apply even when a static
 /// pre-scan would not list any pattern.
+///
+/// On panic during rebuild (for example `i128` overflow in [`num_rational::Ratio`] reduction), the
+/// builder is restored from a snapshot taken at entry and [`SimplifyError::DivisionByZero`] is
+/// returned. On a normal [`Err`] from rebuild, the builder is also restored so the arena stays
+/// consistent for the next call.
 pub fn simplify(
     builder: &mut DagBuilder,
     source: &Dag,
     root: NodeId,
 ) -> Result<NodeId, SimplifyError> {
-    let mut rebuilt_nodes = HashMap::new();
-    rebuild_simplified_subdag(builder, source, root, &mut rebuilt_nodes)
+    let backup = builder.clone();
+    match catch_unwind(AssertUnwindSafe(|| {
+        let mut rebuilt_nodes = HashMap::new();
+        rebuild_simplified_subdag(builder, source, root, &mut rebuilt_nodes)
+    })) {
+        Ok(Ok(id)) => Ok(id),
+        Ok(Err(e)) => {
+            *builder = backup;
+            Err(e)
+        }
+        Err(_) => {
+            *builder = backup;
+            Err(SimplifyError::DivisionByZero)
+        }
+    }
 }

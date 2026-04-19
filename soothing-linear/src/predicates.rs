@@ -15,6 +15,7 @@ use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::hash::BuildHasher;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use thiserror::Error;
 
 /// How many samples to use for predicate checks.
@@ -284,7 +285,7 @@ pub fn recover_linear_coeffs<S: BuildHasher + Clone>(
 
     let b = evaluate(dag, root, &a0)?;
     let at_one = evaluate(dag, root, &a1)?;
-    let a = at_one - b;
+    let a = catch_unwind(AssertUnwindSafe(|| at_one - b)).map_err(|_| PredicateError::DivisionByZero)?;
 
     Ok(LinearCoeffs { a, b })
 }

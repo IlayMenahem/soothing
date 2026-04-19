@@ -202,7 +202,11 @@ pub fn linear_elimination_greedy(
             break;
         };
 
-        apply_one_elimination(&mut b, &mut eq_roots, &mut subst, x, i, &remaining, cfg)?;
+        match apply_one_elimination(&mut b, &mut eq_roots, &mut subst, x, i, &remaining, cfg) {
+            Ok(()) => {}
+            Err(EliminationError::Simplify(SimplifyError::DivisionByZero)) => continue,
+            Err(e) => return Err(e),
+        }
         remaining = collect_vars(&b.snapshot(), &eq_roots).into_iter().collect();
     }
 
@@ -347,7 +351,8 @@ where
             Ok(()) => {}
             Err(
                 EliminationError::IllegitimateElimination { .. }
-                | EliminationError::DegenerateSubstitution { .. },
+                | EliminationError::DegenerateSubstitution { .. }
+                | EliminationError::Simplify(SimplifyError::DivisionByZero),
             ) => {
                 branch_skips += 1;
                 continue;
@@ -444,7 +449,12 @@ fn simplify_equation_roots(
     let snap = builder.snapshot();
     let mut new_roots = Vec::with_capacity(eq_roots.len());
     for &r in eq_roots.iter() {
-        new_roots.push(simplify(builder, &snap, r)?);
+        let id = match simplify(builder, &snap, r) {
+            Ok(id) => id,
+            Err(SimplifyError::DivisionByZero) => builder.merge_root(&snap, r),
+            Err(e) => return Err(e),
+        };
+        new_roots.push(id);
     }
     *eq_roots = new_roots;
     Ok(())
