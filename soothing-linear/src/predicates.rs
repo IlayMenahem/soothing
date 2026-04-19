@@ -285,7 +285,8 @@ pub fn recover_linear_coeffs<S: BuildHasher + Clone>(
 
     let b = evaluate(dag, root, &a0)?;
     let at_one = evaluate(dag, root, &a1)?;
-    let a = catch_unwind(AssertUnwindSafe(|| at_one - b)).map_err(|_| PredicateError::DivisionByZero)?;
+    let a = catch_unwind(AssertUnwindSafe(|| at_one - b))
+        .map_err(|_| PredicateError::DivisionByZero)?;
 
     Ok(LinearCoeffs { a, b })
 }

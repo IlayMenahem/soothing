@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use soothing_linear::{
-    Dag, SampleConfig, default_is_solution, default_systems_dir_from_manifest, dfs_eliminate,
-    load_mathematica_system_from_path, load_mathematica_system_from_str,
+    Dag, SampleConfig, beam_eliminate, default_is_solution, default_systems_dir_from_manifest,
+    dfs_eliminate, load_mathematica_system_from_path, load_mathematica_system_from_str,
 };
 
 #[test]
@@ -14,6 +14,13 @@ fn tiny_system_loads_and_dfs_runs() {
     let sys = load_mathematica_system_from_str(s).unwrap();
     assert_eq!(sys.equations.len(), 2);
     let _ = dfs_eliminate(&sys, &SampleConfig::default(), None, default_is_solution).unwrap();
+}
+
+#[test]
+fn tiny_system_beam_runs() {
+    let s = "{0 -> x + y, 0 -> x - 1}";
+    let sys = load_mathematica_system_from_str(s).unwrap();
+    let _ = beam_eliminate(&sys, &SampleConfig::default(), 2, None, default_is_solution).unwrap();
 }
 
 #[test]

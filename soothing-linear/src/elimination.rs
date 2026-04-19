@@ -1,4 +1,4 @@
-//! Iterative linear elimination by substitution; [`dfs_eliminate`] searches elimination orders.
+//! Iterative linear elimination by substitution; [`dfs_eliminate`] and [`beam_eliminate`] search elimination orders.
 
 use crate::dag::{Dag, DagBuilder, Node, NodeId, VarId};
 use crate::field::{q_one, q_zero};
@@ -10,6 +10,7 @@ use crate::substitution::{SubstitutionError, SubstitutionMap};
 use crate::system::PolynomialSystem;
 use rayon::prelude::*;
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Write;
 use std::time::Instant;
@@ -17,6 +18,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EliminationError {
+    #[error("beam_width must be at least 1 (got {got})")]
+    InvalidBeamWidth { got: usize },
     #[error("illegitimate elimination: a=0 and b≠0 for variable {var:?}")]
     IllegitimateElimination { var: VarId },
     #[error(
@@ -35,6 +38,12 @@ pub enum EliminationError {
 struct EliminationTraceState {
     last_tick: Option<Instant>,
     dfs_visits: u64,
+}
+
+#[derive(Default)]
+struct BeamTraceState {
+    last_tick: Option<Instant>,
+    layer: u64,
 }
 
 /// Residual polynomial system and substitution map produced by elimination.
@@ -219,11 +228,12 @@ pub fn linear_elimination_greedy(
     Ok(result)
 }
 
-/// Depth-first search over linear elimination choices: at each step, try every `(equation, variable)`
-/// pair that is linear; prefer fewer remaining equations.
+/// Depth-first search over linear elimination choices: at each step, consider every `(equation, variable)`
+/// pair that is linear, rank successful one-step successors by [`cmp_residual_preference`] (same
+/// ordering as [`beam_eliminate`] before width truncation), then recurse in that order.
 ///
-/// **Tie-break:** same residual equation count → prefer **more free variables** in the residual
-/// system, matching the appendix.
+/// **Ranking:** fewer residual equations wins; tie-break: **more** distinct free variables in the
+/// residual, matching the appendix and beam search.
 ///
 /// **Early exit:** if any branch satisfies the solution predicate (default: no residual equations),
 /// return that result immediately without trying further siblings at the same level.
@@ -331,7 +341,7 @@ where
         substitution: subst.clone(),
     };
 
-    let mut branch_skips: usize = 0;
+    let mut children: Vec<(DagBuilder, Vec<NodeId>, SubstitutionMap, VarId, usize)> = Vec::new();
     for (x, i) in pairs {
         let mut b_branch = b.clone();
         let mut eq_branch = eq_roots.clone();
@@ -348,24 +358,22 @@ where
             &remaining_branch,
             cfg,
         ) {
-            Ok(()) => {}
+            Ok(()) => children.push((b_branch, eq_branch, subst_branch, x, i)),
             Err(
                 EliminationError::IllegitimateElimination { .. }
                 | EliminationError::DegenerateSubstitution { .. }
                 | EliminationError::Simplify(SimplifyError::DivisionByZero),
-            ) => {
-                branch_skips += 1;
-                continue;
-            }
+            ) => continue,
             Err(e) => return Err(e),
         }
+    }
 
+    children.sort_by(|(b1, e1, _, _, _), (b2, e2, _, _, _)| cmp_elimination_state(b1, e1, b2, e2));
+
+    for (b_branch, eq_branch, subst_branch, x, i) in children {
         if let Some(cw) = trace_w {
             let mut out = cw.borrow_mut();
-            writeln!(
-                &mut *out,
-                "branch var={x:?} eq_index={i} skips_before_success={branch_skips}"
-            )?;
+            writeln!(&mut *out, "branch var={x:?} eq_index={i}")?;
             out.flush()?;
         }
 
@@ -387,6 +395,268 @@ where
     }
 
     Ok(best)
+}
+
+/// Compare two residual systems for search preference: fewer equations wins; tie-break: more
+/// distinct variables appearing in the residual equations wins.
+fn cmp_residual_preference(
+    dag_a: &Dag,
+    roots_a: &[NodeId],
+    dag_b: &Dag,
+    roots_b: &[NodeId],
+) -> Ordering {
+    let na = roots_a.len();
+    let nb = roots_b.len();
+    match na.cmp(&nb) {
+        Ordering::Equal => {
+            let free_a = collect_vars(dag_a, roots_a).len();
+            let free_b = collect_vars(dag_b, roots_b).len();
+            free_b.cmp(&free_a)
+        }
+        o => o,
+    }
+}
+
+fn cmp_elimination_state(
+    b1: &DagBuilder,
+    e1: &[NodeId],
+    b2: &DagBuilder,
+    e2: &[NodeId],
+) -> Ordering {
+    let d1 = b1.snapshot();
+    let d2 = b2.snapshot();
+    cmp_residual_preference(&d1, e1, &d2, e2)
+}
+
+fn sort_states_by_residual_preference(
+    states: &mut [(DagBuilder, Vec<NodeId>, SubstitutionMap)],
+) {
+    states.sort_by(|(b1, e1, _), (b2, e2, _)| cmp_elimination_state(b1, e1, b2, e2));
+}
+
+fn elimination_result_from_state(
+    builder: &DagBuilder,
+    eq_roots: &[NodeId],
+    subst: &SubstitutionMap,
+) -> EliminationResult {
+    let snap = builder.snapshot();
+    EliminationResult {
+        reduced_system: PolynomialSystem::new(snap, eq_roots.to_vec()),
+        substitution: subst.clone(),
+    }
+}
+
+fn consider_best_elimination(best: &mut Option<EliminationResult>, candidate: EliminationResult) {
+    match best {
+        None => *best = Some(candidate),
+        Some(b) if is_better_elimination(&candidate, b) => *best = Some(candidate),
+        Some(_) => {}
+    }
+}
+
+/// Beam search over linear elimination: each layer applies one elimination step from every beam
+/// state, then keeps the best `beam_width` successors ranked by [`cmp_residual_preference`]
+/// (fewer residual equations at the same depth; same tie-break as DFS).
+///
+/// **Early exit:** if any expanded state satisfies `is_solution`, return it immediately.
+///
+/// **Termination:** when the beam cannot expand further, returns the best terminal or partial state
+/// seen (same aggregate preference as DFS).
+///
+/// # Errors
+///
+/// [`EliminationError::InvalidBeamWidth`] when `beam_width == 0`. Otherwise same as
+/// [`linear_elimination_greedy`].
+pub fn beam_eliminate<F>(
+    system: &PolynomialSystem,
+    cfg: &SampleConfig,
+    beam_width: usize,
+    trace_writer: Option<&mut dyn Write>,
+    is_solution: F,
+) -> Result<EliminationResult, EliminationError>
+where
+    F: Fn(&EliminationResult) -> bool,
+{
+    if beam_width < 1 {
+        return Err(EliminationError::InvalidBeamWidth { got: beam_width });
+    }
+
+    let original = system.clone();
+    let mut b = DagBuilder::new();
+    let mut eq_roots: Vec<NodeId> = system
+        .equations
+        .iter()
+        .map(|&r| b.merge_root(&system.dag, r))
+        .collect();
+    simplify_equation_roots(&mut b, &mut eq_roots)?;
+    let subst = SubstitutionMap::new();
+    let result = match trace_writer {
+        None => beam_eliminate_inner(
+            beam_width,
+            cfg,
+            None,
+            None,
+            &is_solution,
+            vec![(b, eq_roots, subst)],
+        )?,
+        Some(w) => {
+            let trace_w = RefCell::new(w);
+            let trace_st = RefCell::new(BeamTraceState::default());
+            beam_eliminate_inner(
+                beam_width,
+                cfg,
+                Some(&trace_w),
+                Some(&trace_st),
+                &is_solution,
+                vec![(b, eq_roots, subst)],
+            )?
+        }
+    };
+    validate_elimination_result(&original, &result, cfg);
+    Ok(result)
+}
+
+fn beam_eliminate_inner<F>(
+    beam_width: usize,
+    cfg: &SampleConfig,
+    trace_w: Option<&RefCell<&mut dyn Write>>,
+    trace_st: Option<&RefCell<BeamTraceState>>,
+    is_solution: &F,
+    mut beam: Vec<(DagBuilder, Vec<NodeId>, SubstitutionMap)>,
+) -> Result<EliminationResult, EliminationError>
+where
+    F: Fn(&EliminationResult) -> bool,
+{
+    let mut best: Option<EliminationResult> = None;
+
+    loop {
+        if beam.is_empty() {
+            return Ok(best.expect("beam_eliminate_inner: empty beam with no best"));
+        }
+
+        let beam_outcomes: Vec<EliminationResult> = beam
+            .iter()
+            .map(|(b, eq, s)| elimination_result_from_state(b, eq, s))
+            .collect();
+
+        if let (Some(cw), Some(cs)) = (trace_w, trace_st) {
+            let mut st = cs.borrow_mut();
+            let mut out = cw.borrow_mut();
+            st.layer += 1;
+            let elapsed = st.last_tick.map(|t| t.elapsed()).unwrap_or_default();
+            st.last_tick = Some(Instant::now());
+            let eq_in: Vec<usize> = beam.iter().map(|(_, eq, _)| eq.len()).collect();
+            writeln!(
+                &mut *out,
+                "beam layer={} beam_in={} eq_counts={eq_in:?} elapsed: {:.6}s",
+                st.layer,
+                beam.len(),
+                elapsed.as_secs_f64()
+            )?;
+            out.flush()?;
+        }
+
+        let mut successors: Vec<(DagBuilder, Vec<NodeId>, SubstitutionMap)> = Vec::new();
+
+        for (b, eq_roots, subst) in beam.drain(..) {
+            let snap = b.snapshot();
+
+            if eq_roots.is_empty() {
+                let r = EliminationResult {
+                    reduced_system: PolynomialSystem::new(snap, eq_roots),
+                    substitution: subst,
+                };
+                if is_solution(&r) {
+                    return Ok(r);
+                }
+                consider_best_elimination(&mut best, r);
+                continue;
+            }
+
+            let remaining: BTreeSet<VarId> = collect_vars(&snap, &eq_roots).into_iter().collect();
+            let pairs = collect_linear_pairs(&snap, &eq_roots, &remaining, cfg);
+
+            if pairs.is_empty() {
+                let r = EliminationResult {
+                    reduced_system: PolynomialSystem::new(snap, eq_roots),
+                    substitution: subst,
+                };
+                if is_solution(&r) {
+                    return Ok(r);
+                }
+                consider_best_elimination(&mut best, r);
+                continue;
+            }
+
+            for (x, i) in pairs {
+                let mut b_branch = b.clone();
+                let mut eq_branch = eq_roots.clone();
+                let mut subst_branch = subst.clone();
+                let remaining_branch: BTreeSet<VarId> =
+                    collect_vars(&b_branch.snapshot(), &eq_branch)
+                        .into_iter()
+                        .collect();
+                match apply_one_elimination(
+                    &mut b_branch,
+                    &mut eq_branch,
+                    &mut subst_branch,
+                    x,
+                    i,
+                    &remaining_branch,
+                    cfg,
+                ) {
+                    Ok(()) => {}
+                    Err(
+                        EliminationError::IllegitimateElimination { .. }
+                        | EliminationError::DegenerateSubstitution { .. }
+                        | EliminationError::Simplify(SimplifyError::DivisionByZero),
+                    ) => continue,
+                    Err(e) => return Err(e),
+                }
+
+                let r = elimination_result_from_state(&b_branch, &eq_branch, &subst_branch);
+                if is_solution(&r) {
+                    return Ok(r);
+                }
+
+                let snap_b = b_branch.snapshot();
+                let remaining2: BTreeSet<VarId> =
+                    collect_vars(&snap_b, &eq_branch).into_iter().collect();
+                let pairs2 = collect_linear_pairs(&snap_b, &eq_branch, &remaining2, cfg);
+
+                if eq_branch.is_empty() || pairs2.is_empty() {
+                    consider_best_elimination(&mut best, r);
+                } else {
+                    successors.push((b_branch, eq_branch, subst_branch));
+                }
+            }
+        }
+
+        if successors.is_empty() {
+            for r in beam_outcomes {
+                consider_best_elimination(&mut best, r);
+            }
+            return Ok(best.expect("beam_eliminate_inner: no best after empty successors"));
+        }
+
+        let generated = successors.len();
+        sort_states_by_residual_preference(&mut successors);
+        successors.truncate(beam_width);
+        let eq_kept: Vec<usize> = successors.iter().map(|(_, eq, _)| eq.len()).collect();
+
+        if let (Some(cw), Some(_cs)) = (trace_w, trace_st) {
+            let mut out = cw.borrow_mut();
+            writeln!(
+                &mut *out,
+                "beam layer_kept={} eq_counts={eq_kept:?} (of {} generated successors)",
+                successors.len(),
+                generated
+            )?;
+            out.flush()?;
+        }
+
+        beam = successors;
+    }
 }
 
 /// Candidates where `is_linear_in` is true. Enumeration matches Python
@@ -426,14 +696,15 @@ fn collect_linear_pairs(
 }
 
 fn is_better_elimination(a: &EliminationResult, b: &EliminationResult) -> bool {
-    let na = a.reduced_system.equations.len();
-    let nb = b.reduced_system.equations.len();
-    if na != nb {
-        return na < nb;
-    }
-    let free_a = collect_vars(&a.reduced_system.dag, &a.reduced_system.equations).len();
-    let free_b = collect_vars(&b.reduced_system.dag, &b.reduced_system.equations).len();
-    free_a > free_b
+    matches!(
+        cmp_residual_preference(
+            &a.reduced_system.dag,
+            &a.reduced_system.equations,
+            &b.reduced_system.dag,
+            &b.reduced_system.equations,
+        ),
+        Ordering::Less
+    )
 }
 
 fn other_vars(remaining: &BTreeSet<VarId>, x: VarId) -> Vec<VarId> {
@@ -576,11 +847,14 @@ fn collect_vars(dag: &Dag, roots: &[NodeId]) -> HashSet<VarId> {
 
 #[cfg(test)]
 mod tests {
-    use super::is_better_elimination;
+    use super::{beam_eliminate, cmp_residual_preference, is_better_elimination};
     use crate::dag::DagBuilder;
     use crate::substitution::SubstitutionMap;
     use crate::system::PolynomialSystem;
-    use crate::{EliminationResult, VarId};
+    use crate::{EliminationError, EliminationResult, SampleConfig, VarId};
+    use std::cmp::Ordering;
+
+    use super::default_is_solution;
 
     #[test]
     fn dfs_tie_break_prefers_more_free_variables() {
@@ -617,6 +891,45 @@ mod tests {
         assert!(
             is_better_elimination(&left, &right),
             "with the same residual equation count, DFS should prefer the state with more free variables"
+        );
+
+        assert_eq!(
+            cmp_residual_preference(
+                &left.reduced_system.dag,
+                &left.reduced_system.equations,
+                &right.reduced_system.dag,
+                &right.reduced_system.equations,
+            ),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn beam_width_zero_errors() {
+        let mut b = DagBuilder::new();
+        let x = b.variable(VarId(0));
+        let sys = PolynomialSystem::new(b.build(), vec![x]);
+        let cfg = SampleConfig::default();
+        assert!(matches!(
+            beam_eliminate(&sys, &cfg, 0, None, default_is_solution),
+            Err(EliminationError::InvalidBeamWidth { got: 0 })
+        ));
+    }
+
+    #[test]
+    fn beam_smoke_one_linear_equation() {
+        let mut b = DagBuilder::new();
+        let x = VarId(0);
+        let y = VarId(1);
+        let vx = b.variable(x);
+        let vy = b.variable(y);
+        let eq = b.add(vec![vx, vy]);
+        let sys = PolynomialSystem::new(b.build(), vec![eq]);
+        let cfg = SampleConfig::default();
+        let r = beam_eliminate(&sys, &cfg, 2, None, default_is_solution).expect("beam ok");
+        assert!(
+            r.reduced_system.equations.is_empty() || !r.substitution.is_empty(),
+            "expected full elimination or at least one substitution"
         );
     }
 }

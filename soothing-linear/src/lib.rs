@@ -1,7 +1,7 @@
 //! Linear elimination by substitution for polynomial systems over `\mathbb{Q}`.
 //!
 //! DAG-stored expressions, exact rational evaluation, sampled zero/linearity checks, substitution
-//! maps, and greedy or DFS elimination.
+//! maps, and greedy, DFS, or beam elimination.
 //!
 //! ```
 //! use soothing_linear::{linear_elimination_greedy, DagBuilder, PolynomialSystem, SampleConfig, VarId};
@@ -47,7 +47,7 @@ pub mod system;
 
 pub use dag::{Dag, DagBuilder, DagParseError, NodeId, VarId};
 pub use elimination::{
-    EliminationError, EliminationResult, default_is_solution, dfs_eliminate,
+    EliminationError, EliminationResult, beam_eliminate, default_is_solution, dfs_eliminate,
     is_solution_nonzero_kappah, linear_elimination_greedy,
 };
 pub use eval::{EvalError, evaluate};
