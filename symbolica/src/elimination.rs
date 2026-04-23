@@ -192,6 +192,59 @@ where
     Ok(result)
 }
 
+/// Greedy elimination: at each step, among all applicable linear eliminations,
+/// choose one that minimizes the number of equations immediately after
+/// [`apply_one_elimination`] (including zero-equation removal). Ties break by
+/// fewer distinct variables in the residual, then smaller [`VarId`], then
+/// smaller equation index. Recurses only on that single branch.
+pub fn greedy_eliminate<F>(
+    system: &PolynomialSystem,
+    cfg: &SampleConfig,
+    trace_writer: Option<&mut dyn Write>,
+    is_solution: F,
+    sym_to_vid: &HashMap<Symbol, VarId>,
+    id_to_sym: &[Symbol],
+) -> Result<EliminationResult, EliminationError>
+where
+    F: Fn(&EliminationResult) -> bool,
+{
+    let original = system.clone();
+    let eqs: Vec<Atom> = system
+        .equations
+        .par_iter()
+        .map(|e| e.clone().expand())
+        .collect();
+    let subst = SubstitutionMap::new();
+    let result = match trace_writer {
+        None => greedy_eliminate_inner(
+            eqs,
+            subst,
+            cfg,
+            None,
+            None,
+            &is_solution,
+            sym_to_vid,
+            id_to_sym,
+        )?,
+        Some(w) => {
+            let trace_w = RefCell::new(w);
+            let trace_st = RefCell::new(EliminationTraceState::default());
+            greedy_eliminate_inner(
+                eqs,
+                subst,
+                cfg,
+                Some(&trace_w),
+                Some(&trace_st),
+                &is_solution,
+                sym_to_vid,
+                id_to_sym,
+            )?
+        }
+    };
+    validate_elimination_result(&original, &result, cfg, sym_to_vid, id_to_sym);
+    Ok(result)
+}
+
 /// Recursive step for [`dfs_eliminate`]: try each linear pair, recurse, accept
 /// when `is_solution` holds or keep the best partial elimination.
 #[allow(clippy::too_many_arguments)]
@@ -307,6 +360,150 @@ where
     }
 
     Ok(best)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn greedy_eliminate_inner<F>(
+    eq_roots: Vec<Atom>,
+    subst: SubstitutionMap,
+    cfg: &SampleConfig,
+    trace_w: Option<&RefCell<&mut dyn Write>>,
+    trace_st: Option<&RefCell<EliminationTraceState>>,
+    is_solution: &F,
+    sym_to_vid: &HashMap<Symbol, VarId>,
+    id_to_sym: &[Symbol],
+) -> Result<EliminationResult, EliminationError>
+where
+    F: Fn(&EliminationResult) -> bool,
+{
+    if let (Some(cw), Some(cs)) = (trace_w, trace_st) {
+        let mut st = cs.borrow_mut();
+        let mut out = cw.borrow_mut();
+        st.dfs_visits += 1;
+        let elapsed = st.last_tick.map(|t| t.elapsed()).unwrap_or_default();
+        st.last_tick = Some(Instant::now());
+        let remaining_eq = eq_roots.len();
+        writeln!(
+            &mut *out,
+            "{} {} elapsed: {:.6}s",
+            st.dfs_visits,
+            remaining_eq,
+            elapsed.as_secs_f64()
+        )?;
+        out.flush()?;
+    }
+
+    if eq_roots.is_empty() {
+        return Ok(EliminationResult {
+            reduced_system: PolynomialSystem::new(eq_roots),
+            substitution: subst,
+        });
+    }
+
+    let partial = EliminationResult {
+        reduced_system: PolynomialSystem::new(eq_roots.clone()),
+        substitution: subst.clone(),
+    };
+    if is_solution(&partial) {
+        return Ok(partial);
+    }
+
+    let remaining: BTreeSet<VarId> = eq_roots
+        .iter()
+        .flat_map(|e| vars_in_atom(e, sym_to_vid))
+        .collect();
+
+    let pairs = collect_linear_pairs(&eq_roots, &remaining, cfg, id_to_sym, sym_to_vid);
+    if pairs.is_empty() {
+        return Ok(EliminationResult {
+            reduced_system: PolynomialSystem::new(eq_roots),
+            substitution: subst,
+        });
+    }
+
+    let mut branch_skips: usize = 0;
+    let mut best_tuple: Option<(usize, usize, u32, usize)> = None;
+    let mut best_eq: Option<Vec<Atom>> = None;
+    let mut best_subst: Option<SubstitutionMap> = None;
+    let mut best_x: Option<VarId> = None;
+    let mut best_i: Option<usize> = None;
+
+    for (x, i) in pairs {
+        let mut eq_branch = eq_roots.clone();
+        let mut subst_branch = subst.clone();
+        let remaining_branch: BTreeSet<VarId> = eq_branch
+            .iter()
+            .flat_map(|e| vars_in_atom(e, sym_to_vid))
+            .collect();
+        match apply_one_elimination(
+            &mut eq_branch,
+            &mut subst_branch,
+            x,
+            i,
+            &remaining_branch,
+            cfg,
+            id_to_sym,
+            sym_to_vid,
+        ) {
+            Ok(()) => {}
+            Err(
+                EliminationError::IllegitimateElimination { .. }
+                | EliminationError::DegenerateSubstitution { .. },
+            ) => {
+                branch_skips += 1;
+                continue;
+            }
+            Err(e) => return Err(e),
+        }
+
+        let score_eq = eq_branch.len();
+        let score_free = eq_branch
+            .iter()
+            .flat_map(|e| vars_in_atom(e, sym_to_vid))
+            .collect::<HashSet<VarId>>()
+            .len();
+        let cand = (score_eq, score_free, x.0, i);
+        let replace = match best_tuple {
+            None => true,
+            Some(t) => cand < t,
+        };
+        if replace {
+            best_tuple = Some(cand);
+            best_eq = Some(eq_branch);
+            best_subst = Some(subst_branch);
+            best_x = Some(x);
+            best_i = Some(i);
+        }
+    }
+
+    let (Some(eq_branch), Some(subst_branch), Some(x), Some(i)) =
+        (best_eq, best_subst, best_x, best_i)
+    else {
+        return Ok(EliminationResult {
+            reduced_system: PolynomialSystem::new(eq_roots),
+            substitution: subst,
+        });
+    };
+
+    if let Some(cw) = trace_w {
+        let mut out = cw.borrow_mut();
+        writeln!(
+            &mut *out,
+            "branch var={x:?} eq_index={i} skips_before_success={branch_skips}"
+        )?;
+        out.flush()?;
+    }
+
+    greedy_eliminate_inner(
+        eq_branch,
+        subst_branch,
+        cfg,
+        trace_w,
+        trace_st,
+        is_solution,
+        sym_to_vid,
+        id_to_sym,
+    )
 }
 
 fn collect_linear_pairs(

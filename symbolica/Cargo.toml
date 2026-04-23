@@ -21,6 +21,14 @@ path = "src/bin/bench_solve.rs"
 name = "groebner"
 path = "src/bin/groebner.rs"
 
+[[bin]]
+name = "factor"
+path = "src/bin/factor.rs"
+
+[[bin]]
+name = "milp_cover"
+path = "src/bin/milp_cover.rs"
+
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -35,3 +43,4 @@ rand = "0.8"
 regex = "1"
 symbolica = "1.5"
 thiserror = "1"
+good_lp = { version = "1", default-features = false, features = ["highs"] }

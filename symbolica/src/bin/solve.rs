@@ -1,4 +1,4 @@
-//! Load `systems/simplified_mathematica_system.txt` and run DFS linear elimination (Symbolica).
+//! Load `systems/simplified_mathematica_system.txt` and run greedy linear elimination (Symbolica).
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -6,7 +6,7 @@ use std::time::Instant;
 use symbolica::LicenseManager;
 
 use symbolica_elim::{
-    SampleConfig, SubstitutionMap, VarId, default_systems_dir_from_manifest, dfs_eliminate,
+    SampleConfig, SubstitutionMap, VarId, default_systems_dir_from_manifest, greedy_eliminate,
     is_solution_nonzero_kappah, load_mathematica_system_from_path_with_var_names,
 };
 
@@ -26,13 +26,13 @@ fn main() {
     LicenseManager::set_license_key(key).unwrap();
 
     let path: PathBuf = std::env::args().nth(1).map_or_else(
-        || default_systems_dir_from_manifest().join("simplified_mathematica_system.txt"),
+        || default_systems_dir_from_manifest().join("system.txt"),
         PathBuf::from,
     );
 
     let trace_path = Path::new(TRACE_LOG_FILE);
 
-    println!("symbolica-elim — DFS elimination on Mathematica system (Symbolica)\n");
+    println!("symbolica-elim — greedy elimination on Mathematica system (Symbolica)\n");
     println!("Loading {}", path.display());
     println!("Tracing elimination to {}", trace_path.display());
     let loaded = match load_mathematica_system_from_path_with_var_names(&path) {
@@ -75,7 +75,7 @@ fn main() {
     };
 
     let t0 = Instant::now();
-    let res = match dfs_eliminate(
+    let res = match greedy_eliminate(
         &loaded.system,
         &cfg,
         Some(&mut trace_file),
@@ -85,17 +85,21 @@ fn main() {
     ) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("dfs_eliminate error: {e}");
+            eprintln!("greedy_eliminate error: {e}");
             std::process::exit(1);
         }
     };
     let elapsed = t0.elapsed();
 
     println!(
-        "DFS linear elimination: {} substitution(s), {} remaining equation(s), elapsed {:.2?}",
+        "Greedy linear elimination: {} substitution(s), {} remaining equation(s), elapsed {:.2?}",
         res.substitution.len(),
         res.reduced_system.equations.len(),
         elapsed
+    );
+    println!(
+        "Accepted solution predicate (nonzero kappah): {}",
+        is_solution_nonzero_kappah(&res, kappah, &cfg, &loaded.sym_to_vid, &loaded.id_to_sym)
     );
     if !res.reduced_system.equations.is_empty() {
         println!("Note: residual is non-empty (expected for highly nonlinear systems).");
