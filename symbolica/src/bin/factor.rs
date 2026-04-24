@@ -1,8 +1,6 @@
 //! Load a Mathematica-style system, interreduce the converted ideal (each polynomial
 //! reduced modulo the others via [`MultivariatePolynomial::reduce`](https://docs.rs/symbolica/latest/symbolica/poly/polynomial/struct.MultivariatePolynomial.html#method.reduce)).
-//! Interreduction uses graded reverse lex (`GrevLexOrder`). Factorization calls [`Factorize::factor`] on
-//! [`LexOrder`] polynomials — Symbolica implements [`Factorize`] for `LexOrder` only for this field, so each
-//! equation is [`reorder`]ed to lex before factoring (same polynomial; monomial ordering for the algorithm).
+//! Interreduction and factorization both use lexicographic monomial order ([`LexOrder`](https://docs.rs/symbolica/latest/symbolica/poly/struct.LexOrder.html)), consistent with Symbolica’s default lex Groebner workflow unless polynomials are reordered to e.g. [`GrevLexOrder`](https://docs.rs/symbolica/latest/symbolica/poly/struct.GrevLexOrder.html).
 //!
 //! Field: Gaussian rationals ℚ(i) via [`AlgebraicExtension::new_complex`].
 //!
@@ -14,11 +12,11 @@ use std::time::Instant;
 use symbolica::LicenseManager;
 use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
+use symbolica::poly::PolyVariable;
 use symbolica::poly::factor::Factorize;
-use symbolica::poly::{LexOrder, PolyVariable};
 
 use symbolica_elim::{
-    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest, ideal_ext_grevlex,
+    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest, ideal_ext_lex,
     interreduce_polys, load_mathematica_system_from_path_with_var_names, variable_order,
 };
 
@@ -46,7 +44,7 @@ fn main() {
     LicenseManager::set_license_key(key).unwrap();
 
     let path: PathBuf = std::env::args().nth(1).map_or_else(
-        || default_systems_dir_from_manifest().join("s_system.txt"),
+        || default_systems_dir_from_manifest().join("system.txt"),
         PathBuf::from,
     );
 
@@ -73,7 +71,7 @@ fn main() {
 
     println!("\nInterreduction (`MultivariatePolynomial::reduce` modulo other equations)");
     let t_inter = Instant::now();
-    let polys = match ideal_ext_grevlex(&loaded.system, &number_field, var_order) {
+    let polys = match ideal_ext_lex(&loaded.system, &number_field, var_order) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("equation -> polynomial over AlgebraicExtension<Q>: {e}");
@@ -92,11 +90,10 @@ fn main() {
     for (i, poly) in polys.iter().enumerate() {
         println!("\n[{i}]  {poly}");
 
-        let poly_lex = poly.clone().reorder::<LexOrder>();
-        if poly_lex.is_zero() {
+        if poly.is_zero() {
             println!("  Factors: (zero)");
         } else {
-            for (f, m) in poly_lex.factor() {
+            for (f, m) in poly.clone().factor() {
                 println!("  {m}×  {f}");
                 let linear_vars = linear_var_names_for_factor(&f, &loaded);
                 println!("    Linear in: {linear_vars:?}");

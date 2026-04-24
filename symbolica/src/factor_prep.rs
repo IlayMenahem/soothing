@@ -2,7 +2,7 @@
 //! Symbolica polynomials, interreduction, and square-free factorization.
 //!
 //! Implements steps 1–4 of `problem statement.md`:
-//! 1. interreduce the polynomials under `GrevLexOrder`,
+//! 1. interreduce the polynomials under [`LexOrder`],
 //! 2. square-free factorize each equation,
 //! 3. drop constant factors,
 //! 4. discard zero polynomials (empty factor groups).
@@ -13,7 +13,7 @@ use symbolica::atom::{AtomCore, Symbol};
 use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
 use symbolica::poly::factor::Factorize;
-use symbolica::poly::{GrevLexOrder, LexOrder, PolyVariable, polynomial::MultivariatePolynomial};
+use symbolica::poly::{LexOrder, PolyVariable, polynomial::MultivariatePolynomial};
 
 use crate::mathematica::LoadedMathematicaSystem;
 use crate::system::PolynomialSystem;
@@ -21,32 +21,30 @@ use crate::system::PolynomialSystem;
 pub type RationalField = Q;
 pub type ExtQ = AlgebraicExtension<RationalField>;
 pub type PolyExtLex = MultivariatePolynomial<ExtQ, u16, LexOrder>;
-pub type PolyExtGrevLex = MultivariatePolynomial<ExtQ, u16, GrevLexOrder>;
 
 #[must_use]
 pub fn variable_order(symbols: &[Symbol]) -> Arc<Vec<PolyVariable>> {
     Arc::new(symbols.iter().copied().map(PolyVariable::from).collect())
 }
 
-pub fn ideal_ext_grevlex(
+pub fn ideal_ext_lex(
     system: &PolynomialSystem,
     field: &ExtQ,
     var_order: Arc<Vec<PolyVariable>>,
-) -> Result<Vec<PolyExtGrevLex>, String> {
+) -> Result<Vec<PolyExtLex>, String> {
     system
         .equations
         .iter()
         .map(|eq| {
             eq.expand()
                 .try_to_polynomial::<_, u16>(field, Some(var_order.clone()))
-                .map(|p: PolyExtLex| p.reorder::<GrevLexOrder>())
         })
         .collect()
 }
 
 /// Fixpoint interreduction: each polynomial is replaced by its remainder
 /// modulo all the others until nothing changes.
-pub fn interreduce_polys(mut polys: Vec<PolyExtGrevLex>) -> Vec<PolyExtGrevLex> {
+pub fn interreduce_polys(mut polys: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
     if polys.is_empty() {
         return polys;
     }
@@ -54,9 +52,9 @@ pub fn interreduce_polys(mut polys: Vec<PolyExtGrevLex>) -> Vec<PolyExtGrevLex> 
 
     loop {
         let n = polys.len();
-        let next: Vec<PolyExtGrevLex> = (0..n)
+        let next: Vec<PolyExtLex> = (0..n)
             .map(|i| {
-                let others: Vec<PolyExtGrevLex> = polys
+                let others: Vec<PolyExtLex> = polys
                     .iter()
                     .enumerate()
                     .filter(|(j, _)| *j != i)
@@ -85,7 +83,7 @@ pub struct Preprocessed {
 #[must_use]
 pub fn preprocess(loaded: &LoadedMathematicaSystem, field: &ExtQ) -> Preprocessed {
     let var_order = variable_order(&loaded.id_to_sym);
-    let polys = match ideal_ext_grevlex(&loaded.system, field, var_order) {
+    let polys = match ideal_ext_lex(&loaded.system, field, var_order) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("equation -> polynomial over AlgebraicExtension<Q>: {e}");
@@ -97,11 +95,10 @@ pub fn preprocess(loaded: &LoadedMathematicaSystem, field: &ExtQ) -> Preprocesse
     let factor_groups: Vec<Vec<PolyExtLex>> = polys
         .into_iter()
         .filter_map(|p| {
-            let p_lex = p.reorder::<LexOrder>();
-            if p_lex.is_zero() {
+            if p.is_zero() {
                 return None;
             }
-            let factors: Vec<PolyExtLex> = p_lex
+            let factors: Vec<PolyExtLex> = p
                 .square_free_factorization()
                 .into_iter()
                 .map(|(f, _pow)| f)

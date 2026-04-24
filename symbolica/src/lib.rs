@@ -23,8 +23,8 @@ pub use exact::{
     ExactPredicateError, is_linear_in_exact, is_zero_exact, rhs_denominator_nonzero_exact,
 };
 pub use factor_prep::{
-    ExtQ, PolyExtGrevLex, PolyExtLex, Preprocessed, RationalField, ideal_ext_grevlex,
-    interreduce_polys, preprocess, variable_order,
+    ExtQ, PolyExtLex, Preprocessed, RationalField, ideal_ext_lex, interreduce_polys, preprocess,
+    variable_order,
 };
 pub use mathematica::{
     LoadedMathematicaSystem, default_systems_dir_from_manifest,

@@ -397,7 +397,7 @@ mod tests {
     fn coefficient_can_be_variable() {
         let (_loaded, data) = problem_from("{x^2 * y^6 + x * y^3 + z^2 == 0}");
         assert_eq!(data.factors.len(), 1);
-        
+
         // the polynomial should be of degree 2 in x and 6 in y and 2 in z
         assert_eq!(data.factors[0].vars.len(), 3);
         assert_eq!(data.factors[0].vars[0].1, 2);
