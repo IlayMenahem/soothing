@@ -7,32 +7,31 @@ There is a set of multivariate polynomials $p_1, \ldots, p_m$ we do the followin
 2. find the square-free factorization of each polynomial into $f_{1, 1} \cdot \ldots \cdot f_{1, n_1}, \ldots, f_{m, 1} \cdot \ldots \cdot f_{m, n_m}$.
 3. remove constant factors from the polynomials.
 4. clear zero polynomials.
+5. solve each factor by each variable we can solve for getting a parametrization of the variable, we will solve for all factors that are of degree 1 or 2 in the variable.
+6. match the parametrizations to the polynomials they solve for.
 
-Taking the preprocessed polynomials as given, We would like to find a set of tuples of factors and variables $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ such that:
-1. each polynomial has a factor in the set of tuples, A factor $f_i$ covers every polynomial it appears in.
-2. for each tuple $(f_i, x_i)$, the equation $f_i = 0$ is linear in $x_i$ or is a polynomial in the variable $x_i$ in a degree less than 5, and thus provides a parametrization in radicals of the variable $x_i$.
-3. the variables $x_1, \ldots, x_k$ are pairwise distinct.
-4. the directed graph $G = (V, E)$ with $V = \{x_1, \ldots, x_k\}$ and $E = \{(x_j, x_i) \mid j \neq i \text{ and } x_j \text{ appears in } f_i\}$ is acyclic. (We write "$x_j$ appears in $f_i$" to mean $x_j$ occurs as a variable of the polynomial $f_i$.)
+Taking the parametrizations as given, we would like to find a set of parameterizations $x_1(\bar{v}_1), \ldots, x_k(\bar{v}_k)$ such that:
+1. each polynomial is covered by a parametrization.
+2. each variable has at most one parametrization.
+3. the directed graph $G = (V, E)$ with $V = \{x_1, \ldots, x_k\}$ and $E = \{(x_j, x_i) \mid x_j \text{ appears in } f_i\}$ is acyclic.
 
-Claim: If we find tuples $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ such that the conditions are met, we can find a parametrization in radicals of a non-empty component of the solution set of the system $p_1 = \cdots = p_m = 0$, with the variables outside $\{x_1, \ldots, x_k\}$ acting as free parameters.
+Claim: If we find parameterizations $x_1(\bar{v}_1), \ldots, x_k(\bar{v}_k)$ such that the conditions are met, this parametrization is a valid solution to the system $p_1 = \cdots = p_m = 0$.
 
 Proof:
 
-Let $X = \{x_1, \ldots, x_k\}$ be the *dependent* variables and let $Y$ be the set of all other variables appearing in the $p_j$; the elements of $Y$ will play the role of free parameters.
+Let $q_1, \ldots, q_r$ be the non-constant, non-zero polynomials that remain after interreduction, square-free factorization, and removal of constants and zero equations. Each preprocessing step preserves the common zero set in the following sense:
+1. replacing a polynomial by its remainder modulo the others preserves the generated ideal, hence preserves the common zeros.
+2. removing a non-zero constant factor does not change the equation $q = 0$.
+3. removing the zero polynomial only removes a vacuous equation.
+4. if $q = f_1 \cdots f_n$, then making one factor $f_i$ vanish is sufficient for making $q$ vanish.
 
-Since $G$ is acyclic (condition 4) it admits a topological order. Re-index the tuples so that $(x_1, x_2, \ldots, x_k)$ is such an order, i.e. whenever $x_j$ appears in $f_i$ with $j \neq i$ we have $j < i$. Condition 3 guarantees the $x_i$ are distinct, so this re-indexing is well-defined.
+By condition 1, every remaining polynomial $q_j$ has at least one selected factor $f_{j, \ell}$ together with a parametrization for some variable $x_i$. This parametrization was constructed to solve that factor, so after substituting
+$$
+x_i = x_i(\bar{v}_i)
+$$
+we have $f_{j, \ell} = 0$, and therefore $q_j = 0$.
 
-We construct the parametrization inductively. Assume that for every $\ell < i$ we have already produced a radical expression $\varphi_\ell$ in the free parameters $Y$ such that substituting $x_\ell \leftarrow \varphi_\ell$ satisfies $f_\ell = 0$. Consider the equation $f_i = 0$. By the topological order, every variable of $f_i$ lies in $Y \cup \{x_1, \ldots, x_i\}$: any $x_j \in X$ appearing in $f_i$ with $j \neq i$ is a predecessor of $x_i$ in $G$, hence $j < i$. Substituting $\varphi_1, \ldots, \varphi_{i-1}$ for $x_1, \ldots, x_{i-1}$ in $f_i$ yields a univariate polynomial
-$$\tilde f_i(x_i) \in \overline{\mathbb{Q}(Y)}[x_i]$$
-whose coefficients are radical expressions in $Y$. By condition 2, $\tilde f_i$ is either linear in $x_i$ or has degree $\leq 4$ in $x_i$. In both cases the roots are given by radical formulas (the linear formula, or the Cardano/Ferrari formulas for degrees 2, 3, 4); pick any root and call it $\varphi_i$. Inlining the $\varphi_\ell$ for $\ell < i$, the expression $\varphi_i$ is a radical in $Y$ alone.
-
-(Degenerate case: substitution might make $\tilde f_i$ the zero polynomial, in which case any value — e.g. $\varphi_i = 0$ — satisfies it. It might also drop to a lower nonzero degree, which is still solvable by radicals.)
-
-After $k$ steps we obtain radical expressions $\varphi_1, \ldots, \varphi_k$ in $Y$ with $f_i(\varphi_1, \ldots, \varphi_k, Y) = 0$ for every $i = 1, \ldots, k$.
-
-It remains to show that every $p_j$ also vanishes at this point. Fix $j$. By condition 1, some chosen factor $f_i$ covers $p_j$, meaning $f_i$ appears in the square-free factorization $p_j = f_{j,1} \cdots f_{j, n_j}$. Therefore $f_i \mid p_j$ in the polynomial ring, and since $f_i$ vanishes at $(\varphi_1, \ldots, \varphi_k, Y)$ so does $p_j$.
-
-Thus $(x_1, \ldots, x_k) = (\varphi_1(Y), \ldots, \varphi_k(Y))$ is a parametrization in radicals, with free parameters $Y$, of a non-empty component of the zero set of $\{p_1, \ldots, p_m\}$. $\blacksquare$
+It remains to show that the substitutions can be applied consistently. Condition 2 says that no variable receives two different definitions. Condition 3 says that the dependency graph between defined variables is acyclic, so it has a topological order. Evaluate the selected parametrizations in that order: whenever a variable $x_i$ is assigned, every defined variable that appears in $\bar{v}_i$ has already been assigned, and every remaining variable in $\bar{v}_i$ is free. Thus the selected parametrizations define a consistent family of values for the dependent variables in terms of the free variables. Under this substitution every $q_j$ vanishes, and therefore the original system $p_1 = \cdots = p_m = 0$ vanishes as well.
 
 ## Choosing the lex order
 
@@ -44,134 +43,50 @@ Choosing the order is therefore a variable-elimination ordering problem, well st
 
 ## Solving the problem
 
-We can solve the problem by formulating it as a mixed-integer linear program (MILP).
+We can solve the problem by formulating it as a mixed-integer linear program (MILP) or a SAT problem. 
+The MILP is convenient because it can express both the discrete choices and the acyclicity constraint directly.
 
-### Data
+Let $F$ be the set of distinct square-free factors after preprocessing. For each preprocessed polynomial $q_j$, let $F_j \subseteq F$ be the factors whose product is $q_j$. Let $X$ be the set of variables that occur in the factors, and let
+$$ A = \{(f, x) \in F \times X \mid f \text{ can be solved for } x\} $$
+be the set of admissible parametrizations.
 
-Let
-- $F$ — the set of all distinct square-free factors appearing across $p_1, \ldots, p_m$ after preprocessing.
-- $F_j \subseteq F$ — the factors of $p_j$.
-- $V$ — the set of all variables occurring in any $p_j$, with $n = |V|$.
-- $\mathrm{vars}(f) \subseteq V$ — the variables appearing in $f$.
-- $\deg_x f$ — the degree of $f$ in the variable $x$.
+For each $(f, x) \in A$, introduce a binary variable
+$$ s_{f,x} \in \{0, 1\} $$
+which means that we select the parametrization obtained by solving $f = 0$ for $x$. For each variable $x \in X$, introduce a binary variable
+$$ d_x \in \{0, 1\} $$
+which means that $x$ is a dependent variable, and a continuous or integer variable
+$$ t_x \in [0, |X|] $$
+which is its topological rank.
 
-Define the set of *admissible pairs*
-$$A = \{\,(f, x) \mid f \in F,\ x \in \mathrm{vars}(f),\ 1 \le \deg_x f \le 4\,\}.$$
-Condition 2 is enforced by restricting our choices to $A$.
+The constraints are:
 
-### Decision variables
+**C1. Cover every polynomial.**
+For every preprocessed polynomial $q_j$,
+$$ \sum_{(f,x) \in A,\ f \in F_j} s_{f,x} \ge 1 $$
+At least one factor of each polynomial must be made zero.
 
-- $s_{f,x} \in \{0, 1\}$ for every $(f, x) \in A$ — set to $1$ iff the tuple $(f, x)$ is selected.
-- $z_x \in \{0, 1\}$ for every $x \in V$ — set to $1$ iff $x$ is a dependent variable (appears as the second coordinate of some selected tuple).
-- $t_x \in [0, n]$ (continuous) for every $x \in V$ — topological-order stamp for $x$.
+**C2. Select at most one parametrization per variable.**
+For every variable $x$,
+$$ \sum_{(f,x) \in A} s_{f,x} \le 1 $$
+This prevents conflicting definitions of the same variable.
 
-### Linking constraints
+**C3. Link selected parametrizations to dependent variables.**
+For every variable $x$,
+$$ d_x = \sum_{(f,x) \in A} s_{f,x} $$
+Thus $d_x = 1$ exactly when $x$ is solved by one selected factor.
 
-$$z_x = \sum_{f\,:\,(f,x) \in A} s_{f,x} \qquad \forall x \in V. \tag{L}$$
+**C4. Enforce acyclicity.**
+For every admissible pair $(f,x) \in A$ and every variable $y \ne x$ that appears in $f$, impose
+$$ t_y + 1 \le t_x + M(2 - s_{f,x} - d_y) $$
+where $M = |X| + 1$.
 
-### Encoding the four conditions
+If $s_{f,x} = 1$ and $y$ is also a dependent variable, this becomes $t_y + 1 \le t_x$, so the dependency edge $y \to x$ must point forward in the topological order. If either the pair $(f,x)$ is not selected or $y$ is free, the constraint is relaxed by the big-$M$ term.
 
-**Condition 1 — coverage.** Each polynomial must have a selected factor:
-$$\sum_{f \in F_j} \ \sum_{x\,:\,(f,x)\in A} s_{f,x} \ \ge\ 1 \qquad \forall j = 1, \ldots, m. \tag{C1}$$
+Any feasible solution to C1-C4 gives exactly the kind of parametrization required by the claim. The objective is not needed for correctness, but it is useful for choosing among feasible solutions. Natural objectives are:
+1. minimize the number of selected parametrizations,
+2. minimize the total degree of the selected equations in their solved variables,
+3. combine both objectives lexicographically.
 
-**Condition 2 — solvability by radicals.** Already baked into $A$ by the degree restriction $1 \le \deg_x f \le 4$ (linear is the case $\deg_x f = 1$).
+A SAT encoding uses the same binary selection variables $s_{f,x}$. C1 becomes an OR clause for each polynomial, C2 becomes an at-most-one constraint for each variable, and acyclicity can be encoded either by Boolean order variables $o_{y,x}$ or by forbidding directed cycles among the selected dependency edges. The SAT formulation is purely discrete, while the MILP formulation is often simpler because the ranks $t_x$ express the topological order with linear inequalities.
 
-**Condition 3 — distinct dependent variables.** By (L), $z_x \in \{0, 1\}$ already forces at most one tuple per $x$:
-$$\sum_{f\,:\,(f,x)\in A} s_{f,x} \ \le\ 1 \qquad \forall x \in V. \tag{C3}$$
-Optionally add $\sum_{x\,:\,(f,x)\in A} s_{f,x} \le 1$ for all $f$ to forbid reusing the same factor (never useful — one use of $f$ already covers every polynomial it divides).
-
-**Condition 4 — acyclicity.** Use the topological stamps $t_x$ as a Miller–Tucker–Zemlin-style certificate. For every $(f, x) \in A$ and every $x' \in \mathrm{vars}(f) \setminus \{x\}$, if the tuple $(f, x)$ is selected and $x'$ is itself a dependent variable, then $x'$ must precede $x$ in the topological order:
-$$t_{x'} + 1 \ \le\ t_x + M\,\bigl(2 - s_{f,x} - z_{x'}\bigr), \qquad M = n + 1. \tag{C4}$$
-Explanation: when $s_{f,x} = z_{x'} = 1$ the big-M term vanishes and we get the strict predecessor constraint $t_{x'} + 1 \le t_x$; otherwise the RHS is $\ge t_x + M$ and the constraint is trivial. When $x'$ is not a dependent variable ($z_{x'} = 0$) it is a free parameter in $Y$ and imposes no ordering.
-
-### Objective
-
-The problem as stated is a feasibility problem; any feasible assignment yields a valid cover. A natural minimization objective is the size of the cover,
-$$\min \ \sum_{(f,x) \in A} s_{f,x}, \tag{Obj}$$
-
-### Summary
-
-$$
-\begin{aligned}
-\min \quad & \sum_{(f,x) \in A} s_{f,x} \\
-\text{s.t.} \quad
-& \sum_{f \in F_j} \sum_{x\,:\,(f,x)\in A} s_{f,x} \ge 1 && \forall j, \\
-& z_x = \sum_{f\,:\,(f,x)\in A} s_{f,x} && \forall x \in V, \\
-& t_{x'} + 1 \le t_x + (n+1)\,(2 - s_{f,x} - z_{x'}) && \forall (f,x)\in A,\ x' \in \mathrm{vars}(f)\setminus\{x\}, \\
-& s_{f,x} \in \{0,1\},\ z_x \in \{0,1\},\ t_x \in [0, n].
-\end{aligned}
-$$
-
-Any optimal (or merely feasible) solution of this MILP gives a valid set of tuples $\{(f, x) : s_{f,x} = 1\}$, and by the claim proven above, a parametrization in radicals of a component of the variety of $\{p_1, \ldots, p_m\}$ can then be read off in topological order of the $t_x$ stamps.
-
-
-## Zeroing variables
-
-Zeroing a variable $x$ means committing to $x = 0$ in the parametrization. Since $x = 0$ is trivially expressible in radicals, this is always admissible (degree-1 equation), and it interacts with the rest of the MILP in three useful ways:
-
-1. **Fully zeroing a factor.** If every monomial of a factor $f$ contains at least one zeroed variable, then $f$ vanishes identically on the parametrized component. Any polynomial containing $f$ is automatically covered, with no selection cost.
-2. **Easing acyclicity.** A zeroed variable has constant value $0$ and needs no topological predecessor: it can appear inside any chosen factor without inducing an edge in $G$.
-3. **Changing the selected equation.** Zeroing can erase the monomials that contain the variable a selected tuple intends to solve for. For example, selecting $(k + xe, x)$ is not a valid way to solve for $x$ if $e$ is also zeroed, because the residual equation is $k = 0$.
-4. **Inducing new factors.** After substitution the residual polynomials $\tilde p_j = p_j|_{x \to 0}$ may square-free-factor more finely than $p_j$ did (e.g. $xy + yz \to z$ after zeroing $x$ and clearing the $y$). Exploiting this fully requires re-running the preprocessing; the formulation below captures only effects (1), (2), and the invalid residuals from (3), which are the ones representable in a single MILP without refactorization.
-
-### Modified data
-
-For each factor $f \in F$ let $M(f)$ be its set of monomials and $\mathrm{vars}(m) \subseteq V$ the variables of monomial $m \in M(f)$. Admissible pairs $A$ are unchanged.
-
-### Additional decision variables
-
-- $w_x \in \{0, 1\}$ for every $x \in V$ — set to $1$ iff $x$ is zeroed.
-- $y_f \in \{0, 1\}$ for every $f \in F$ — set to $1$ iff $f$ is zero-killed by the chosen zeroing set.
-
-### New constraints
-
-**Zero-kill certificate.** Factor $f$ is zero-killed iff every monomial has at least one zeroed variable:
-$$y_f \ \le\ \sum_{x \in \mathrm{vars}(m)} w_x \qquad \forall f \in F,\ \forall m \in M(f). \tag{Z1}$$
-This is the standard hitting-set linearization; the MILP will freely set $y_f = 1$ whenever the RHS permits.
-
-**Zeroing excludes parametrization.** A zeroed variable is already determined and should not also be selected as the dependent of some tuple:
-$$z_x + w_x \ \le\ 1 \qquad \forall x \in V. \tag{Z2}$$
-
-**Extended coverage.** A polynomial is now covered if some factor is either selected or zero-killed:
-$$\sum_{f \in F_j}\Bigl(\ \sum_{x\,:\,(f,x) \in A} s_{f,x}\ +\ y_f\ \Bigr)\ \ge\ 1 \qquad \forall j = 1, \ldots, m. \tag{C1$'$}$$
-This replaces (C1).
-
-**Relaxed acyclicity.** Zeroed variables drop out of the dependency graph. Rewrite (C4) to ignore an in-neighbour $x'$ when $w_{x'} = 1$:
-$$t_{x'} + 1 \ \le\ t_x + M\,\bigl(3 - s_{f,x} - z_{x'} - (1 - w_{x'})\bigr) \ =\ t_x + M\,\bigl(2 - s_{f,x} - z_{x'} + w_{x'}\bigr), \qquad M = n + 1. \tag{C4$'$}$$
-By (Z2) the term $z_{x'} - w_{x'}$ never exceeds $1$, so the RHS dominates $t_x$ precisely when $s_{f,x} = 1$ and $x'$ is a non-zeroed dependent.
-
-**Residual solvability after zeroing.** For every candidate tuple $(f,x)$ and zeroed variable $u$, forbid selecting $(f,x)$ together with $u=0$ when $u$ appears in every monomial of $f$ that contains $x$, but not in every monomial of $f$:
-$$s_{f,x} + w_u \le 1. \tag{Z3}$$
-This is the single-variable zeroing certificate for the case where zeroing $u$ removes all $x$-terms while leaving a nonzero residual constraint in other variables. Such a residual does not solve for $x$ and must not make those other variables look free.
-
-### Objective
-
-Zeroing commits the parametrized component to a subvariety, so it should have real cost. A simple objective minimizes the number of commitments:
-$$\min \quad \sum_{(f,x) \in A} s_{f,x}\ +\ \sum_{x \in V} w_x. \tag{Obj$'$}$$
-If selected radical solves should be preferred over zeroing in ties, add a small secondary penalty to $\sum_x w_x$ or solve lexicographically.
-
-### Summary
-
-$$
-\begin{aligned}
-\min \quad & \sum_{(f,x)\in A} s_{f,x} + \sum_{x \in V} w_x \\
-\text{s.t.}\quad
-& \sum_{f \in F_j}\Bigl(\sum_{x\,:\,(f,x)\in A} s_{f,x} + y_f\Bigr) \ge 1 && \forall j, \\
-& z_x = \sum_{f\,:\,(f,x)\in A} s_{f,x} && \forall x \in V, \\
-& z_x + w_x \le 1 && \forall x \in V, \\
-& y_f \le \sum_{x \in \mathrm{vars}(m)} w_x && \forall f \in F,\ \forall m \in M(f), \\
-& s_{f,x} + w_u \le 1 && \forall (f,x)\in A,\ u \text{ invalidates } (f,x), \\
-& t_{x'} + 1 \le t_x + (n+1)\,(2 - s_{f,x} - z_{x'} + w_{x'}) && \forall (f,x)\in A,\ x' \in \mathrm{vars}(f)\setminus\{x\}, \\
-& s_{f,x},\ z_x,\ w_x,\ y_f \in \{0,1\},\ t_x \in [0, n].
-\end{aligned}
-$$
-
-### Correctness
-
-The claim of the original section extends: read off the solution by setting $x \leftarrow 0$ for every $x$ with $w_x = 1$, then apply the inductive parametrization to the remaining tuples $\{(f, x) : s_{f,x} = 1\}$ in order of $t_x$. For every selected tuple, (Z3) rules out the case where zeroing removes all terms in the chosen solve variable while leaving a residual constraint in other variables. For every $j$, (C1$'$) gives either a selected factor — which vanishes by the original argument after the valid zero substitutions — or a zero-killed factor $f$ with $y_f = 1$, which vanishes because every monomial of $f$ contains a zeroed variable. In both cases $p_j$ vanishes at the parametrized point.
-
-### Practical notes
-
-- (Z1) adds one inequality per monomial; for dense factors this is the dominant growth term. Restricting $w_x$ to a candidate set (e.g. variables that actually appear as minors in some $F_j$, or variables flagged by the ordering pass as entangled tails) keeps the MILP small.
-- If the unzeroed MILP is already feasible, the zeroing variant can be run as a warm-start with the previous solution fixed and $w \equiv 0$ relaxed — the LP relaxation quickly reveals whether any zeroing improves the objective.
-- Effect (3) — genuinely new factors after substitution — is recoverable by iterating: solve the MILP, apply the chosen zeroing to the $p_j$, re-run preprocessing, solve again. Convergence is guaranteed since each iteration either strictly decreases the number of uncovered polynomials or fixes $w \equiv 0$.
+## Zeroing variables - TBA
