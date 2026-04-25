@@ -27,25 +27,43 @@ use symbolica_elim::{
     load_mathematica_system_from_path_with_var_names, preprocess,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CoverObjective {
+    Count,
+    Degree,
+    Zeroed,
+}
+
+impl CoverObjective {
+    fn label(self) -> &'static str {
+        match self {
+            CoverObjective::Count => "minimize cover size",
+            CoverObjective::Degree => "minimize total degree",
+            CoverObjective::Zeroed => "minimize zeroed variables, then cover size",
+        }
+    }
+}
+
 #[derive(Debug)]
 struct CliOptions {
     path: PathBuf,
-    minimize_degree: bool,
+    objective: CoverObjective,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path: Option<PathBuf> = None;
-    let mut minimize_degree = false;
+    let mut objective = CoverObjective::Count;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--objective" => match args.next().as_deref() {
-                Some("count") => minimize_degree = false,
-                Some("degree") => minimize_degree = true,
+                Some("count") => objective = CoverObjective::Count,
+                Some("degree") => objective = CoverObjective::Degree,
+                Some("zeroed") => objective = CoverObjective::Zeroed,
                 other => {
                     return Err(format!(
-                        "--objective expects 'count' or 'degree' (got {other:?})"
+                        "--objective expects 'count', 'degree', or 'zeroed' (got {other:?})"
                     ));
                 }
             },
@@ -55,7 +73,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
 
     Ok(CliOptions {
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
-        minimize_degree,
+        objective,
     })
 }
 
@@ -260,23 +278,32 @@ fn pairs_by_variable(data: &ProblemData) -> Vec<Vec<usize>> {
     pairs_by_var
 }
 
-fn objective(data: &ProblemData, vars: &MilpVariables, minimize_degree: bool) -> Expression {
-    let selected_objective: Expression = if minimize_degree {
-        data.admissible
-            .iter()
-            .enumerate()
-            .map(|(k, _)| f64::from(data.deg_of_pair[k]) * vars.selected[k])
-            .sum()
-    } else {
-        vars.selected.iter().map(|v| Expression::from(*v)).sum()
-    };
+fn selected_pair_count(vars: &MilpVariables) -> Expression {
+    vars.selected.iter().map(|v| Expression::from(*v)).sum()
+}
 
-    selected_objective
-        + vars
-            .zeroed
-            .iter()
-            .map(|v| Expression::from(*v))
-            .sum::<Expression>()
+fn selected_degree_sum(data: &ProblemData, vars: &MilpVariables) -> Expression {
+    data.admissible
+        .iter()
+        .enumerate()
+        .map(|(k, _)| f64::from(data.deg_of_pair[k]) * vars.selected[k])
+        .sum()
+}
+
+fn zeroed_variable_count(vars: &MilpVariables) -> Expression {
+    vars.zeroed.iter().map(|v| Expression::from(*v)).sum()
+}
+
+fn objective(data: &ProblemData, vars: &MilpVariables, objective: CoverObjective) -> Expression {
+    let zeroed_count = zeroed_variable_count(vars);
+    match objective {
+        CoverObjective::Count => selected_pair_count(vars) + zeroed_count,
+        CoverObjective::Degree => selected_degree_sum(data, vars) + zeroed_count,
+        CoverObjective::Zeroed => {
+            let tie_breaker_weight = data.admissible.len() as f64 + 1.0;
+            tie_breaker_weight * zeroed_count + selected_pair_count(vars)
+        }
+    }
 }
 
 fn add_variable_linking_constraints<M: SolverModel>(
@@ -416,11 +443,14 @@ fn cover_from_solution<S: Solution>(
     }
 }
 
-fn solve_milp(data: &ProblemData, minimize_degree: bool) -> Result<Cover, ResolutionError> {
+fn solve_milp(
+    data: &ProblemData,
+    cover_objective: CoverObjective,
+) -> Result<Cover, ResolutionError> {
     let mut problem_vars = variables!();
     let milp_vars = add_milp_variables(&mut problem_vars, data);
     let pairs_by_var = pairs_by_variable(data);
-    let objective = objective(data, &milp_vars, minimize_degree);
+    let objective = objective(data, &milp_vars, cover_objective);
 
     let model = problem_vars.minimise(objective).using(default_solver);
     let model = add_variable_linking_constraints(model, &pairs_by_var, &milp_vars);
@@ -531,14 +561,10 @@ fn main() {
 
     println!(
         "\nSolving MILP ({}) with HiGHS ...",
-        if options.minimize_degree {
-            "minimize total degree"
-        } else {
-            "minimize cover size"
-        }
+        options.objective.label()
     );
     let t_solve = Instant::now();
-    let cover = match solve_milp(&data, options.minimize_degree) {
+    let cover = match solve_milp(&data, options.objective) {
         Ok(c) => c,
         Err(ResolutionError::Infeasible) => {
             eprintln!("infeasible: no valid cover exists for this system.");
@@ -582,7 +608,15 @@ mod tests {
         .expect("parse args");
 
         assert_eq!(options.path, PathBuf::from("systems/s_system.txt"));
-        assert!(options.minimize_degree);
+        assert_eq!(options.objective, CoverObjective::Degree);
+    }
+
+    #[test]
+    fn parse_args_accepts_zeroed_objective() {
+        let options =
+            parse_args(["--objective".to_string(), "zeroed".to_string()]).expect("parse args");
+
+        assert_eq!(options.objective, CoverObjective::Zeroed);
     }
 
     #[test]
@@ -590,7 +624,7 @@ mod tests {
         let options = parse_args([]).expect("parse args");
 
         assert!(options.path.ends_with("systems/system.txt"));
-        assert!(!options.minimize_degree);
+        assert_eq!(options.objective, CoverObjective::Count);
     }
 
     #[test]
@@ -696,7 +730,7 @@ mod tests {
     #[test]
     fn solve_covers_every_polynomial_linearly() {
         let (_loaded, data) = problem_from("{p -> x + 1, q -> y + 2, r -> z + 3}");
-        let cover = solve_milp(&data, false).expect("feasible");
+        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
         assert_eq!(cover.selected.len(), 3);
         for j in 0..data.f_by_poly.len() {
             let covered = cover
@@ -712,7 +746,7 @@ mod tests {
     fn solve_respects_acyclicity() {
         // q factors as x*(y + x); picking (y + x, y) forces t_x < t_y.
         let (_loaded, data) = problem_from("{p -> x + 1, q -> x*y + x^2}");
-        let cover = solve_milp(&data, false).expect("feasible");
+        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
         assert!(topo_ok(&data, &cover));
         for j in 0..data.f_by_poly.len() {
             assert!(
@@ -727,21 +761,21 @@ mod tests {
     #[test]
     fn solve_zeroes_single_high_degree_monomial() {
         let (_loaded, data) = problem_from("{x^5 + x + 3 == 0}");
-        let res = solve_milp(&data, false);
+        let res = solve_milp(&data, CoverObjective::Count);
         assert!(matches!(res, Err(ResolutionError::Infeasible)));
     }
 
     #[test]
     fn solve_zero_kills_high_degree_monomial() {
         let (_loaded, data) = problem_from("{x^5 == 0}");
-        let cover = solve_milp(&data, false).expect("feasible by zeroing x");
+        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible by zeroing x");
         assert_eq!(cover.selected.len() + cover.zeroed_locals.len(), 1);
     }
 
     #[test]
     fn solve_does_not_hide_kappah_behind_zero_e_component() {
         let (loaded, data) = problem_from(include_str!("../../../systems/s_system.txt"));
-        let cover = solve_milp(&data, false).expect("feasible");
+        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
         let zeroed_names: Vec<&str> = cover
             .zeroed_locals
             .iter()
@@ -760,7 +794,7 @@ mod tests {
         // degree 1 in y). Count-minimization picks any 1 tuple; degree-minimization should still
         // pick 1 tuple but prefer the degree-1 one.
         let (_loaded, data) = problem_from("{p -> (x + 1) * (x^2 + y + 1)}");
-        let cover_deg = solve_milp(&data, true).expect("feasible");
+        let cover_deg = solve_milp(&data, CoverObjective::Degree).expect("feasible");
         let total_deg: u32 = cover_deg
             .selected
             .iter()
@@ -769,6 +803,31 @@ mod tests {
         assert_eq!(
             total_deg, 1,
             "degree-minimization should pick the linear factor"
+        );
+    }
+
+    #[test]
+    fn minimize_zeroed_prefers_no_zeroed_variables() {
+        let (_loaded, data) = problem_from("{p -> x^5 * (y + 1)}");
+        let cover = solve_milp(&data, CoverObjective::Zeroed).expect("feasible");
+
+        assert!(
+            cover.zeroed_locals.is_empty(),
+            "zeroed objective should prefer selecting a factor over zeroing variables"
+        );
+        assert_eq!(cover.selected.len(), 1);
+    }
+
+    #[test]
+    fn minimize_zeroed_breaks_ties_by_cover_size() {
+        let (_loaded, data) = problem_from("{p -> (x + 1) * (y + 1)}");
+        let cover = solve_milp(&data, CoverObjective::Zeroed).expect("feasible");
+
+        assert!(cover.zeroed_locals.is_empty());
+        assert_eq!(
+            cover.selected.len(),
+            1,
+            "zeroed objective should minimize cover size among equally zero-minimal covers"
         );
     }
 }
