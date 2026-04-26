@@ -458,8 +458,9 @@ fn consider_best_elimination(best: &mut Option<EliminationResult>, candidate: El
 ///
 /// **Early exit:** if any expanded state satisfies `is_solution`, return it immediately.
 ///
-/// **Termination:** when the beam cannot expand further, returns the best terminal or partial state
-/// seen (same aggregate preference as DFS).
+/// **Termination:** when the beam cannot expand further, returns the best residual state seen at any
+/// successful elimination step in the whole search (same aggregate preference as DFS), including
+/// successors that are pruned by the beam width.
 ///
 /// # Errors
 ///
@@ -617,14 +618,14 @@ where
                     return Ok(r);
                 }
 
+                consider_best_elimination(&mut best, r);
+
                 let snap_b = b_branch.snapshot();
                 let remaining2: BTreeSet<VarId> =
                     collect_vars(&snap_b, &eq_branch).into_iter().collect();
                 let pairs2 = collect_linear_pairs(&snap_b, &eq_branch, &remaining2, cfg);
 
-                if eq_branch.is_empty() || pairs2.is_empty() {
-                    consider_best_elimination(&mut best, r);
-                } else {
+                if !(eq_branch.is_empty() || pairs2.is_empty()) {
                     successors.push((b_branch, eq_branch, subst_branch));
                 }
             }
