@@ -8,7 +8,12 @@
 *.out
 .DS_Store
 
+examples.md
+res
+systems/
 scripts/
+!/scripts/
+!/scripts/run_milp_cover_all.py
 
 temp.**
 *.prof
@@ -17,13 +22,11 @@ temp.**
 *.egg-info/
 __pycache__/
 .venv/
+.venv-bench/
 .vscode/
 .cursor/
 .ruff_cache/
 .pytest_cache/
-
 target/
-examples.md
-res
 
 .gitignore
