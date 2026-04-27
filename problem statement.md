@@ -10,15 +10,16 @@ There is a set of multivariate polynomials $p_1, \ldots, p_m$ we do the followin
 
 Taking the preprocessed polynomials as given, We would like to find a set of tuples of factors and variables $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ such that:
 1. each polynomial has a factor in the set of tuples, A factor $f_i$ covers every polynomial it appears in.
-2. for each tuple $(f_i, x_i)$, the equation $f_i = 0$ is linear in $x_i$ or is a polynomial in the variable $x_i$ in a degree less than 5, and thus provides a parametrization in radicals of the variable $x_i$.
+2. for each tuple $(f_i, x_i)$, the equation $f_i = 0$ is linear in $x_i$, and thus provides a rational parametrization of the variable $x_i$.
 3. the variables $x_1, \ldots, x_k$ are pairwise distinct.
 4. the directed graph $G = (V, E)$ with $V = \{x_1, \ldots, x_k\}$ and $E = \{(x_j, x_i) \mid j \neq i \text{ and } x_j \text{ appears in } f_i\}$ is acyclic.
+5. selecting a tuple $(f_i, x_i)$ can't imply that another tuple $(f_j, x_j)$ is not valid; if we only allow for tuples such that $f_m$ is linear in $x_m$, that means that the solution of $f_i = 0$ doesn't imply that we get $g(v) = 0$ for $f_j = g(v) * x_j + h(v)$.
 
 Claim: If we find tuples $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ such that the conditions are met, we can find a parametrization in radicals of a non-empty component of the solution set of the system $p_1 = \cdots = p_m = 0$, with the variables outside $\{x_1, \ldots, x_k\}$ acting as free parameters.
 
 Proof (TBA):
 
-## Choosing the lex order
+## Choosing the lex order (optional and unimportant for now)
 
 The lex order used for interreduction in step 2 affects which variables get eliminated from which polynomials, and hence how much structure the MILP in the next section has to work with. 
 We want an order that, after interreduction, leaves polynomials sharing as few variables as possible — this both reduces the size of $A$ and makes the acyclicity constraint (C4) easier to satisfy.
@@ -38,10 +39,16 @@ Let
 - $V$ — the set of all variables occurring in any $p_j$, with $n = |V|$.
 - $\mathrm{vars}(f) \subseteq V$ — the variables appearing in $f$.
 - $\deg_x f$ — the degree of $f$ in the variable $x$.
+- $c_{f,x}$ — the coefficient of $x$ when $f$ is viewed as a univariate polynomial in $x$.
 
 Define the set of *admissible pairs*
-$$A = \{\,(f, x) \mid f \in F,\ x \in \mathrm{vars}(f),\ 1 \le \deg_x f \le 4\,\}.$$
-Condition 2 is enforced by restricting our choices to $A$.
+$$A = \{\,(f, x) \mid f \in F,\ x \in \mathrm{vars}(f),\ \deg_x f = 1\,\}.$$
+Condition 2 is enforced by restricting our choices to $A$. For every $(f,x)\in A$, write
+$$f = c_{f,x} x + r_{f,x}, \qquad x \notin \mathrm{vars}(c_{f,x}) \cup \mathrm{vars}(r_{f,x}).$$
+
+Define the incompatibility relation
+$$I = \{\,((f_i,x_i),(f_j,x_j)) \in A^2 \mid (f_i,x_i) \ne (f_j,x_j),\ f_i \text{ divides } c_{f_j,x_j}\,\}.$$
+This records when solving $f_i=0$ would force the linear coefficient of another selected tuple to vanish.
 
 ### Decision variables
 
@@ -53,12 +60,12 @@ Condition 2 is enforced by restricting our choices to $A$.
 
 $$z_x = \sum_{f\,:\,(f,x) \in A} s_{f,x} \qquad \forall x \in V. \tag{L}$$
 
-### Encoding the four conditions
+### Encoding the five conditions
 
 **Condition 1 — coverage.** Each polynomial must have a selected factor:
 $$\sum_{f \in F_j} \ \sum_{x\,:\,(f,x)\in A} s_{f,x} \ \ge\ 1 \qquad \forall j = 1, \ldots, m. \tag{C1}$$
 
-**Condition 2 — solvability by radicals.** Already baked into $A$ by the degree restriction $1 \le \deg_x f \le 4$ (linear is the case $\deg_x f = 1$).
+**Condition 2 — linear solvability.** Already baked into $A$ by the degree restriction $\deg_x f = 1$.
 
 **Condition 3 — distinct dependent variables.** By (L), $z_x \in \{0, 1\}$ already forces at most one tuple per $x$:
 $$\sum_{f\,:\,(f,x)\in A} s_{f,x} \ \le\ 1 \qquad \forall x \in V. \tag{C3}$$
@@ -67,6 +74,10 @@ Optionally add $\sum_{x\,:\,(f,x)\in A} s_{f,x} \le 1$ for all $f$ to forbid reu
 **Condition 4 — acyclicity.** Use the topological stamps $t_x$ as a Miller–Tucker–Zemlin-style certificate. For every $(f, x) \in A$ and every $x' \in \mathrm{vars}(f) \setminus \{x\}$, if the tuple $(f, x)$ is selected and $x'$ is itself a dependent variable, then $x'$ must precede $x$ in the topological order:
 $$t_{x'} + 1 \ \le\ t_x + M\,\bigl(2 - s_{f,x} - z_{x'}\bigr), \qquad M = n + 1. \tag{C4}$$
 Explanation: when $s_{f,x} = z_{x'} = 1$ the big-M term vanishes and we get the strict predecessor constraint $t_{x'} + 1 \le t_x$; otherwise the RHS is $\ge t_x + M$ and the constraint is trivial. When $x'$ is not a dependent variable ($z_{x'} = 0$) it is a free parameter in $Y$ and imposes no ordering.
+
+**Condition 5 — preserving selected linear solves.** No selected tuple may force another selected tuple's linear coefficient to vanish:
+$$s_{f_i,x_i} + s_{f_j,x_j} \le 1 \qquad \forall ((f_i,x_i),(f_j,x_j)) \in I. \tag{C5}$$
+Since all selected tuples are linear, this is the required non-implication condition: the component chosen by one selected factor must not make another selected equation lose the variable it is supposed to solve for.
 
 ### Objective
 
@@ -82,6 +93,7 @@ $$
 & \sum_{f \in F_j} \sum_{x\,:\,(f,x)\in A} s_{f,x} \ge 1 && \forall j, \\
 & z_x = \sum_{f\,:\,(f,x)\in A} s_{f,x} && \forall x \in V, \\
 & t_{x'} + 1 \le t_x + (n+1)\,(2 - s_{f,x} - z_{x'}) && \forall (f,x)\in A,\ x' \in \mathrm{vars}(f)\setminus\{x\}, \\
+& s_{f_i,x_i} + s_{f_j,x_j} \le 1 && \forall ((f_i,x_i),(f_j,x_j)) \in I, \\
 & s_{f,x} \in \{0,1\},\ z_x \in \{0,1\},\ t_x \in [0, n].
 \end{aligned}
 $$
@@ -100,7 +112,7 @@ Zeroing a variable $x$ means committing to $x = 0$ in the parametrization. Since
 
 ### Modified data
 
-For each factor $f \in F$ let $M(f)$ be its set of monomials and $\mathrm{vars}(m) \subseteq V$ the variables of monomial $m \in M(f)$. Admissible pairs $A$ are unchanged.
+For each factor $f \in F$ let $M(f)$ be its set of monomials and $\mathrm{vars}(m) \subseteq V$ the variables of monomial $m \in M(f)$. Admissible pairs $A$ and the incompatibility relation $I$ are unchanged.
 
 ### Additional decision variables
 
@@ -128,6 +140,9 @@ By (Z2) the term $z_{x'} - w_{x'}$ never exceeds $1$, so the RHS dominates $t_x$
 $$s_{f,x} + w_u \le 1. \tag{Z3}$$
 This is the single-variable zeroing certificate for the case where zeroing $u$ removes all $x$-terms while leaving a nonzero residual constraint in other variables. Such a residual does not solve for $x$ and must not make those other variables look free.
 
+**Selected-pair compatibility.** The original compatibility condition remains active:
+$$s_{f_i,x_i} + s_{f_j,x_j} \le 1 \qquad \forall ((f_i,x_i),(f_j,x_j)) \in I. \tag{C5}$$
+
 ### Objective
 
 Zeroing commits the parametrized component to a subvariety, so it should have real cost. A simple objective minimizes the number of commitments:
@@ -145,6 +160,7 @@ $$
 & z_x + w_x \le 1 && \forall x \in V, \\
 & y_f \le \sum_{x \in \mathrm{vars}(m)} w_x && \forall f \in F,\ \forall m \in M(f), \\
 & s_{f,x} + w_u \le 1 && \forall (f,x)\in A,\ u \text{ invalidates } (f,x), \\
+& s_{f_i,x_i} + s_{f_j,x_j} \le 1 && \forall ((f_i,x_i),(f_j,x_j)) \in I, \\
 & t_{x'} + 1 \le t_x + (n+1)\,(2 - s_{f,x} - z_{x'} + w_{x'}) && \forall (f,x)\in A,\ x' \in \mathrm{vars}(f)\setminus\{x\}, \\
 & s_{f,x},\ z_x,\ w_x,\ y_f \in \{0,1\},\ t_x \in [0, n].
 \end{aligned}

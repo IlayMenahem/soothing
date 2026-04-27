@@ -83,6 +83,8 @@ struct FactorInfo {
     poly: PolyExtLex,
     /// `(global_var_id, degree)` for every variable occurring in `poly`.
     vars: Vec<(usize, u16)>,
+    /// Local Symbolica variable index for each global variable id in `vars`.
+    local_var_by_global: HashMap<usize, usize>,
     /// Global variable ids in each monomial.
     monomial_vars: Vec<Vec<usize>>,
 }
@@ -106,8 +108,9 @@ struct ProblemData {
 fn factor_vars(
     f: &PolyExtLex,
     sym_to_vid: &HashMap<Symbol, symbolica_elim::VarId>,
-) -> Vec<(usize, u16)> {
+) -> (Vec<(usize, u16)>, HashMap<usize, usize>) {
     let mut out = Vec::new();
+    let mut local_var_by_global = HashMap::new();
     for (xi, pv) in f.get_vars_ref().iter().enumerate() {
         if !f.contains(xi) {
             continue;
@@ -118,9 +121,11 @@ fn factor_vars(
         let Some(&vid) = sym_to_vid.get(sym) else {
             continue;
         };
-        out.push((vid.0 as usize, f.degree(xi)));
+        let global_vid = vid.0 as usize;
+        out.push((global_vid, f.degree(xi)));
+        local_var_by_global.insert(global_vid, xi);
     }
-    out
+    (out, local_var_by_global)
 }
 
 fn factor_monomial_vars(
@@ -165,6 +170,24 @@ fn zeroing_invalidates_pair(info: &FactorInfo, selected_vid: usize, zeroed_vid: 
     saw_selected_variable && zeroed_kills_every_selected_monomial && !zeroed_kills_every_monomial
 }
 
+fn linear_coefficient(info: &FactorInfo, selected_vid: usize) -> Option<PolyExtLex> {
+    info.local_var_by_global
+        .get(&selected_vid)
+        .map(|&local_var| info.poly.derivative(local_var))
+}
+
+fn factor_invalidates_linear_pair(
+    invalidator: &FactorInfo,
+    target: &FactorInfo,
+    target_vid: usize,
+) -> bool {
+    let Some(coefficient) = linear_coefficient(target, target_vid) else {
+        return false;
+    };
+
+    coefficient.try_div(&invalidator.poly).is_some()
+}
+
 fn build_problem(
     factor_groups: Vec<Vec<PolyExtLex>>,
     loaded: &LoadedMathematicaSystem,
@@ -178,8 +201,10 @@ fn build_problem(
         for f in group {
             let canon = f.make_monic();
             let idx = *factor_index.entry(canon.clone()).or_insert_with(|| {
+                let (vars, local_var_by_global) = factor_vars(&canon, &loaded.sym_to_vid);
                 let info = FactorInfo {
-                    vars: factor_vars(&canon, &loaded.sym_to_vid),
+                    vars,
+                    local_var_by_global,
                     monomial_vars: factor_monomial_vars(&canon, &loaded.sym_to_vid),
                     poly: canon,
                 };
@@ -205,7 +230,7 @@ fn build_problem(
     let mut deg_of_pair = Vec::new();
     for (fi, info) in factors.iter().enumerate() {
         for (vid, deg) in &info.vars {
-            if (1..=4).contains(deg) {
+            if *deg == 1 {
                 admissible.push((fi, v_idx[vid]));
                 deg_of_pair.push(*deg);
             }
@@ -409,6 +434,31 @@ fn add_selected_pair_constraints<M: SolverModel>(
     model
 }
 
+fn add_pair_incompatibility_constraints<M: SolverModel>(
+    mut model: M,
+    data: &ProblemData,
+    vars: &MilpVariables,
+) -> M {
+    for (target_k, &(target_fi, target_vloc)) in data.admissible.iter().enumerate() {
+        let target = &data.factors[target_fi];
+        let target_vid = data.v_ids[target_vloc];
+
+        for (invalidator_k, &(invalidator_fi, _)) in data.admissible.iter().enumerate() {
+            if invalidator_k == target_k {
+                continue;
+            }
+            let invalidator = &data.factors[invalidator_fi];
+            if factor_invalidates_linear_pair(invalidator, target, target_vid) {
+                model = model.with(constraint!(
+                    vars.selected[invalidator_k] + vars.selected[target_k] <= 1
+                ));
+            }
+        }
+    }
+
+    model
+}
+
 fn cover_from_solution<S: Solution>(
     solution: &S,
     data: &ProblemData,
@@ -457,6 +507,7 @@ fn solve_milp(
     let model = add_coverage_constraints(model, data, &milp_vars)?;
     let model = add_zero_kill_constraints(model, data, &milp_vars);
     let model = add_selected_pair_constraints(model, data, &milp_vars);
+    let model = add_pair_incompatibility_constraints(model, data, &milp_vars);
     let solution = model.solve()?;
 
     Ok(cover_from_solution(&solution, data, &milp_vars))
@@ -587,7 +638,9 @@ fn main() {
 mod tests {
     use super::*;
     use std::sync::Once;
-    use symbolica_elim::{load_mathematica_system_from_str_with_var_names, preprocess};
+    use symbolica_elim::{
+        ideal_ext_lex, load_mathematica_system_from_str_with_var_names, preprocess,
+    };
 
     static LICENSE: Once = Once::new();
     fn activate_license() {
@@ -643,6 +696,20 @@ mod tests {
         (loaded, data)
     }
 
+    fn problem_from_raw_factors(source: &str) -> (LoadedMathematicaSystem, ProblemData) {
+        activate_license();
+        let loaded = load_mathematica_system_from_str_with_var_names(source).expect("load");
+        let field = AlgebraicExtension::new_complex(Q);
+        let var_order = symbolica_elim::variable_order(&loaded.id_to_sym);
+        let factor_groups = ideal_ext_lex(&loaded.system, &field, var_order)
+            .expect("polynomial conversion")
+            .into_iter()
+            .map(|poly| vec![poly])
+            .collect();
+        let data = build_problem(factor_groups, &loaded);
+        (loaded, data)
+    }
+
     #[test]
     fn build_problem_dedupes_shared_factors() {
         activate_license();
@@ -679,7 +746,11 @@ mod tests {
         assert_eq!(data.factors[0].vars[1].1, 6);
         assert_eq!(data.factors[0].vars[2].1, 2);
 
-        assert!(data.admissible.len() == 2);
+        assert!(
+            data.admissible.is_empty(),
+            "only linear pairs are admissible; got {:?}",
+            data.admissible
+        );
     }
 
     #[test]
@@ -689,17 +760,27 @@ mod tests {
         let (_loaded, data) = problem_from("{x^5 + x + 3 == 0}");
         assert_eq!(data.factors.len(), 1);
         assert!(
-            data.factors[0].vars.iter().any(|(_, d)| *d >= 5),
-            "test precondition: factor should have a variable of degree >= 5"
+            data.factors[0].vars.iter().any(|(_, d)| *d > 1),
+            "test precondition: factor should have a nonlinear variable"
         );
         assert!(
             data.admissible.is_empty(),
-            "no admissible pair can exist when every variable has degree >= 5, got {:?}",
+            "no admissible pair can exist when every variable is nonlinear, got {:?}",
             data.admissible
         );
         for &d in &data.deg_of_pair {
-            assert!((1..=4).contains(&d));
+            assert_eq!(d, 1);
         }
+    }
+
+    #[test]
+    fn admissible_excludes_quadratic_radical_solves() {
+        let (_loaded, data) = problem_from("{x^2 + y^2 + 1 == 0}");
+
+        assert!(
+            data.admissible.is_empty(),
+            "degree 2-4 radical solves are no longer admissible"
+        );
     }
 
     fn topo_ok(data: &ProblemData, cover: &Cover) -> bool {
@@ -756,6 +837,28 @@ mod tests {
                     .any(|(fi, _, _, _)| data.f_by_poly[j].contains(fi))
             );
         }
+    }
+
+    #[test]
+    fn solve_rejects_pair_that_zeroes_another_linear_coefficient() {
+        let (_loaded, data) = problem_from_raw_factors("{y == 0, y*x + 1 == 0}");
+
+        let res = solve_milp(&data, CoverObjective::Count);
+
+        assert!(
+            matches!(res, Err(ResolutionError::Infeasible)),
+            "selecting y = 0 must not be compatible with solving y*x + 1 for x"
+        );
+    }
+
+    #[test]
+    fn solve_allows_independent_linear_coefficients() {
+        let (_loaded, data) = problem_from_raw_factors("{y == 0, x + z == 0}");
+
+        let cover = solve_milp(&data, CoverObjective::Zeroed).expect("feasible");
+
+        assert_eq!(cover.selected.len(), 2);
+        assert!(topo_ok(&data, &cover));
     }
 
     #[test]
