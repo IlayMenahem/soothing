@@ -7,6 +7,7 @@
 //! 3. drop constant factors,
 //! 4. discard zero polynomials (empty factor groups).
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use symbolica::atom::{AtomCore, Symbol};
@@ -25,6 +26,109 @@ pub type PolyExtLex = MultivariatePolynomial<ExtQ, u16, LexOrder>;
 #[must_use]
 pub fn variable_order(symbols: &[Symbol]) -> Arc<Vec<PolyVariable>> {
     Arc::new(symbols.iter().copied().map(PolyVariable::from).collect())
+}
+
+fn equation_supports(loaded: &LoadedMathematicaSystem) -> Vec<Vec<usize>> {
+    loaded
+        .system
+        .equations
+        .iter()
+        .map(|equation| {
+            let mut support: Vec<usize> = equation
+                .get_all_symbols(false)
+                .into_iter()
+                .filter_map(|symbol| loaded.sym_to_vid.get(&symbol).map(|vid| vid.0 as usize))
+                .collect();
+            support.sort_unstable();
+            support.dedup();
+            support
+        })
+        .collect()
+}
+
+fn cooccurrence_graph(variable_count: usize, supports: &[Vec<usize>]) -> Vec<HashSet<usize>> {
+    let mut graph = vec![HashSet::new(); variable_count];
+
+    for support in supports {
+        for (i, &left) in support.iter().enumerate() {
+            for &right in support.iter().skip(i + 1) {
+                graph[left].insert(right);
+                graph[right].insert(left);
+            }
+        }
+    }
+
+    graph
+}
+
+fn active_neighbors(graph: &[HashSet<usize>], active: &[bool], variable: usize) -> Vec<usize> {
+    let mut neighbors: Vec<usize> = graph[variable]
+        .iter()
+        .copied()
+        .filter(|&neighbor| active[neighbor])
+        .collect();
+    neighbors.sort_unstable();
+    neighbors
+}
+
+fn fill_edge_count(graph: &[HashSet<usize>], active: &[bool], variable: usize) -> usize {
+    let neighbors = active_neighbors(graph, active, variable);
+    let mut missing_edges = 0;
+
+    for (i, &left) in neighbors.iter().enumerate() {
+        for &right in neighbors.iter().skip(i + 1) {
+            if !graph[left].contains(&right) {
+                missing_edges += 1;
+            }
+        }
+    }
+
+    missing_edges
+}
+
+fn min_fill_order(variable_count: usize, supports: &[Vec<usize>]) -> Vec<usize> {
+    let mut graph = cooccurrence_graph(variable_count, supports);
+    let mut active = vec![true; variable_count];
+    let mut order = Vec::with_capacity(variable_count);
+
+    while order.len() < variable_count {
+        let selected = (0..variable_count)
+            .filter(|&variable| active[variable])
+            .min_by_key(|&variable| {
+                let neighbors = active_neighbors(&graph, &active, variable);
+                (
+                    fill_edge_count(&graph, &active, variable),
+                    neighbors.len(),
+                    variable,
+                )
+            })
+            .expect("at least one active variable remains");
+
+        let neighbors = active_neighbors(&graph, &active, selected);
+        for (i, &left) in neighbors.iter().enumerate() {
+            for &right in neighbors.iter().skip(i + 1) {
+                graph[left].insert(right);
+                graph[right].insert(left);
+            }
+        }
+        for &neighbor in &neighbors {
+            graph[neighbor].remove(&selected);
+        }
+        graph[selected].clear();
+        active[selected] = false;
+        order.push(selected);
+    }
+
+    order
+}
+
+fn heuristic_variable_order(loaded: &LoadedMathematicaSystem) -> Arc<Vec<PolyVariable>> {
+    let supports = equation_supports(loaded);
+    let symbols: Vec<Symbol> = min_fill_order(loaded.id_to_sym.len(), &supports)
+        .into_iter()
+        .map(|vid| loaded.id_to_sym[vid])
+        .collect();
+    variable_order(&symbols)
 }
 
 pub fn ideal_ext_lex(
@@ -100,7 +204,7 @@ fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> {
 }
 
 pub fn preprocess(loaded: &LoadedMathematicaSystem, field: &ExtQ) -> Result<Preprocessed, String> {
-    let var_order = variable_order(&loaded.id_to_sym);
+    let var_order = heuristic_variable_order(loaded);
     let polys = ideal_ext_lex(&loaded.system, field, var_order)
         .map_err(|e| format!("equation -> polynomial over AlgebraicExtension<Q>: {e}"))?;
     let polys = interreduce_polys(polys);
@@ -129,6 +233,37 @@ mod tests {
     fn load(source: &str) -> crate::mathematica::LoadedMathematicaSystem {
         activate_license();
         load_mathematica_system_from_str_with_var_names(source).expect("load")
+    }
+
+    #[test]
+    fn equation_supports_are_sorted_global_variable_ids() {
+        let loaded = load("{x*y + z == 0, y + 1 == 0}");
+
+        let supports = equation_supports(&loaded);
+
+        let x = loaded.sym_to_vid[&loaded.id_to_sym[0]].0 as usize;
+        let y = loaded.sym_to_vid[&loaded.id_to_sym[1]].0 as usize;
+        let z = loaded.sym_to_vid[&loaded.id_to_sym[2]].0 as usize;
+        assert_eq!(supports, vec![vec![x, y, z], vec![y]]);
+    }
+
+    #[test]
+    fn min_fill_order_is_deterministic_on_ties() {
+        let supports = vec![vec![0, 1], vec![1, 2], vec![2, 3], vec![3, 0]];
+
+        let order = min_fill_order(4, &supports);
+
+        assert_eq!(order, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn heuristic_variable_order_uses_min_fill_order() {
+        let loaded = load("{a*b == 0, b*c == 0, c*d == 0, d*a == 0}");
+
+        let order = heuristic_variable_order(&loaded);
+        let names: Vec<String> = order.iter().map(|variable| variable.to_string()).collect();
+
+        assert_eq!(names, vec!["a", "b", "c", "d"]);
     }
 
     #[test]

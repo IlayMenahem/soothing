@@ -94,7 +94,6 @@ fn main() {
             println!("  Factors: (zero)");
         } else {
             for f in poly.clone().square_free_factorization() {
-                println!("  {0:?}", f.0);
                 let linear_vars = linear_var_names_for_factor(&f.0, &loaded);
                 println!("    Linear in: {linear_vars:?}");
             }

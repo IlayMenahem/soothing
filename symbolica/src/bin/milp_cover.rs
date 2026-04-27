@@ -7,7 +7,8 @@
 //!
 //! Usage: `milp_cover [path]` — default path: `systems/system.txt`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::ops::{Div, Sub};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -17,14 +18,17 @@ use good_lp::{
 };
 
 use symbolica::LicenseManager;
-use symbolica::atom::Symbol;
+use symbolica::atom::{Atom, AtomCore, Symbol};
 use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
 use symbolica::poly::PolyVariable;
+use thiserror::Error;
 
+use symbolica_elim::atom_util::{parse_expression, substitute_symbol};
 use symbolica_elim::{
-    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest,
-    load_mathematica_system_from_path_with_var_names, preprocess,
+    ExactPredicateError, LoadedMathematicaSystem, PolyExtLex, SubstitutionMap, VarId,
+    default_systems_dir_from_manifest, is_zero_exact,
+    load_mathematica_system_from_path_with_var_names, preprocess, rhs_denominator_nonzero_exact,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -258,6 +262,38 @@ struct Cover {
     selected: Vec<(usize, usize, u16, f64)>,
     dependent_locals: Vec<usize>,
     zeroed_locals: Vec<usize>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct ParameterizationReport {
+    checked_equations: usize,
+    binding_count: usize,
+}
+
+#[derive(Debug, Error)]
+enum ParameterizationError {
+    #[error("could not parse selected factor `{factor}` as a Symbolica expression: {parse_error}")]
+    FactorParse { factor: String, parse_error: String },
+    #[error("cover assigns variable `{variable}` more than once")]
+    DuplicateBinding { variable: String },
+    #[error("selected factor is not linear in `{variable}` after conversion to an expression")]
+    NonlinearSelectedFactor { variable: String },
+    #[error("selected solve for `{variable}` has a zero or non-polynomial denominator")]
+    DegenerateSubstitution { variable: String },
+    #[error("cyclic dependency between cover substitutions")]
+    SubstitutionCycle,
+    #[error("exact validation failed for original equation {equation_index}: {source}")]
+    ExactCheck {
+        equation_index: usize,
+        source: ExactPredicateError,
+    },
+    #[error(
+        "original equation {equation_index} does not vanish after cover substitution: {residual}"
+    )]
+    EquationDoesNotVanish {
+        equation_index: usize,
+        residual: Atom,
+    },
 }
 
 struct MilpVariables {
@@ -513,6 +549,168 @@ fn solve_milp(
     Ok(cover_from_solution(&solution, data, &milp_vars))
 }
 
+fn var_id_from_global(global_vid: usize) -> VarId {
+    VarId(u32::try_from(global_vid).expect("global variable id must fit in VarId"))
+}
+
+fn factor_to_atom(factor: &PolyExtLex) -> Result<Atom, ParameterizationError> {
+    let factor_string = factor
+        .to_string()
+        .split_once(" % ")
+        .map_or_else(|| factor.to_string(), |(expr, _modulus)| expr.to_string());
+    parse_expression(factor_string.clone()).map_err(|parse_error| {
+        ParameterizationError::FactorParse {
+            factor: factor_string,
+            parse_error,
+        }
+    })
+}
+
+fn linear_factor_rhs(
+    loaded: &LoadedMathematicaSystem,
+    factor: &PolyExtLex,
+    selected_vid: usize,
+) -> Result<Atom, ParameterizationError> {
+    let selected_var = var_id_from_global(selected_vid);
+    let variable = var_name(loaded, selected_vid).to_string();
+    let selected_symbol = loaded.id_to_sym[selected_vid];
+    let factor_atom = factor_to_atom(factor)?;
+    let b_coeff = substitute_symbol(&factor_atom, selected_symbol, Atom::num(0i64));
+    let p_at_one = substitute_symbol(&factor_atom, selected_symbol, Atom::num(1i64));
+    let a_coeff = p_at_one.sub(&b_coeff).expand();
+
+    if is_zero_exact(&a_coeff, &loaded.sym_to_vid, &loaded.id_to_sym).unwrap_or(true) {
+        return Err(ParameterizationError::NonlinearSelectedFactor { variable });
+    }
+
+    let rhs = b_coeff
+        .div(&Atom::num(0i64).sub(&a_coeff).expand())
+        .expand();
+    let denominator_nonzero =
+        rhs_denominator_nonzero_exact(&rhs, &loaded.sym_to_vid, &loaded.id_to_sym).unwrap_or(false);
+    if !denominator_nonzero {
+        return Err(ParameterizationError::DegenerateSubstitution {
+            variable: var_name(loaded, selected_var.0 as usize).to_string(),
+        });
+    }
+
+    Ok(rhs)
+}
+
+fn insert_cover_binding(
+    loaded: &LoadedMathematicaSystem,
+    substitution: &mut SubstitutionMap,
+    assigned: &mut HashSet<VarId>,
+    var: VarId,
+    rhs: Atom,
+) -> Result<(), ParameterizationError> {
+    if !assigned.insert(var) {
+        return Err(ParameterizationError::DuplicateBinding {
+            variable: var_name(loaded, var.0 as usize).to_string(),
+        });
+    }
+    substitution.insert(var, rhs);
+    Ok(())
+}
+
+fn cover_substitution(
+    loaded: &LoadedMathematicaSystem,
+    data: &ProblemData,
+    cover: &Cover,
+) -> Result<SubstitutionMap, ParameterizationError> {
+    let mut substitution = SubstitutionMap::new();
+    let mut assigned = HashSet::new();
+
+    for &local_var in &cover.zeroed_locals {
+        let var = var_id_from_global(data.v_ids[local_var]);
+        insert_cover_binding(
+            loaded,
+            &mut substitution,
+            &mut assigned,
+            var,
+            Atom::num(0i64),
+        )?;
+    }
+
+    for &(factor_index, selected_vid, _, _) in &cover.selected {
+        let var = var_id_from_global(selected_vid);
+        let rhs = linear_factor_rhs(loaded, &data.factors[factor_index].poly, selected_vid)?;
+        insert_cover_binding(loaded, &mut substitution, &mut assigned, var, rhs)?;
+    }
+
+    Ok(substitution)
+}
+
+fn expand_cover_substitution(
+    substitution: &SubstitutionMap,
+    loaded: &LoadedMathematicaSystem,
+) -> Result<(Vec<VarId>, HashMap<VarId, Atom>), ParameterizationError> {
+    let order = substitution
+        .replay_order(&loaded.sym_to_vid)
+        .map_err(|_| ParameterizationError::SubstitutionCycle)?;
+    let mut expanded: HashMap<VarId, Atom> = HashMap::new();
+
+    for &var in &order {
+        let mut rhs = substitution
+            .get(var)
+            .expect("replay_order returned a variable missing from substitution")
+            .clone();
+        for &dependency in &order {
+            if dependency == var {
+                break;
+            }
+            if let Some(dependency_rhs) = expanded.get(&dependency) {
+                let dependency_symbol = loaded.id_to_sym[dependency.0 as usize];
+                rhs = substitute_symbol(&rhs, dependency_symbol, dependency_rhs.clone());
+            }
+        }
+        expanded.insert(var, rhs.expand());
+    }
+
+    Ok((order, expanded))
+}
+
+fn check_cover_parameterizes_original(
+    loaded: &LoadedMathematicaSystem,
+    data: &ProblemData,
+    cover: &Cover,
+) -> Result<ParameterizationReport, ParameterizationError> {
+    let substitution = cover_substitution(loaded, data, cover)?;
+    let binding_count = substitution.len();
+    let (order, expanded) = expand_cover_substitution(&substitution, loaded)?;
+
+    for (equation_index, equation) in loaded.system.equations.iter().enumerate() {
+        let mut residual = equation.clone();
+        for &var in &order {
+            let Some(rhs) = expanded.get(&var) else {
+                continue;
+            };
+            let symbol = loaded.id_to_sym[var.0 as usize];
+            residual = substitute_symbol(&residual, symbol, rhs.clone());
+        }
+        residual = residual.together().expand();
+
+        let vanishes =
+            is_zero_exact(&residual, &loaded.sym_to_vid, &loaded.id_to_sym).map_err(|source| {
+                ParameterizationError::ExactCheck {
+                    equation_index,
+                    source,
+                }
+            })?;
+        if !vanishes {
+            return Err(ParameterizationError::EquationDoesNotVanish {
+                equation_index,
+                residual,
+            });
+        }
+    }
+
+    Ok(ParameterizationReport {
+        checked_equations: loaded.system.equations.len(),
+        binding_count,
+    })
+}
+
 fn print_cover(loaded: &LoadedMathematicaSystem, data: &ProblemData, cover: &Cover) {
     println!("\nCover (in topological order):");
     for (rank, (fi, vid, deg, t)) in cover.selected.iter().enumerate() {
@@ -630,6 +828,17 @@ fn main() {
 
     print_cover(&loaded, &data, &cover);
     print_variable_sets(&loaded, &data, &cover);
+
+    match check_cover_parameterizes_original(&loaded, &data, &cover) {
+        Ok(report) => println!(
+            "\nParameterization check: {} original equation(s) vanish after {} substitution(s).",
+            report.checked_equations, report.binding_count
+        ),
+        Err(error) => {
+            eprintln!("\nparameterization check failed: {error}");
+            std::process::exit(5);
+        }
+    }
 
     println!("\nDone.");
 }
@@ -884,10 +1093,15 @@ mod tests {
             .iter()
             .map(|&i| var_name(&loaded, data.v_ids[i]))
             .collect();
+        let dependent_names: Vec<&str> = cover
+            .dependent_locals
+            .iter()
+            .map(|&i| var_name(&loaded, data.v_ids[i]))
+            .collect();
 
         assert!(
-            zeroed_names.contains(&"kappah"),
-            "kappah must be determined, not free, because e = 0 leaves constraints that force kappah = 0; zeroed variables were {zeroed_names:?}"
+            zeroed_names.contains(&"kappah") || dependent_names.contains(&"kappah"),
+            "kappah must be determined, not free, because e = 0 leaves constraints that force kappah = 0; zeroed variables were {zeroed_names:?}, dependent variables were {dependent_names:?}"
         );
     }
 
@@ -932,5 +1146,76 @@ mod tests {
             1,
             "zeroed objective should minimize cover size among equally zero-minimal covers"
         );
+    }
+
+    #[test]
+    fn parameterization_check_accepts_independent_linear_system() {
+        let (loaded, data) = problem_from("{p -> x + 1, q -> y + 2}");
+        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
+
+        let report = check_cover_parameterizes_original(&loaded, &data, &cover)
+            .expect("cover should parameterize original equations");
+
+        assert_eq!(report.checked_equations, 2);
+        assert_eq!(report.binding_count, 2);
+    }
+
+    #[test]
+    fn parameterization_check_expands_dependency_chain() {
+        let (loaded, data) = problem_from("{p -> x + y, q -> y + 1}");
+        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
+
+        let report = check_cover_parameterizes_original(&loaded, &data, &cover)
+            .expect("dependent substitutions should be expanded before validation");
+
+        assert_eq!(report.checked_equations, 2);
+        assert_eq!(report.binding_count, 2);
+    }
+
+    #[test]
+    fn parameterization_check_rejects_cover_that_leaves_original_equation_nonzero() {
+        let (loaded, data) = problem_from("{p -> x + 1}");
+        let cover = Cover {
+            selected: Vec::new(),
+            dependent_locals: Vec::new(),
+            zeroed_locals: Vec::new(),
+        };
+
+        let err = check_cover_parameterizes_original(&loaded, &data, &cover)
+            .expect_err("empty cover must not parameterize x + 1 = 0");
+
+        assert!(matches!(
+            err,
+            ParameterizationError::EquationDoesNotVanish {
+                equation_index: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parameterization_check_accepts_zeroed_cover() {
+        let (loaded, data) = problem_from("{x == 0}");
+        let x_vid = loaded
+            .var_names
+            .iter()
+            .position(|name| name == "x")
+            .expect("x should be loaded");
+        let x_local = data
+            .v_idx
+            .get(&x_vid)
+            .copied()
+            .expect("x should appear in the problem");
+        let cover = Cover {
+            selected: Vec::new(),
+            dependent_locals: Vec::new(),
+            zeroed_locals: vec![x_local],
+        };
+
+        let report = check_cover_parameterizes_original(&loaded, &data, &cover)
+            .expect("x -> 0 should satisfy x = 0");
+
+        assert_eq!(report.checked_equations, 1);
+        assert_eq!(report.binding_count, 1);
     }
 }
