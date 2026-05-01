@@ -3,175 +3,99 @@
 ## Problem
 
 There is a set of multivariate polynomials $p_1, \ldots, p_m$ we do the following preprocessing:
-1. zero out selected variables. (Optionally)
-2. interreduce the polynomials with lex order
-3. find the square-free factorization of each polynomial into $f_{1, 1} \cdot \ldots \cdot f_{1, n_1}, \ldots, f_{m, 1} \cdot \ldots \cdot f_{m, n_m}$.
-4. remove constant factors from the polynomials, and clear zero polynomials.
+1. interreduce the polynomials with lex order
+2. clear zero polynomials
+3. find the factorization of each polynomial into $\{(f, \{p_j \mid f \text{ appears in } p_j\}) \mid f \text{ is an irreducible factor of at least one polynomial}\}$.
+4. remove constant factors from the polynomials
 
-Taking the preprocessed polynomials as given, We would like to find a set of tuples of factors and variables $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ such that:
-1. each polynomial has a factor in the set of tuples, A factor $f_i$ covers every polynomial it appears in.
-2. for each tuple $(f_i, x_i)$, the equation $f_i = 0$ is linear in $x_i$, and thus provides a rational parametrization of the variable $x_i$.
-3. the variables $x_1, \ldots, x_k$ are pairwise distinct.
-4. the directed graph $G = (V, E)$ with $V = \{x_1, \ldots, x_k\}$ and $E = \{(x_j, x_i) \mid j \neq i \text{ and } x_j \text{ appears in } f_i\}$ is acyclic.
-5. selecting a tuple $(f_i, x_i)$ can't imply that another tuple $(f_j, x_j)$ is not valid; if we only allow for tuples such that $f_m$ is linear in $x_m$, that means that the solution of $f_i = 0$ doesn't imply that we get $g(v) = 0$ for $f_j = g(v) * x_j + h(v)$.
+Taking the preprocessed polynomials as given, we would like to find a set of tuples of factors and variables $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ and a set of variables to zero $v_1, \ldots, v_l$, maximizing the number of preprocessed polynomials that become identically zero after zeroing $v_1, \ldots, v_l$, subject to:
+1. each polynomial has a factor $f$ such that $s_{f,x} = 1$ for some variable $x$ (i.e., $f$ is selected as the linear definer for some variable), or has a factor that becomes identically zero after zeroing $v_1, \ldots, v_l$.
+2. for each tuple $(f_i, x_i)$, after zeroing the variables $v_1, \ldots, v_l$, the $f_i$ is of degree 1 in $x_i$.
+3. The dependency graph $G = (V, E)$ with $V = \{x_1, \ldots, x_k\}$ and $E = \{(x_j, x_i) \mid j \neq i \text{ and } x_j \text{ appears in } f_i\}$ is acyclic.
+4. The variables $x_1, \ldots, x_k, v_1, \ldots, v_l$ are pairwise distinct.
 
-Claim: If we find tuples $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ such that the conditions are met, we can find a parametrization in radicals of a non-empty component of the solution set of the system $p_1 = \cdots = p_m = 0$, with the variables outside $\{x_1, \ldots, x_k\}$ acting as free parameters.
+### Implication of system being solved
+
+Claim: If we find tuples $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ such that the conditions are met, we can find a rational parametrization of a non-empty component of the solution set of the system $p_1 = \cdots = p_m = 0$, with the variables outside $\{x_1, \ldots, x_k\}$ acting as free parameters.
 
 Proof (TBA):
 
 ## Choosing the lex order (optional and unimportant for now)
 
 The lex order used for interreduction in step 2 affects which variables get eliminated from which polynomials, and hence how much structure the MILP in the next section has to work with. 
-We want an order that, after interreduction, leaves polynomials sharing as few variables as possible — this both reduces the size of $A$ and makes the acyclicity constraint (C4) easier to satisfy.
+We want an order that, after interreduction, leaves polynomials sharing as few variables as possible — this both reduces the size of $A$ and makes the acyclicity constraint (C3) easier to satisfy.
 
 Interreduction under lex behaves like sparse elimination: when a variable $v$ is high in the order, one polynomial is picked as its "definer" (the one whose leading term involves $v$) and $v$ is removed from every other polynomial by reduction. 
 Choosing the order is therefore a variable-elimination ordering problem, well studied in sparse linear algebra (Markowitz / minimum-degree heuristics). 
 
 ## Solving the problem
 
-We can solve the problem by formulating it as a mixed-integer linear program (MILP).
+We formulate the problem as a mixed-integer linear program (MILP).
 
-### Data
+### Notation
 
-Let
-- $F$ — the set of all distinct square-free factors appearing across $p_1, \ldots, p_m$ after preprocessing.
-- $F_j \subseteq F$ — the factors of $p_j$.
-- $V$ — the set of all variables occurring in any $p_j$, with $n = |V|$.
-- $\mathrm{vars}(f) \subseteq V$ — the variables appearing in $f$.
-- $\deg_x f$ — the degree of $f$ in the variable $x$.
-- $c_{f,x}$ — the coefficient of $x$ when $f$ is viewed as a univariate polynomial in $x$.
+Let $P$ be the set of preprocessed polynomials, $F$ the set of factors and $V$ the set of variables. For $p \in P$, let $F_p \subseteq F$ be the factors of $p$. For $f \in F$, let $\mathrm{mon}(f)$ be its monomials and $\mathrm{vars}(f) \subseteq V$ the variables appearing in $f$. For a monomial $m$, let $\mathrm{vars}(m)$ be its variables and $\deg_x(m)$ its degree in $x$. Let $M^d_{f,x} = \{m \in \mathrm{mon}(f) : \deg_x(m) = d\}$.
 
-Define the set of *admissible pairs*
-$$A = \{\,(f, x) \mid f \in F,\ x \in \mathrm{vars}(f),\ \deg_x f = 1\,\}.$$
-Condition 2 is enforced by restricting our choices to $A$. For every $(f,x)\in A$, write
-$$f = c_{f,x} x + r_{f,x}, \qquad x \notin \mathrm{vars}(c_{f,x}) \cup \mathrm{vars}(r_{f,x}).$$
+### Variables
 
-Define the incompatibility relation
-$$I = \{\,((f_i,x_i),(f_j,x_j)) \in A^2 \mid (f_i,x_i) \ne (f_j,x_j),\ f_i \text{ divides } c_{f_j,x_j}\,\}.$$
-This records when solving $f_i=0$ would force the linear coefficient of another selected tuple to vanish.
+Decision variables:
 
-### Decision variables
+- $s_{f, x} \in \{0, 1\}$ for each $(f, x) \in F \times V$. $s_{f, x} = 1$ iff the factor $f$ is selected as the linear definer of the variable $x$.
+- $z_v \in \{0, 1\}$ for each $v \in V$. $z_v = 1$ iff the variable $v$ is zeroed.
 
-- $s_{f,x} \in \{0, 1\}$ for every $(f, x) \in A$ — set to $1$ iff the tuple $(f, x)$ is selected.
-- $z_x \in \{0, 1\}$ for every $x \in V$ — set to $1$ iff $x$ is a dependent variable (appears as the second coordinate of some selected tuple).
-- $t_x \in [0, n]$ (continuous) for every $x \in V$ — topological-order stamp for $x$.
+Auxiliary indicator variables (continuous in $[0, 1]$; pinned to $\{0,1\}$ by the constraints below):
 
-### Linking constraints
+- $\zeta_f \in [0, 1]$ for each $f \in F$. $\zeta_f = 1$ iff $f$ becomes identically zero after zeroing $\{v : z_v = 1\}$.
+- $y_p \in [0, 1]$ for each $p \in P$. $y_p = 1$ iff $p$ becomes identically zero after zeroing.
+- $a_{f, x, m} \in [0, 1]$ for each $(f, x) \in F \times V$ and each $m \in M^1_{f, x}$. $a_{f, x, m} = 1$ indicates that monomial $m$ (which has degree 1 in $x$) survives the zeroing.
+- $t_x \in [0, |V|]$ for each $x \in V$. Topological position of $x$, used to enforce acyclicity.
 
-$$z_x = \sum_{f\,:\,(f,x) \in A} s_{f,x} \qquad \forall x \in V. \tag{L}$$
+### Factor-zeroing definition
 
-### Encoding the five conditions
+A factor $f$ is identically zero after zeroing iff every monomial of $f$ contains at least one zeroed variable. Encoded as, for each $f \in F$ and each $m \in \mathrm{mon}(f)$:
 
-**Condition 1 — coverage.** Each polynomial must have a selected factor:
-$$\sum_{f \in F_j} \ \sum_{x\,:\,(f,x)\in A} s_{f,x} \ \ge\ 1 \qquad \forall j = 1, \ldots, m. \tag{C1}$$
+$$\zeta_f \le \sum_{v \in \mathrm{vars}(m)} z_v.$$
 
-**Condition 2 — linear solvability.** Already baked into $A$ by the degree restriction $\deg_x f = 1$.
+(Maximization in the objective drives $\zeta_f$ to its upper bound, which is $1$ exactly when every monomial has a zeroed variable.)
 
-**Condition 3 — distinct dependent variables.** By (L), $z_x \in \{0, 1\}$ already forces at most one tuple per $x$:
-$$\sum_{f\,:\,(f,x)\in A} s_{f,x} \ \le\ 1 \qquad \forall x \in V. \tag{C3}$$
-Optionally add $\sum_{x\,:\,(f,x)\in A} s_{f,x} \le 1$ for all $f$ to forbid reusing the same factor (never useful — one use of $f$ already covers every polynomial it divides).
+### Constraints
 
-**Condition 4 — acyclicity.** Use the topological stamps $t_x$ as a Miller–Tucker–Zemlin-style certificate. For every $(f, x) \in A$ and every $x' \in \mathrm{vars}(f) \setminus \{x\}$, if the tuple $(f, x)$ is selected and $x'$ is itself a dependent variable, then $x'$ must precede $x$ in the topological order:
-$$t_{x'} + 1 \ \le\ t_x + M\,\bigl(2 - s_{f,x} - z_{x'}\bigr), \qquad M = n + 1. \tag{C4}$$
-Explanation: when $s_{f,x} = z_{x'} = 1$ the big-M term vanishes and we get the strict predecessor constraint $t_{x'} + 1 \le t_x$; otherwise the RHS is $\ge t_x + M$ and the constraint is trivial. When $x'$ is not a dependent variable ($z_{x'} = 0$) it is a free parameter in $Y$ and imposes no ordering.
+**(C1) Coverage.** Every preprocessed polynomial $p \in P$ must have either a factor that is selected as a linear definer for some variable, or a factor that becomes identically zero after zeroing:
 
-**Condition 5 — preserving selected linear solves.** No selected tuple may force another selected tuple's linear coefficient to vanish:
-$$s_{f_i,x_i} + s_{f_j,x_j} \le 1 \qquad \forall ((f_i,x_i),(f_j,x_j)) \in I. \tag{C5}$$
-Since all selected tuples are linear, this is the required non-implication condition: the component chosen by one selected factor must not make another selected equation lose the variable it is supposed to solve for.
+$$\sum_{f \in F_p} \left( \zeta_f + \sum_{x \in V} s_{f, x} \right) \ge 1 \qquad \forall\, p \in P.$$
 
-### Objective
+**(C2) Linearity.** For each selected pair $(f, x)$, after zeroing, $f$ must be of degree at most $1$ in $x$ with at least one degree-$1$ monomial surviving.
 
-The problem as stated is a feasibility problem; any feasible assignment yields a valid cover. A natural minimization objective is the size of the cover,
-$$\min \ \sum_{(f,x) \in A} s_{f,x}, \tag{Obj}$$
+(C2a) Every monomial of $f$ of degree $\ge 2$ in $x$ must be killed by some zeroed variable other than $x$. For each $(f, x) \in F \times V$ and each $m \in \mathrm{mon}(f)$ with $\deg_x(m) \ge 2$:
 
-### Summary
+$$s_{f, x} \le \sum_{v \in \mathrm{vars}(m) \setminus \{x\}} z_v.$$
 
-$$
-\begin{aligned}
-\min \quad & \sum_{(f,x) \in A} s_{f,x} \\
-\text{s.t.} \quad
-& \sum_{f \in F_j} \sum_{x\,:\,(f,x)\in A} s_{f,x} \ge 1 && \forall j, \\
-& z_x = \sum_{f\,:\,(f,x)\in A} s_{f,x} && \forall x \in V, \\
-& t_{x'} + 1 \le t_x + (n+1)\,(2 - s_{f,x} - z_{x'}) && \forall (f,x)\in A,\ x' \in \mathrm{vars}(f)\setminus\{x\}, \\
-& s_{f_i,x_i} + s_{f_j,x_j} \le 1 && \forall ((f_i,x_i),(f_j,x_j)) \in I, \\
-& s_{f,x} \in \{0,1\},\ z_x \in \{0,1\},\ t_x \in [0, n].
-\end{aligned}
-$$
+(C2b) A monomial $m$ of degree exactly $1$ in $x$ survives only if none of its non-$x$ variables are zeroed. For each $(f, x) \in F \times V$, each $m \in M^1_{f, x}$, and each $v \in \mathrm{vars}(m) \setminus \{x\}$:
 
-Any optimal (or merely feasible) solution of this MILP gives a valid set of tuples $\{(f, x) : s_{f,x} = 1\}$, and by the claim proven above, a parametrization in radicals of a component of the variety of $\{p_1, \ldots, p_m\}$ can then be read off in topological order of the $t_x$ stamps.
+$$a_{f, x, m} \le 1 - z_v.$$
 
+(C2c) If $f$ is selected for $x$, at least one degree-$1$-in-$x$ monomial must survive. For each $(f, x) \in F \times V$:
 
-## Zeroing variables
+$$s_{f, x} \le \sum_{m \in M^1_{f, x}} a_{f, x, m}.$$
 
-Zeroing a variable $x$ means committing to $x = 0$ in the parametrization. Since $x = 0$ is trivially expressible in radicals, this is always admissible (degree-1 equation), and it interacts with the rest of the MILP in three useful ways:
+(If $M^1_{f, x} = \emptyset$ — including the case $x \notin \mathrm{vars}(f)$ — this forces $s_{f, x} = 0$.)
 
-1. **Fully zeroing a factor.** If every monomial of a factor $f$ contains at least one zeroed variable, then $f$ vanishes identically on the parametrized component. Any polynomial containing $f$ is automatically covered, with no selection cost.
-2. **Easing acyclicity.** A zeroed variable has constant value $0$ and needs no topological predecessor: it can appear inside any chosen factor without inducing an edge in $G$.
-3. **Changing the selected equation.** Zeroing can erase the monomials that contain the variable a selected tuple intends to solve for. For example, selecting $(k + xe, x)$ is not a valid way to solve for $x$ if $e$ is also zeroed, because the residual equation is $k = 0$.
-4. **Inducing new factors.** After substitution the residual polynomials $\tilde p_j = p_j|_{x \to 0}$ may square-free-factor more finely than $p_j$ did (e.g. $xy + yz \to z$ after zeroing $x$ and clearing the $y$). Exploiting this fully requires re-running the preprocessing; the formulation below captures only effects (1), (2), and the invalid residuals from (3), which are the ones representable in a single MILP without refactorization.
+**(C3) Acyclicity.** Use a topological-order encoding on the potential vertices. For each $(f, x) \in F \times V$ and each $x' \in \mathrm{vars}(f) \setminus \{x\}$:
 
-### Modified data
+$$t_{x'} + 1 \le t_x + (|V| + 1)\,(1 - s_{f, x}).$$
 
-For each factor $f \in F$ let $M(f)$ be its set of monomials and $\mathrm{vars}(m) \subseteq V$ the variables of monomial $m \in M(f)$. Admissible pairs $A$ and the incompatibility relation $I$ are unchanged.
+When $s_{f, x} = 1$ this enforces $t_{x'} < t_x$ on every potential predecessor edge $x' \to x$ of the dependency graph; when $s_{f, x} = 0$ the big-$M$ term deactivates the constraint. A consistent assignment of $\{t_x\}$ exists iff the induced graph on the selected variables is acyclic.
 
-### Additional decision variables
+**(C4) Pairwise distinct.** No variable is both selected (as some $x_i$) and zeroed (as some $v_j$), and each variable is selected at most once. For each $x \in V$:
 
-- $w_x \in \{0, 1\}$ for every $x \in V$ — set to $1$ iff $x$ is zeroed.
-- $y_f \in \{0, 1\}$ for every $f \in F$ — set to $1$ iff $f$ is zero-killed by the chosen zeroing set.
-
-### New constraints
-
-**Zero-kill certificate.** Factor $f$ is zero-killed iff every monomial has at least one zeroed variable:
-$$y_f \ \le\ \sum_{x \in \mathrm{vars}(m)} w_x \qquad \forall f \in F,\ \forall m \in M(f). \tag{Z1}$$
-This is the standard hitting-set linearization; the MILP will freely set $y_f = 1$ whenever the RHS permits.
-
-**Zeroing excludes parametrization.** A zeroed variable is already determined and should not also be selected as the dependent of some tuple:
-$$z_x + w_x \ \le\ 1 \qquad \forall x \in V. \tag{Z2}$$
-
-**Extended coverage.** A polynomial is now covered if some factor is either selected or zero-killed:
-$$\sum_{f \in F_j}\Bigl(\ \sum_{x\,:\,(f,x) \in A} s_{f,x}\ +\ y_f\ \Bigr)\ \ge\ 1 \qquad \forall j = 1, \ldots, m. \tag{C1$'$}$$
-This replaces (C1).
-
-**Relaxed acyclicity.** Zeroed variables drop out of the dependency graph. Rewrite (C4) to ignore an in-neighbour $x'$ when $w_{x'} = 1$:
-$$t_{x'} + 1 \ \le\ t_x + M\,\bigl(3 - s_{f,x} - z_{x'} - (1 - w_{x'})\bigr) \ =\ t_x + M\,\bigl(2 - s_{f,x} - z_{x'} + w_{x'}\bigr), \qquad M = n + 1. \tag{C4$'$}$$
-By (Z2) the term $z_{x'} - w_{x'}$ never exceeds $1$, so the RHS dominates $t_x$ precisely when $s_{f,x} = 1$ and $x'$ is a non-zeroed dependent.
-
-**Residual solvability after zeroing.** For every candidate tuple $(f,x)$ and zeroed variable $u$, forbid selecting $(f,x)$ together with $u=0$ when $u$ appears in every monomial of $f$ that contains $x$, but not in every monomial of $f$:
-$$s_{f,x} + w_u \le 1. \tag{Z3}$$
-This is the single-variable zeroing certificate for the case where zeroing $u$ removes all $x$-terms while leaving a nonzero residual constraint in other variables. Such a residual does not solve for $x$ and must not make those other variables look free.
-
-**Selected-pair compatibility.** The original compatibility condition remains active:
-$$s_{f_i,x_i} + s_{f_j,x_j} \le 1 \qquad \forall ((f_i,x_i),(f_j,x_j)) \in I. \tag{C5}$$
+$$\sum_{f \in F} s_{f, x} + z_x \le 1.$$
 
 ### Objective
 
-Zeroing commits the parametrized component to a subvariety, so it should have real cost. A simple objective minimizes the number of commitments:
-$$\min \quad \sum_{(f,x) \in A} s_{f,x}\ +\ \sum_{x \in V} w_x. \tag{Obj$'$}$$
-If selected radical solves should be preferred over zeroing in ties, add a small secondary penalty to $\sum_x w_x$ or solve lexicographically.
+A polynomial $p$ becomes identically zero after zeroing iff at least one of its factors does. Link the objective indicator to the factor indicators: for each $p \in P$,
 
-### Summary
+$$y_p \le \sum_{f \in F_p} \zeta_f.$$
 
-$$
-\begin{aligned}
-\min \quad & \sum_{(f,x)\in A} s_{f,x} + \sum_{x \in V} w_x \\
-\text{s.t.}\quad
-& \sum_{f \in F_j}\Bigl(\sum_{x\,:\,(f,x)\in A} s_{f,x} + y_f\Bigr) \ge 1 && \forall j, \\
-& z_x = \sum_{f\,:\,(f,x)\in A} s_{f,x} && \forall x \in V, \\
-& z_x + w_x \le 1 && \forall x \in V, \\
-& y_f \le \sum_{x \in \mathrm{vars}(m)} w_x && \forall f \in F,\ \forall m \in M(f), \\
-& s_{f,x} + w_u \le 1 && \forall (f,x)\in A,\ u \text{ invalidates } (f,x), \\
-& s_{f_i,x_i} + s_{f_j,x_j} \le 1 && \forall ((f_i,x_i),(f_j,x_j)) \in I, \\
-& t_{x'} + 1 \le t_x + (n+1)\,(2 - s_{f,x} - z_{x'} + w_{x'}) && \forall (f,x)\in A,\ x' \in \mathrm{vars}(f)\setminus\{x\}, \\
-& s_{f,x},\ z_x,\ w_x,\ y_f \in \{0,1\},\ t_x \in [0, n].
-\end{aligned}
-$$
+Maximize the number of preprocessed polynomials that become identically zero:
 
-### Correctness
-
-The claim of the original section extends: read off the solution by setting $x \leftarrow 0$ for every $x$ with $w_x = 1$, then apply the inductive parametrization to the remaining tuples $\{(f, x) : s_{f,x} = 1\}$ in order of $t_x$. For every selected tuple, (Z3) rules out the case where zeroing removes all terms in the chosen solve variable while leaving a residual constraint in other variables. For every $j$, (C1$'$) gives either a selected factor — which vanishes by the original argument after the valid zero substitutions — or a zero-killed factor $f$ with $y_f = 1$, which vanishes because every monomial of $f$ contains a zeroed variable. In both cases $p_j$ vanishes at the parametrized point.
-
-### Practical notes
-
-- (Z1) adds one inequality per monomial; for dense factors this is the dominant growth term. Restricting $w_x$ to a candidate set (e.g. variables that actually appear as minors in some $F_j$, or variables flagged by the ordering pass as entangled tails) keeps the MILP small.
-- If the unzeroed MILP is already feasible, the zeroing variant can be run as a warm-start with the previous solution fixed and $w \equiv 0$ relaxed — the LP relaxation quickly reveals whether any zeroing improves the objective.
-- Effect (3) — genuinely new factors after substitution — is recoverable by iterating: solve the MILP, apply the chosen zeroing to the $p_j$, re-run preprocessing, solve again. Convergence is guaranteed since each iteration either strictly decreases the number of uncovered polynomials or fixes $w \equiv 0$.
+$$\max \; \sum_{p \in P} y_p.$$

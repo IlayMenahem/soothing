@@ -555,4 +555,4 @@
           336 pphh1 - 528 pphh2 - 672 DpDphh1 xr + 1056 DpDphh2 xr + 
           118 DpDphh4 xr - 132 pph^2 xr - 336 pphh1 xr + 
           528 pphh2 xr - 264 DpDph2 pph (-3 + 4 xr) - 
-          66 DpDph2^2 (-21 + 20 xr))))
+          66 DpDph2^2 (-21 + 20 xr)))), 0 -> rRabKappah*kappah - 1
