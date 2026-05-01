@@ -2,8 +2,9 @@
 //!
 //! Preprocess the input polynomial system (interreduce, square-free factor,
 //! drop constants/zero polynomials), then solve an integer program with
-//! [`good_lp`]/HiGHS to pick tuples `(f_i, x_i)` that cover every polynomial
-//! by a radical-solvable, acyclic assignment.
+//! [`good_lp`]/HiGHS to pick tuples `(f_i, x_i)` and a set of zeroed
+//! variables that satisfy constraints C1–C4 and maximize the number of
+//! polynomials made identically zero by the zeroing alone.
 //!
 //! Usage: `milp_cover [path]` — default path: `systems/system.txt`.
 
@@ -31,66 +32,56 @@ use symbolica_elim::{
     load_mathematica_system_from_path_with_var_names, preprocess, rhs_denominator_nonzero_exact,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CoverObjective {
-    Count,
-    Degree,
-    Zeroed,
-}
-
-impl CoverObjective {
-    fn label(self) -> &'static str {
-        match self {
-            CoverObjective::Count => "minimize cover size",
-            CoverObjective::Degree => "minimize total degree",
-            CoverObjective::Zeroed => "minimize zeroed variables, then cover size",
-        }
-    }
-}
-
 #[derive(Debug)]
 struct CliOptions {
     path: PathBuf,
-    objective: CoverObjective,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path: Option<PathBuf> = None;
-    let mut objective = CoverObjective::Count;
-    let mut args = args.into_iter();
-
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--objective" => match args.next().as_deref() {
-                Some("count") => objective = CoverObjective::Count,
-                Some("degree") => objective = CoverObjective::Degree,
-                Some("zeroed") => objective = CoverObjective::Zeroed,
-                other => {
-                    return Err(format!(
-                        "--objective expects 'count', 'degree', or 'zeroed' (got {other:?})"
-                    ));
-                }
-            },
-            _ => path = Some(PathBuf::from(arg)),
+    for arg in args {
+        if arg.starts_with("--") {
+            return Err(format!("unknown option {arg:?}"));
         }
+        path = Some(PathBuf::from(arg));
     }
-
     Ok(CliOptions {
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
-        objective,
     })
 }
 
 /// A single square-free factor together with the global-variable ids it
-/// depends on and their (per-variable) degrees.
+/// depends on and per-monomial variable lists.
 struct FactorInfo {
     poly: PolyExtLex,
-    /// `(global_var_id, degree)` for every variable occurring in `poly`.
-    vars: Vec<(usize, u16)>,
-    /// Local Symbolica variable index for each global variable id in `vars`.
-    local_var_by_global: HashMap<usize, usize>,
-    /// Global variable ids in each monomial.
+    /// Global variable ids that occur in `poly`.
+    vars: Vec<usize>,
+    /// Per-monomial: the list of global variable ids in the monomial.
     monomial_vars: Vec<Vec<usize>>,
+    /// Per-monomial: the per-variable degree, parallel to `monomial_vars` and
+    /// keyed by the position in `vars`.
+    monomial_degrees: Vec<Vec<u16>>,
+}
+
+impl FactorInfo {
+    /// Indices of monomials whose degree in the global variable `vid` is exactly `1`.
+    fn monomials_deg(&self, vid: usize, target_degree: u16) -> Vec<usize> {
+        let Some(slot) = self.vars.iter().position(|v| *v == vid) else {
+            return Vec::new();
+        };
+        self.monomial_degrees
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, degs)| (degs[slot] == target_degree).then_some(idx))
+            .collect()
+    }
+
+    fn monomial_degree(&self, monomial: usize, vid: usize) -> u16 {
+        let Some(slot) = self.vars.iter().position(|v| *v == vid) else {
+            return 0;
+        };
+        self.monomial_degrees[monomial][slot]
+    }
 }
 
 /// Problem data assembled from the preprocessed factor groups.
@@ -103,93 +94,57 @@ struct ProblemData {
     v_ids: Vec<usize>,
     /// Inverse of `v_ids`.
     v_idx: HashMap<usize, usize>,
-    /// Admissible pairs as `(factor_idx, local_var_idx)` with `1 <= deg <= 4`.
+    /// Admissible pairs `(factor_idx, local_var_idx)`: those for which the
+    /// factor has at least one monomial of degree exactly 1 in the variable.
     admissible: Vec<(usize, usize)>,
-    /// `deg_x(f)` indexed the same way as `admissible`.
-    deg_of_pair: Vec<u16>,
+    /// For each admissible pair, the indices into the factor's `monomial_vars`
+    /// of monomials of degree exactly 1 in the selected variable (i.e. `M^1_{f,x}`).
+    deg1_monomials: Vec<Vec<usize>>,
 }
 
-fn factor_vars(
-    f: &PolyExtLex,
-    sym_to_vid: &HashMap<Symbol, symbolica_elim::VarId>,
-) -> (Vec<(usize, u16)>, HashMap<usize, usize>) {
-    let mut out = Vec::new();
-    let mut local_var_by_global = HashMap::new();
-    for (xi, pv) in f.get_vars_ref().iter().enumerate() {
-        if !f.contains(xi) {
-            continue;
-        }
-        let PolyVariable::Symbol(sym) = pv else {
-            continue;
-        };
-        let Some(&vid) = sym_to_vid.get(sym) else {
-            continue;
-        };
-        let global_vid = vid.0 as usize;
-        out.push((global_vid, f.degree(xi)));
-        local_var_by_global.insert(global_vid, xi);
-    }
-    (out, local_var_by_global)
-}
-
-fn factor_monomial_vars(
-    f: &PolyExtLex,
-    sym_to_vid: &HashMap<Symbol, symbolica_elim::VarId>,
-) -> Vec<Vec<usize>> {
-    f.exponents_iter()
-        .map(|exponents| {
-            exponents
-                .iter()
-                .zip(f.get_vars_ref().iter())
-                .filter_map(|(exponent, pv)| {
-                    if *exponent == 0 {
-                        return None;
-                    }
-                    let PolyVariable::Symbol(sym) = pv else {
-                        return None;
-                    };
-                    sym_to_vid.get(sym).map(|vid| vid.0 as usize)
-                })
-                .collect()
+fn factor_info(f: PolyExtLex, sym_to_vid: &HashMap<Symbol, VarId>) -> FactorInfo {
+    let local_to_global: Vec<Option<usize>> = f
+        .get_vars_ref()
+        .iter()
+        .map(|pv| match pv {
+            PolyVariable::Symbol(sym) => sym_to_vid.get(sym).map(|vid| vid.0 as usize),
+            _ => None,
         })
-        .collect()
-}
+        .collect();
 
-fn zeroing_invalidates_pair(info: &FactorInfo, selected_vid: usize, zeroed_vid: usize) -> bool {
-    let mut saw_selected_variable = false;
-    let mut zeroed_kills_every_selected_monomial = true;
-    let mut zeroed_kills_every_monomial = true;
+    let mut vars: Vec<usize> = (0..f.get_vars_ref().len())
+        .filter(|&xi| f.contains(xi))
+        .filter_map(|xi| local_to_global[xi])
+        .collect();
+    vars.sort_unstable();
+    vars.dedup();
 
-    for monomial in &info.monomial_vars {
-        let has_selected = monomial.contains(&selected_vid);
-        let has_zeroed = monomial.contains(&zeroed_vid);
-
-        if has_selected {
-            saw_selected_variable = true;
-            zeroed_kills_every_selected_monomial &= has_zeroed;
+    let mut monomial_vars = Vec::new();
+    let mut monomial_degrees = Vec::new();
+    for exponents in f.exponents_iter() {
+        let mut mv = Vec::new();
+        let mut mdeg = vec![0u16; vars.len()];
+        for (local, exp) in exponents.iter().enumerate() {
+            if *exp == 0 {
+                continue;
+            }
+            let Some(global) = local_to_global[local] else {
+                continue;
+            };
+            mv.push(global);
+            let slot = vars.iter().position(|v| *v == global).unwrap();
+            mdeg[slot] = *exp;
         }
-        zeroed_kills_every_monomial &= has_zeroed;
+        monomial_vars.push(mv);
+        monomial_degrees.push(mdeg);
     }
 
-    saw_selected_variable && zeroed_kills_every_selected_monomial && !zeroed_kills_every_monomial
-}
-
-fn linear_coefficient(info: &FactorInfo, selected_vid: usize) -> Option<PolyExtLex> {
-    info.local_var_by_global
-        .get(&selected_vid)
-        .map(|&local_var| info.poly.derivative(local_var))
-}
-
-fn factor_invalidates_linear_pair(
-    invalidator: &FactorInfo,
-    target: &FactorInfo,
-    target_vid: usize,
-) -> bool {
-    let Some(coefficient) = linear_coefficient(target, target_vid) else {
-        return false;
-    };
-
-    coefficient.try_div(&invalidator.poly).is_some()
+    FactorInfo {
+        poly: f,
+        vars,
+        monomial_vars,
+        monomial_degrees,
+    }
 }
 
 fn build_problem(
@@ -205,14 +160,7 @@ fn build_problem(
         for f in group {
             let canon = f.make_monic();
             let idx = *factor_index.entry(canon.clone()).or_insert_with(|| {
-                let (vars, local_var_by_global) = factor_vars(&canon, &loaded.sym_to_vid);
-                let info = FactorInfo {
-                    vars,
-                    local_var_by_global,
-                    monomial_vars: factor_monomial_vars(&canon, &loaded.sym_to_vid),
-                    poly: canon,
-                };
-                factors.push(info);
+                factors.push(factor_info(canon, &loaded.sym_to_vid));
                 factors.len() - 1
             });
             if !ids.contains(&idx) {
@@ -224,19 +172,20 @@ fn build_problem(
 
     let mut v_set: Vec<usize> = factors
         .iter()
-        .flat_map(|fi| fi.vars.iter().map(|(v, _)| *v))
+        .flat_map(|fi| fi.vars.iter().copied())
         .collect();
     v_set.sort_unstable();
     v_set.dedup();
     let v_idx: HashMap<usize, usize> = v_set.iter().enumerate().map(|(i, v)| (*v, i)).collect();
 
     let mut admissible = Vec::new();
-    let mut deg_of_pair = Vec::new();
+    let mut deg1_monomials = Vec::new();
     for (fi, info) in factors.iter().enumerate() {
-        for (vid, deg) in &info.vars {
-            if *deg == 1 {
-                admissible.push((fi, v_idx[vid]));
-                deg_of_pair.push(*deg);
+        for &vid in &info.vars {
+            let m1 = info.monomials_deg(vid, 1);
+            if !m1.is_empty() {
+                admissible.push((fi, v_idx[&vid]));
+                deg1_monomials.push(m1);
             }
         }
     }
@@ -247,7 +196,7 @@ fn build_problem(
         v_ids: v_set,
         v_idx,
         admissible,
-        deg_of_pair,
+        deg1_monomials,
     }
 }
 
@@ -255,13 +204,17 @@ fn var_name(loaded: &LoadedMathematicaSystem, global_vid: usize) -> &str {
     &loaded.var_names[global_vid]
 }
 
-/// Result of solving the MILP: list of selected `(factor_idx, global_var_id)`
-/// pairs in topological order along with the chosen degrees.
+/// Result of solving the MILP.
 #[cfg_attr(test, derive(Debug))]
 struct Cover {
-    selected: Vec<(usize, usize, u16, f64)>,
-    dependent_locals: Vec<usize>,
+    /// Selected pairs as `(factor_idx, global_var_id, topo_position)` in
+    /// topological order.
+    selected: Vec<(usize, usize, f64)>,
+    /// Local variable indices (into `data.v_ids`) zeroed by the solution.
     zeroed_locals: Vec<usize>,
+    /// Original-polynomial indices made identically zero by the zeroing alone
+    /// (i.e. `y_p > 0.5` in the MILP solution).
+    zeroed_polynomials: Vec<usize>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -296,87 +249,83 @@ enum ParameterizationError {
     },
 }
 
+/// All MILP decision/auxiliary variables, indexed parallel to the data
+/// structures in [`ProblemData`].
 struct MilpVariables {
-    selected: Vec<Variable>,
-    dependent: Vec<Variable>,
-    zeroed: Vec<Variable>,
-    zero_killed: Vec<Variable>,
-    topo: Vec<Variable>,
+    s: Vec<Variable>,
+    z: Vec<Variable>,
+    zeta: Vec<Variable>,
+    y: Vec<Variable>,
+    a: Vec<Vec<Variable>>,
+    t: Vec<Variable>,
 }
 
 fn add_milp_variables(vars: &mut ProblemVariables, data: &ProblemData) -> MilpVariables {
-    let n = data.v_ids.len();
-    let selected: Vec<_> = data
+    let n = data.v_ids.len() as f64;
+    let unit = || variable().min(0.0).max(1.0);
+
+    let s: Vec<_> = data
         .admissible
         .iter()
         .map(|_| vars.add(variable().binary()))
         .collect();
-    let dependent: Vec<_> = (0..n).map(|_| vars.add(variable().binary())).collect();
-    let zeroed: Vec<_> = (0..n).map(|_| vars.add(variable().binary())).collect();
-    let zero_killed: Vec<_> = data
-        .factors
+    let z: Vec<_> = data
+        .v_ids
         .iter()
         .map(|_| vars.add(variable().binary()))
         .collect();
-    let topo: Vec<_> = (0..n)
-        .map(|_| vars.add(variable().min(0.0).max(n as f64)))
+    let zeta: Vec<_> = data.factors.iter().map(|_| vars.add(unit())).collect();
+    let y: Vec<_> = data.f_by_poly.iter().map(|_| vars.add(unit())).collect();
+    let a: Vec<Vec<_>> = data
+        .deg1_monomials
+        .iter()
+        .map(|ms| ms.iter().map(|_| vars.add(unit())).collect())
+        .collect();
+    let t: Vec<_> = data
+        .v_ids
+        .iter()
+        .map(|_| vars.add(variable().min(0.0).max(n)))
         .collect();
 
     MilpVariables {
-        selected,
-        dependent,
-        zeroed,
-        zero_killed,
-        topo,
+        s,
+        z,
+        zeta,
+        y,
+        a,
+        t,
     }
 }
 
-fn pairs_by_variable(data: &ProblemData) -> Vec<Vec<usize>> {
-    let mut pairs_by_var: Vec<Vec<usize>> = vec![Vec::new(); data.v_ids.len()];
-    for (k, &(_, vloc)) in data.admissible.iter().enumerate() {
-        pairs_by_var[vloc].push(k);
-    }
-    pairs_by_var
+fn objective(vars: &MilpVariables) -> Expression {
+    vars.y.iter().map(|v| Expression::from(*v)).sum()
 }
 
-fn selected_pair_count(vars: &MilpVariables) -> Expression {
-    vars.selected.iter().map(|v| Expression::from(*v)).sum()
-}
-
-fn selected_degree_sum(data: &ProblemData, vars: &MilpVariables) -> Expression {
-    data.admissible
-        .iter()
-        .enumerate()
-        .map(|(k, _)| f64::from(data.deg_of_pair[k]) * vars.selected[k])
-        .sum()
-}
-
-fn zeroed_variable_count(vars: &MilpVariables) -> Expression {
-    vars.zeroed.iter().map(|v| Expression::from(*v)).sum()
-}
-
-fn objective(data: &ProblemData, vars: &MilpVariables, objective: CoverObjective) -> Expression {
-    let zeroed_count = zeroed_variable_count(vars);
-    match objective {
-        CoverObjective::Count => selected_pair_count(vars) + zeroed_count,
-        CoverObjective::Degree => selected_degree_sum(data, vars) + zeroed_count,
-        CoverObjective::Zeroed => {
-            let tie_breaker_weight = data.admissible.len() as f64 + 1.0;
-            tie_breaker_weight * zeroed_count + selected_pair_count(vars)
-        }
-    }
-}
-
-fn add_variable_linking_constraints<M: SolverModel>(
+fn add_factor_zero_constraints<M: SolverModel>(
     mut model: M,
-    pairs_by_var: &[Vec<usize>],
+    data: &ProblemData,
     vars: &MilpVariables,
 ) -> M {
-    for (vloc, ks) in pairs_by_var.iter().enumerate() {
-        let sum: Expression = ks.iter().map(|&k| Expression::from(vars.selected[k])).sum();
-        model = model.with(constraint!(vars.dependent[vloc] - sum.clone() == 0));
-        model = model.with(constraint!(sum <= 1));
-        model = model.with(constraint!(vars.dependent[vloc] + vars.zeroed[vloc] <= 1));
+    for (fi, info) in data.factors.iter().enumerate() {
+        for monomial in &info.monomial_vars {
+            let zeroed: Expression = monomial
+                .iter()
+                .filter_map(|vid| data.v_idx.get(vid).map(|&vloc| Expression::from(vars.z[vloc])))
+                .sum();
+            model = model.with(constraint!(vars.zeta[fi] - zeroed <= 0));
+        }
+    }
+    model
+}
+
+fn add_polynomial_zero_link<M: SolverModel>(
+    mut model: M,
+    data: &ProblemData,
+    vars: &MilpVariables,
+) -> M {
+    for (p, fs) in data.f_by_poly.iter().enumerate() {
+        let zeta_sum: Expression = fs.iter().map(|&fi| Expression::from(vars.zeta[fi])).sum();
+        model = model.with(constraint!(vars.y[p] - zeta_sum <= 0));
     }
     model
 }
@@ -386,112 +335,110 @@ fn add_coverage_constraints<M: SolverModel>(
     data: &ProblemData,
     vars: &MilpVariables,
 ) -> Result<M, ResolutionError> {
-    for (j, fs) in data.f_by_poly.iter().enumerate() {
-        let selected_sum: Expression = data
+    for (p, fs) in data.f_by_poly.iter().enumerate() {
+        if fs.is_empty() {
+            eprintln!(
+                "error: polynomial {p} has no factors. The instance is infeasible."
+            );
+            return Err(ResolutionError::Infeasible);
+        }
+        let zeta_sum: Expression = fs.iter().map(|&fi| Expression::from(vars.zeta[fi])).sum();
+        let s_sum: Expression = data
             .admissible
             .iter()
             .enumerate()
             .filter(|(_, (fi, _))| fs.contains(fi))
-            .map(|(k, _)| Expression::from(vars.selected[k]))
+            .map(|(k, _)| Expression::from(vars.s[k]))
             .sum();
-        let zeroed_sum: Expression = fs
-            .iter()
-            .map(|&fi| Expression::from(vars.zero_killed[fi]))
-            .sum();
-        if data.admissible.iter().all(|(fi, _)| !fs.contains(fi)) && fs.is_empty() {
-            eprintln!(
-                "error: polynomial {j} has no factor that can be selected or zero-killed. The instance is infeasible."
-            );
-            return Err(ResolutionError::Infeasible);
-        }
-        model = model.with(constraint!(selected_sum + zeroed_sum >= 1));
+        model = model.with(constraint!(zeta_sum + s_sum >= 1));
     }
     Ok(model)
 }
 
-fn add_zero_kill_constraints<M: SolverModel>(
+fn add_linearity_constraints<M: SolverModel>(
     mut model: M,
     data: &ProblemData,
     vars: &MilpVariables,
 ) -> M {
-    for (fi, info) in data.factors.iter().enumerate() {
-        for monomial in &info.monomial_vars {
-            let zeroed_vars_in_monomial: Expression = monomial
+    for (k, &(fi, vloc)) in data.admissible.iter().enumerate() {
+        let info = &data.factors[fi];
+        let selected_vid = data.v_ids[vloc];
+
+        // C2a: every monomial of degree >= 2 in the selected variable must
+        // have one of its non-selected variables zeroed.
+        for (m, monomial) in info.monomial_vars.iter().enumerate() {
+            if info.monomial_degree(m, selected_vid) < 2 {
+                continue;
+            }
+            let killers: Expression = monomial
                 .iter()
-                .filter_map(|vid| {
-                    data.v_idx
-                        .get(vid)
-                        .map(|&vloc| Expression::from(vars.zeroed[vloc]))
-                })
+                .filter(|&&vid| vid != selected_vid)
+                .filter_map(|vid| data.v_idx.get(vid).map(|&vl| Expression::from(vars.z[vl])))
                 .sum();
-            model = model.with(constraint!(
-                vars.zero_killed[fi] - zeroed_vars_in_monomial <= 0
-            ));
+            model = model.with(constraint!(vars.s[k] - killers <= 0));
         }
+
+        // C2b: a degree-1 monomial survives only if none of its non-selected
+        // variables are zeroed.
+        for (slot, &m) in data.deg1_monomials[k].iter().enumerate() {
+            for &vid in &info.monomial_vars[m] {
+                if vid == selected_vid {
+                    continue;
+                }
+                let Some(&vl) = data.v_idx.get(&vid) else {
+                    continue;
+                };
+                model = model.with(constraint!(vars.a[k][slot] + vars.z[vl] <= 1));
+            }
+        }
+
+        // C2c: at least one degree-1 monomial must survive.
+        let surviving: Expression = vars.a[k].iter().map(|v| Expression::from(*v)).sum();
+        model = model.with(constraint!(vars.s[k] - surviving <= 0));
     }
     model
 }
 
-fn add_selected_pair_constraints<M: SolverModel>(
+fn add_acyclicity_constraints<M: SolverModel>(
     mut model: M,
     data: &ProblemData,
     vars: &MilpVariables,
 ) -> M {
     let big_m = (data.v_ids.len() as f64) + 1.0;
-
     for (k, &(fi, vloc)) in data.admissible.iter().enumerate() {
         let info = &data.factors[fi];
         let selected_vid = data.v_ids[vloc];
-        for (zeroed_vloc, &zeroed_vid) in data.v_ids.iter().enumerate() {
-            if zeroing_invalidates_pair(info, selected_vid, zeroed_vid) {
-                model = model.with(constraint!(
-                    vars.selected[k] + vars.zeroed[zeroed_vloc] <= 1
-                ));
+        for &other_vid in &info.vars {
+            if other_vid == selected_vid {
+                continue;
             }
-        }
-        for (vid_other, _deg) in &info.vars {
-            let Some(&vloc_other) = data.v_idx.get(vid_other) else {
+            let Some(&other_vloc) = data.v_idx.get(&other_vid) else {
                 continue;
             };
-            if vloc_other == vloc {
-                continue;
-            }
             model = model.with(constraint!(
-                vars.topo[vloc_other] + 1.0
-                    <= vars.topo[vloc]
-                        + big_m
-                            * (2.0
-                                - Expression::from(vars.selected[k])
-                                - Expression::from(vars.dependent[vloc_other])
-                                + Expression::from(vars.zeroed[vloc_other]))
+                vars.t[other_vloc] + 1.0
+                    <= vars.t[vloc] + big_m * (1.0 - Expression::from(vars.s[k]))
             ));
         }
     }
     model
 }
 
-fn add_pair_incompatibility_constraints<M: SolverModel>(
+fn add_distinctness_constraints<M: SolverModel>(
     mut model: M,
     data: &ProblemData,
     vars: &MilpVariables,
 ) -> M {
-    for (target_k, &(target_fi, target_vloc)) in data.admissible.iter().enumerate() {
-        let target = &data.factors[target_fi];
-        let target_vid = data.v_ids[target_vloc];
-
-        for (invalidator_k, &(invalidator_fi, _)) in data.admissible.iter().enumerate() {
-            if invalidator_k == target_k {
-                continue;
-            }
-            let invalidator = &data.factors[invalidator_fi];
-            if factor_invalidates_linear_pair(invalidator, target, target_vid) {
-                model = model.with(constraint!(
-                    vars.selected[invalidator_k] + vars.selected[target_k] <= 1
-                ));
-            }
-        }
+    for (vloc, _) in data.v_ids.iter().enumerate() {
+        let s_sum: Expression = data
+            .admissible
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, vl))| *vl == vloc)
+            .map(|(k, _)| Expression::from(vars.s[k]))
+            .sum();
+        model = model.with(constraint!(s_sum + vars.z[vloc] <= 1));
     }
-
     model
 }
 
@@ -500,53 +447,46 @@ fn cover_from_solution<S: Solution>(
     data: &ProblemData,
     vars: &MilpVariables,
 ) -> Cover {
-    let n = data.v_ids.len();
-    let mut selected = Vec::new();
-    for (k, &(fi, vloc)) in data.admissible.iter().enumerate() {
-        if solution.value(vars.selected[k]) > 0.5 {
+    let mut selected: Vec<(usize, usize, f64)> = data
+        .admissible
+        .iter()
+        .enumerate()
+        .filter(|(k, _)| solution.value(vars.s[*k]) > 0.5)
+        .map(|(_, &(fi, vloc))| {
             let vid = data.v_ids[vloc];
-            selected.push((
-                fi,
-                vid,
-                data.deg_of_pair[k],
-                solution.value(vars.topo[vloc]),
-            ));
-        }
-    }
-    selected.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
-
-    let dependent_locals: Vec<usize> = (0..n)
-        .filter(|&i| solution.value(vars.dependent[i]) > 0.5)
+            (fi, vid, solution.value(vars.t[vloc]))
+        })
         .collect();
-    let zeroed_locals: Vec<usize> = (0..n)
-        .filter(|&i| solution.value(vars.zeroed[i]) > 0.5)
+    selected.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+
+    let zeroed_locals: Vec<usize> = (0..data.v_ids.len())
+        .filter(|&i| solution.value(vars.z[i]) > 0.5)
+        .collect();
+    let zeroed_polynomials: Vec<usize> = (0..data.f_by_poly.len())
+        .filter(|&p| solution.value(vars.y[p]) > 0.5)
         .collect();
 
     Cover {
         selected,
-        dependent_locals,
         zeroed_locals,
+        zeroed_polynomials,
     }
 }
 
-fn solve_milp(
-    data: &ProblemData,
-    cover_objective: CoverObjective,
-) -> Result<Cover, ResolutionError> {
+fn solve_milp(data: &ProblemData) -> Result<Cover, ResolutionError> {
     let mut problem_vars = variables!();
-    let milp_vars = add_milp_variables(&mut problem_vars, data);
-    let pairs_by_var = pairs_by_variable(data);
-    let objective = objective(data, &milp_vars, cover_objective);
+    let m = add_milp_variables(&mut problem_vars, data);
 
-    let model = problem_vars.minimise(objective).using(default_solver);
-    let model = add_variable_linking_constraints(model, &pairs_by_var, &milp_vars);
-    let model = add_coverage_constraints(model, data, &milp_vars)?;
-    let model = add_zero_kill_constraints(model, data, &milp_vars);
-    let model = add_selected_pair_constraints(model, data, &milp_vars);
-    let model = add_pair_incompatibility_constraints(model, data, &milp_vars);
+    let model = problem_vars.maximise(objective(&m)).using(default_solver);
+    let model = add_factor_zero_constraints(model, data, &m);
+    let model = add_polynomial_zero_link(model, data, &m);
+    let model = add_coverage_constraints(model, data, &m)?;
+    let model = add_linearity_constraints(model, data, &m);
+    let model = add_acyclicity_constraints(model, data, &m);
+    let model = add_distinctness_constraints(model, data, &m);
     let solution = model.solve()?;
 
-    Ok(cover_from_solution(&solution, data, &milp_vars))
+    Ok(cover_from_solution(&solution, data, &m))
 }
 
 fn var_id_from_global(global_vid: usize) -> VarId {
@@ -571,7 +511,6 @@ fn linear_factor_rhs(
     factor: &PolyExtLex,
     selected_vid: usize,
 ) -> Result<Atom, ParameterizationError> {
-    let selected_var = var_id_from_global(selected_vid);
     let variable = var_name(loaded, selected_vid).to_string();
     let selected_symbol = loaded.id_to_sym[selected_vid];
     let factor_atom = factor_to_atom(factor)?;
@@ -589,9 +528,7 @@ fn linear_factor_rhs(
     let denominator_nonzero =
         rhs_denominator_nonzero_exact(&rhs, &loaded.sym_to_vid, &loaded.id_to_sym).unwrap_or(false);
     if !denominator_nonzero {
-        return Err(ParameterizationError::DegenerateSubstitution {
-            variable: var_name(loaded, selected_var.0 as usize).to_string(),
-        });
+        return Err(ParameterizationError::DegenerateSubstitution { variable });
     }
 
     Ok(rhs)
@@ -632,7 +569,7 @@ fn cover_substitution(
         )?;
     }
 
-    for &(factor_index, selected_vid, _, _) in &cover.selected {
+    for &(factor_index, selected_vid, _) in &cover.selected {
         let var = var_id_from_global(selected_vid);
         let rhs = linear_factor_rhs(loaded, &data.factors[factor_index].poly, selected_vid)?;
         insert_cover_binding(loaded, &mut substitution, &mut assigned, var, rhs)?;
@@ -713,21 +650,25 @@ fn check_cover_parameterizes_original(
 
 fn print_cover(loaded: &LoadedMathematicaSystem, data: &ProblemData, cover: &Cover) {
     println!("\nCover (in topological order):");
-    for (rank, (fi, vid, deg, t)) in cover.selected.iter().enumerate() {
+    for (rank, (fi, vid, t)) in cover.selected.iter().enumerate() {
         let info = &data.factors[*fi];
         println!(
-            "  [{rank}] t={t:.2}  x = {:<16} deg_x(f) = {deg}\n        f = {}",
+            "  [{rank}] t={t:.2}  x = {:<16}\n        f = {}",
             var_name(loaded, *vid),
             info.poly
         );
     }
+    println!(
+        "\nPolynomials zeroed by zeroing alone: {}",
+        cover.zeroed_polynomials.len()
+    );
 }
 
 fn print_variable_sets(loaded: &LoadedMathematicaSystem, data: &ProblemData, cover: &Cover) {
     let dep: Vec<&str> = cover
-        .dependent_locals
+        .selected
         .iter()
-        .map(|&i| var_name(loaded, data.v_ids[i]))
+        .map(|&(_, vid, _)| var_name(loaded, vid))
         .collect();
     let zeroed: Vec<&str> = cover
         .zeroed_locals
@@ -808,12 +749,9 @@ fn main() {
         data.admissible.len()
     );
 
-    println!(
-        "\nSolving MILP ({}) with HiGHS ...",
-        options.objective.label()
-    );
+    println!("\nSolving MILP (maximize zeroed polynomials) with HiGHS ...");
     let t_solve = Instant::now();
-    let cover = match solve_milp(&data, options.objective) {
+    let cover = match solve_milp(&data) {
         Ok(c) => c,
         Err(ResolutionError::Infeasible) => {
             eprintln!("infeasible: no valid cover exists for this system.");
@@ -860,42 +798,6 @@ mod tests {
         });
     }
 
-    #[test]
-    fn parse_args_accepts_degree_objective_and_path() {
-        let options = parse_args([
-            "systems/s_system.txt".to_string(),
-            "--objective".to_string(),
-            "degree".to_string(),
-        ])
-        .expect("parse args");
-
-        assert_eq!(options.path, PathBuf::from("systems/s_system.txt"));
-        assert_eq!(options.objective, CoverObjective::Degree);
-    }
-
-    #[test]
-    fn parse_args_accepts_zeroed_objective() {
-        let options =
-            parse_args(["--objective".to_string(), "zeroed".to_string()]).expect("parse args");
-
-        assert_eq!(options.objective, CoverObjective::Zeroed);
-    }
-
-    #[test]
-    fn parse_args_uses_system_txt_by_default() {
-        let options = parse_args([]).expect("parse args");
-
-        assert!(options.path.ends_with("systems/system.txt"));
-        assert_eq!(options.objective, CoverObjective::Count);
-    }
-
-    #[test]
-    fn parse_args_rejects_unknown_objective() {
-        let err = parse_args(["--objective".to_string(), "size".to_string()]).expect_err("error");
-
-        assert!(err.contains("--objective expects"));
-    }
-
     fn problem_from(source: &str) -> (LoadedMathematicaSystem, ProblemData) {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(source).expect("load");
@@ -917,6 +819,47 @@ mod tests {
             .collect();
         let data = build_problem(factor_groups, &loaded);
         (loaded, data)
+    }
+
+    fn topo_ok(data: &ProblemData, cover: &Cover) -> bool {
+        let topo: HashMap<usize, f64> = cover
+            .selected
+            .iter()
+            .map(|&(_, vid, t)| (vid, t))
+            .collect();
+        for &(fi, vid, ti) in &cover.selected {
+            for &other_vid in &data.factors[fi].vars {
+                if other_vid == vid {
+                    continue;
+                }
+                let Some(&tj) = topo.get(&other_vid) else {
+                    continue;
+                };
+                if tj + 1.0 > ti + 1e-6 {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    #[test]
+    fn parse_args_uses_system_txt_by_default() {
+        let options = parse_args(std::iter::empty::<String>()).expect("parse args");
+        assert!(options.path.ends_with("systems/system.txt"));
+    }
+
+    #[test]
+    fn parse_args_accepts_a_path() {
+        let options =
+            parse_args(["systems/s_system.txt".to_string()]).expect("parse args");
+        assert_eq!(options.path, PathBuf::from("systems/s_system.txt"));
+    }
+
+    #[test]
+    fn parse_args_rejects_unknown_flag() {
+        let err = parse_args(["--objective".to_string()]).expect_err("error");
+        assert!(err.contains("unknown option"));
     }
 
     #[test]
@@ -945,88 +888,48 @@ mod tests {
     }
 
     #[test]
-    fn coefficient_can_be_variable() {
-        let (_loaded, data) = problem_from("{x^2 * y^6 + x * y^3 + z^2 == 0}");
+    fn admissible_requires_a_degree_one_monomial() {
+        // Every monomial has degree >= 2 in every variable it touches, so no
+        // pair (f, x) can ever be the linear definer of x.
+        let (_loaded, data) = problem_from("{x^2 * y^2 + z^2 == 0}");
         assert_eq!(data.factors.len(), 1);
-
-        // the polynomial should be of degree 2 in x and 6 in y and 2 in z
-        assert_eq!(data.factors[0].vars.len(), 3);
-        assert_eq!(data.factors[0].vars[0].1, 2);
-        assert_eq!(data.factors[0].vars[1].1, 6);
-        assert_eq!(data.factors[0].vars[2].1, 2);
-
         assert!(
             data.admissible.is_empty(),
-            "only linear pairs are admissible; got {:?}",
+            "no monomial has degree 1 in any single variable; got {:?}",
             data.admissible
         );
     }
 
     #[test]
-    fn admissible_respects_degree_bounds() {
-        // A single polynomial of degree 5 in x whose (irreducible) square-free part
-        // is itself the degree-5 polynomial. No admissible pair can exist.
+    fn admissible_excludes_pure_high_degree_polynomial() {
         let (_loaded, data) = problem_from("{x^5 + x + 3 == 0}");
-        assert_eq!(data.factors.len(), 1);
-        assert!(
-            data.factors[0].vars.iter().any(|(_, d)| *d > 1),
-            "test precondition: factor should have a nonlinear variable"
-        );
-        assert!(
-            data.admissible.is_empty(),
-            "no admissible pair can exist when every variable is nonlinear, got {:?}",
-            data.admissible
-        );
-        for &d in &data.deg_of_pair {
-            assert_eq!(d, 1);
-        }
+        // x^5 + x + 3 has a degree-1-in-x monomial (x), so the pair (f, x) is admissible.
+        // But selecting it forces C2a to kill the x^5 monomial, which has no
+        // non-x variable to zero — so the MILP forbids it via C2a.
+        assert!(!data.admissible.is_empty());
+        let cover = solve_milp(&data);
+        assert!(matches!(cover, Err(ResolutionError::Infeasible)));
     }
 
     #[test]
     fn admissible_excludes_quadratic_radical_solves() {
         let (_loaded, data) = problem_from("{x^2 + y^2 + 1 == 0}");
-
         assert!(
             data.admissible.is_empty(),
-            "degree 2-4 radical solves are no longer admissible"
+            "no degree-1 monomial in any variable"
         );
-    }
-
-    fn topo_ok(data: &ProblemData, cover: &Cover) -> bool {
-        let dep_vids: std::collections::HashSet<usize> = cover
-            .dependent_locals
-            .iter()
-            .map(|&i| data.v_ids[i])
-            .collect();
-        let t: std::collections::HashMap<usize, f64> = cover
-            .selected
-            .iter()
-            .map(|&(_, vid, _, t)| (vid, t))
-            .collect();
-        for &(fi, vid, _, ti) in &cover.selected {
-            for (vother, _) in &data.factors[fi].vars {
-                if *vother == vid || !dep_vids.contains(vother) {
-                    continue;
-                }
-                let tj = t.get(vother).copied().unwrap_or(f64::INFINITY);
-                if tj + 1.0 > ti + 1e-6 {
-                    return false;
-                }
-            }
-        }
-        true
     }
 
     #[test]
     fn solve_covers_every_polynomial_linearly() {
         let (_loaded, data) = problem_from("{p -> x + 1, q -> y + 2, r -> z + 3}");
-        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
+        let cover = solve_milp(&data).expect("feasible");
         assert_eq!(cover.selected.len(), 3);
         for j in 0..data.f_by_poly.len() {
             let covered = cover
                 .selected
                 .iter()
-                .any(|(fi, _, _, _)| data.f_by_poly[j].contains(fi));
+                .any(|(fi, _, _)| data.f_by_poly[j].contains(fi));
             assert!(covered, "polynomial {j} is not covered");
         }
         assert!(topo_ok(&data, &cover));
@@ -1034,128 +937,76 @@ mod tests {
 
     #[test]
     fn solve_respects_acyclicity() {
-        // q factors as x*(y + x); picking (y + x, y) forces t_x < t_y.
+        // The second polynomial factors as x*(x+y); selecting (x+y, y) forces
+        // t_x < t_y. Each polynomial must end up covered either by selection
+        // or by zeroing a factor.
         let (_loaded, data) = problem_from("{p -> x + 1, q -> x*y + x^2}");
-        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
+        let cover = solve_milp(&data).expect("feasible");
         assert!(topo_ok(&data, &cover));
         for j in 0..data.f_by_poly.len() {
-            assert!(
-                cover
-                    .selected
-                    .iter()
-                    .any(|(fi, _, _, _)| data.f_by_poly[j].contains(fi))
-            );
+            let by_selection = cover
+                .selected
+                .iter()
+                .any(|(fi, _, _)| data.f_by_poly[j].contains(fi));
+            let by_zeroing = cover.zeroed_polynomials.contains(&j);
+            assert!(by_selection || by_zeroing, "polynomial {j} is not covered");
         }
     }
 
     #[test]
-    fn solve_rejects_pair_that_zeroes_another_linear_coefficient() {
-        let (_loaded, data) = problem_from_raw_factors("{y == 0, y*x + 1 == 0}");
-
-        let res = solve_milp(&data, CoverObjective::Count);
-
-        assert!(
-            matches!(res, Err(ResolutionError::Infeasible)),
-            "selecting y = 0 must not be compatible with solving y*x + 1 for x"
-        );
+    fn solve_zero_kills_polynomial_with_unkillable_constant() {
+        // x^5 has a single monomial — zeroing x makes the whole polynomial vanish.
+        let (_loaded, data) = problem_from("{x^5 == 0}");
+        let cover = solve_milp(&data).expect("feasible by zeroing x");
+        assert_eq!(cover.zeroed_polynomials.len(), 1);
+        assert_eq!(cover.zeroed_locals.len(), 1);
     }
 
     #[test]
-    fn solve_allows_independent_linear_coefficients() {
+    fn solve_prefers_zeroing_when_it_satisfies_a_polynomial() {
+        // y can be zeroed (single-variable monomial) to satisfy y == 0;
+        // the MILP should prefer this over selecting y for itself because the
+        // objective is to maximize y_p.
         let (_loaded, data) = problem_from_raw_factors("{y == 0, x + z == 0}");
-
-        let cover = solve_milp(&data, CoverObjective::Zeroed).expect("feasible");
-
-        assert_eq!(cover.selected.len(), 2);
+        let cover = solve_milp(&data).expect("feasible");
+        assert!(
+            cover.zeroed_polynomials.contains(&0),
+            "polynomial 0 (y == 0) should be marked zeroed; cover = {cover:?}"
+        );
         assert!(topo_ok(&data, &cover));
     }
 
     #[test]
-    fn solve_zeroes_single_high_degree_monomial() {
-        let (_loaded, data) = problem_from("{x^5 + x + 3 == 0}");
-        let res = solve_milp(&data, CoverObjective::Count);
-        assert!(matches!(res, Err(ResolutionError::Infeasible)));
-    }
-
-    #[test]
-    fn solve_zero_kills_high_degree_monomial() {
-        let (_loaded, data) = problem_from("{x^5 == 0}");
-        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible by zeroing x");
-        assert_eq!(cover.selected.len() + cover.zeroed_locals.len(), 1);
-    }
-
-    #[test]
-    fn solve_does_not_hide_kappah_behind_zero_e_component() {
-        let (loaded, data) = problem_from(include_str!("../../../systems/s_system.txt"));
-        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
-        let zeroed_names: Vec<&str> = cover
-            .zeroed_locals
-            .iter()
-            .map(|&i| var_name(&loaded, data.v_ids[i]))
-            .collect();
-        let dependent_names: Vec<&str> = cover
-            .dependent_locals
-            .iter()
-            .map(|&i| var_name(&loaded, data.v_ids[i]))
-            .collect();
-
-        assert!(
-            zeroed_names.contains(&"kappah") || dependent_names.contains(&"kappah"),
-            "kappah must be determined, not free, because e = 0 leaves constraints that force kappah = 0; zeroed variables were {zeroed_names:?}, dependent variables were {dependent_names:?}"
-        );
-    }
-
-    #[test]
-    fn minimize_degree_prefers_linear() {
-        // p has two square-free factors (x+1) (degree 1 in x) and (x^2 + y + 1) (degree 2 in x,
-        // degree 1 in y). Count-minimization picks any 1 tuple; degree-minimization should still
-        // pick 1 tuple but prefer the degree-1 one.
-        let (_loaded, data) = problem_from("{p -> (x + 1) * (x^2 + y + 1)}");
-        let cover_deg = solve_milp(&data, CoverObjective::Degree).expect("feasible");
-        let total_deg: u32 = cover_deg
-            .selected
-            .iter()
-            .map(|(_, _, d, _)| u32::from(*d))
-            .sum();
-        assert_eq!(
-            total_deg, 1,
-            "degree-minimization should pick the linear factor"
-        );
-    }
-
-    #[test]
-    fn minimize_zeroed_prefers_no_zeroed_variables() {
-        let (_loaded, data) = problem_from("{p -> x^5 * (y + 1)}");
-        let cover = solve_milp(&data, CoverObjective::Zeroed).expect("feasible");
-
-        assert!(
-            cover.zeroed_locals.is_empty(),
-            "zeroed objective should prefer selecting a factor over zeroing variables"
-        );
-        assert_eq!(cover.selected.len(), 1);
-    }
-
-    #[test]
-    fn minimize_zeroed_breaks_ties_by_cover_size() {
-        let (_loaded, data) = problem_from("{p -> (x + 1) * (y + 1)}");
-        let cover = solve_milp(&data, CoverObjective::Zeroed).expect("feasible");
-
-        assert!(cover.zeroed_locals.is_empty());
-        assert_eq!(
-            cover.selected.len(),
-            1,
-            "zeroed objective should minimize cover size among equally zero-minimal covers"
-        );
+    fn solve_does_not_select_pair_with_unkillable_high_degree_monomial() {
+        // (x + 1)*(x^2 + y + 1) splits into two factors. The pair
+        // (x^2 + y + 1, x) has no degree-1 monomial in x and so is never even
+        // admissible; admissibility for this polynomial is only via (x+1, x)
+        // and (x^2+y+1, y).
+        let (loaded, data) = problem_from("{(x + 1) * (x^2 + y + 1) == 0}");
+        let x_vid = loaded.var_names.iter().position(|n| n == "x").unwrap();
+        let x_local = data.v_idx[&x_vid];
+        for &(fi, vloc) in &data.admissible {
+            if vloc != x_local {
+                continue;
+            }
+            // The only factor admissible for x is the linear one (x+1).
+            assert_eq!(
+                data.factors[fi].vars.len(),
+                1,
+                "a non-linear factor was made admissible for x"
+            );
+        }
+        // And the MILP picks a feasible cover.
+        let _cover = solve_milp(&data).expect("feasible");
     }
 
     #[test]
     fn parameterization_check_accepts_independent_linear_system() {
         let (loaded, data) = problem_from("{p -> x + 1, q -> y + 2}");
-        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
+        let cover = solve_milp(&data).expect("feasible");
 
         let report = check_cover_parameterizes_original(&loaded, &data, &cover)
             .expect("cover should parameterize original equations");
-
         assert_eq!(report.checked_equations, 2);
         assert_eq!(report.binding_count, 2);
     }
@@ -1163,13 +1014,11 @@ mod tests {
     #[test]
     fn parameterization_check_expands_dependency_chain() {
         let (loaded, data) = problem_from("{p -> x + y, q -> y + 1}");
-        let cover = solve_milp(&data, CoverObjective::Count).expect("feasible");
+        let cover = solve_milp(&data).expect("feasible");
 
         let report = check_cover_parameterizes_original(&loaded, &data, &cover)
             .expect("dependent substitutions should be expanded before validation");
-
         assert_eq!(report.checked_equations, 2);
-        assert_eq!(report.binding_count, 2);
     }
 
     #[test]
@@ -1177,13 +1026,12 @@ mod tests {
         let (loaded, data) = problem_from("{p -> x + 1}");
         let cover = Cover {
             selected: Vec::new(),
-            dependent_locals: Vec::new(),
             zeroed_locals: Vec::new(),
+            zeroed_polynomials: Vec::new(),
         };
 
         let err = check_cover_parameterizes_original(&loaded, &data, &cover)
             .expect_err("empty cover must not parameterize x + 1 = 0");
-
         assert!(matches!(
             err,
             ParameterizationError::EquationDoesNotVanish {
@@ -1208,13 +1056,12 @@ mod tests {
             .expect("x should appear in the problem");
         let cover = Cover {
             selected: Vec::new(),
-            dependent_locals: Vec::new(),
             zeroed_locals: vec![x_local],
+            zeroed_polynomials: vec![0],
         };
 
         let report = check_cover_parameterizes_original(&loaded, &data, &cover)
             .expect("x -> 0 should satisfy x = 0");
-
         assert_eq!(report.checked_equations, 1);
         assert_eq!(report.binding_count, 1);
     }

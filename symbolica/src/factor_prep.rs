@@ -1,11 +1,11 @@
 //! Shared preprocessing for polynomial-system binaries: conversion into
-//! Symbolica polynomials, interreduction, and square-free factorization.
+//! Symbolica polynomials, interreduction, and complete factorization.
 //!
 //! Implements steps 1–4 of `problem statement.md`:
 //! 1. interreduce the polynomials under [`LexOrder`],
-//! 2. square-free factorize each equation,
-//! 3. drop constant factors,
-//! 4. discard zero polynomials (empty factor groups).
+//! 2. clear zero polynomials,
+//! 3. completely factorize each surviving polynomial,
+//! 4. drop constant factors.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -178,14 +178,14 @@ pub fn interreduce_polys(mut polys: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
 }
 
 /// Preprocessed view of the input system: for each (non-trivial) original
-/// polynomial, the list of its non-constant square-free factors in
+/// polynomial, the list of its non-constant irreducible factors in
 /// [`LexOrder`]. Zero polynomials are dropped entirely.
 pub struct Preprocessed {
     pub factor_groups: Vec<Vec<PolyExtLex>>,
 }
 
-fn non_constant_square_free_factors(poly: PolyExtLex) -> Vec<PolyExtLex> {
-    poly.square_free_factorization()
+fn non_constant_factors(poly: PolyExtLex) -> Vec<PolyExtLex> {
+    poly.factor()
         .into_iter()
         .map(|(factor, _pow)| factor)
         .filter(|factor| !factor.is_constant())
@@ -197,7 +197,7 @@ fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> {
         .into_iter()
         .filter(|poly| !poly.is_zero())
         .filter_map(|poly| {
-            let factors = non_constant_square_free_factors(poly);
+            let factors = non_constant_factors(poly);
             (!factors.is_empty()).then_some(factors)
         })
         .collect()

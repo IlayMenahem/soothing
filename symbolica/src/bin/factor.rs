@@ -93,7 +93,7 @@ fn main() {
         if poly.is_zero() {
             println!("  Factors: (zero)");
         } else {
-            for f in poly.clone().square_free_factorization() {
+            for f in poly.clone().factor() {
                 let linear_vars = linear_var_names_for_factor(&f.0, &loaded);
                 println!("    Linear in: {linear_vars:?}");
             }
