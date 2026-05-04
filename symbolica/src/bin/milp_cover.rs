@@ -329,7 +329,11 @@ fn add_factor_zero_constraints<M: SolverModel>(
         for monomial in &info.monomial_vars {
             let zeroed: Expression = monomial
                 .iter()
-                .filter_map(|vid| data.v_idx.get(vid).map(|&vloc| Expression::from(vars.z[vloc])))
+                .filter_map(|vid| {
+                    data.v_idx
+                        .get(vid)
+                        .map(|&vloc| Expression::from(vars.z[vloc]))
+                })
                 .sum();
             model = model.with(constraint!(vars.zeta[fi] - zeroed <= 0));
         }
@@ -356,9 +360,7 @@ fn add_coverage_constraints<M: SolverModel>(
 ) -> Result<M, ResolutionError> {
     for (p, fs) in data.f_by_poly.iter().enumerate() {
         if fs.is_empty() {
-            eprintln!(
-                "error: polynomial {p} has no factors. The instance is infeasible."
-            );
+            eprintln!("error: polynomial {p} has no factors. The instance is infeasible.");
             return Err(ResolutionError::Infeasible);
         }
         let zeta_sum: Expression = fs.iter().map(|&fi| Expression::from(vars.zeta[fi])).sum();
@@ -682,14 +684,73 @@ fn check_cover_parameterizes_original(
                 }
             })?;
         if !vanishes {
-            eprintln!("parameterization check failed: original equation {} does not vanish after cover substitution: {}", equation_index, residual);
-            // continue;
+            return Err(ParameterizationError::EquationDoesNotVanish {
+                equation_index,
+                residual,
+            });
         }
     }
 
     Ok(ParameterizationReport {
         checked_equations: loaded.system.equations.len(),
         binding_count,
+    })
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct PreprocessedCheckReport {
+    checked_factor_groups: usize,
+    uncovered_count: usize,
+}
+
+/// For each preprocessed factor group, verify that at least one factor vanishes
+/// after applying the cover substitutions. This checks correctness of the MILP
+/// solution on the preprocessed system rather than the original equations.
+fn check_cover_preprocessed(
+    loaded: &LoadedMathematicaSystem,
+    data: &ProblemData,
+    cover: &Cover,
+) -> Result<PreprocessedCheckReport, ParameterizationError> {
+    let substitution = cover_substitution(loaded, data, cover)?;
+    let (order, expanded) = expand_cover_substitution(&substitution, loaded)?;
+
+    let mut uncovered_count = 0;
+
+    for (poly_idx, factor_indices) in data.f_by_poly.iter().enumerate() {
+        let mut covered = false;
+        for &fi in factor_indices {
+            let factor_atom = factor_to_atom(&data.factors[fi].poly)?;
+            let mut residual = factor_atom;
+            for &var in &order {
+                let Some(rhs) = expanded.get(&var) else {
+                    continue;
+                };
+                let symbol = loaded.id_to_sym[var.0 as usize];
+                residual = substitute_symbol(&residual, symbol, rhs.clone());
+            }
+            residual = residual.together().expand();
+
+            let vanishes = is_zero_exact(&residual, &loaded.sym_to_vid, &loaded.id_to_sym)
+                .map_err(|source| ParameterizationError::ExactCheck {
+                    equation_index: poly_idx,
+                    source,
+                })?;
+            if vanishes {
+                covered = true;
+                break;
+            }
+        }
+        if !covered {
+            uncovered_count += 1;
+            eprintln!(
+                "preprocessed cover check failed: factor group {poly_idx} is not covered after substitution"
+            );
+        }
+    }
+
+    Ok(PreprocessedCheckReport {
+        checked_factor_groups: data.f_by_poly.len(),
+        uncovered_count,
     })
 }
 
@@ -812,6 +873,24 @@ fn main() {
     print_cover(&loaded, &data, &cover);
     print_variable_sets(&loaded, &data, &cover);
 
+    match check_cover_preprocessed(&loaded, &data, &cover) {
+        Ok(report) if report.uncovered_count == 0 => println!(
+            "Preprocessed cover check: all {} factor group(s) covered.",
+            report.checked_factor_groups
+        ),
+        Ok(report) => {
+            eprintln!(
+                "\nPreprocessed cover check: {}/{} factor group(s) not covered.",
+                report.uncovered_count, report.checked_factor_groups
+            );
+            std::process::exit(6);
+        }
+        Err(error) => {
+            eprintln!("\nPreprocessed cover check failed: {error}");
+            std::process::exit(6);
+        }
+    }
+
     match check_cover_parameterizes_original(&loaded, &data, &cover) {
         Ok(report) => println!(
             "\nParameterization check: {} original equation(s) vanish after {} substitution(s).",
@@ -867,11 +946,8 @@ mod tests {
     }
 
     fn topo_ok(data: &ProblemData, cover: &Cover) -> bool {
-        let topo: HashMap<usize, f64> = cover
-            .selected
-            .iter()
-            .map(|&(_, vid, t)| (vid, t))
-            .collect();
+        let topo: HashMap<usize, f64> =
+            cover.selected.iter().map(|&(_, vid, t)| (vid, t)).collect();
         for &(fi, vid, ti) in &cover.selected {
             for &other_vid in &data.factors[fi].vars {
                 if other_vid == vid {
@@ -896,8 +972,7 @@ mod tests {
 
     #[test]
     fn parse_args_accepts_a_path() {
-        let options =
-            parse_args(["systems/s_system.txt".to_string()]).expect("parse args");
+        let options = parse_args(["systems/s_system.txt".to_string()]).expect("parse args");
         assert_eq!(options.path, PathBuf::from("systems/s_system.txt"));
     }
 
