@@ -3,12 +3,12 @@
 ## Problem
 
 There is a set of multivariate polynomials $p_1, \ldots, p_m$ we do the following preprocessing:
-1. interreduce the polynomials with lex order
+1. interreduce the polynomials with lex order getting new polynomials $p'_1, \ldots, p'_{m}$
 2. clear zero polynomials
-3. find the factorization of each polynomial into $\{(f, \{p_j \mid f \text{ appears in } p_j\}) \mid f \text{ is an irreducible factor of at least one polynomial}\}$.
+3. find the factorization of each polynomial into $\{(f, \{p'_j \mid f \text{ appears in } p'_j\}) \mid f \text{ is an irreducible factor of at least one polynomial}\}$.
 4. remove constant factors from the polynomials
 
-Taking the preprocessed polynomials as given, we would like to find a set of tuples of factors and variables $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ and a set of variables to zero $v_1, \ldots, v_l$, maximizing the number of preprocessed polynomials that become identically zero after zeroing $v_1, \ldots, v_l$, subject to:
+Taking the preprocessed polynomials as given, we would like to find a set of tuples of factors and variables $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ and a set of variables to zero $v_1, \ldots, v_l$, maximizing the number of preprocessed polynomials that become identically zero after zeroing $v_1, \ldots, v_l$, subject to the following conditions:
 1. each polynomial has a factor $f$ such that $s_{f,x} = 1$ for some variable $x$ (i.e., $f$ is selected as the linear definer for some variable), or has a factor that becomes identically zero after zeroing $v_1, \ldots, v_l$.
 2. for each tuple $(f_i, x_i)$, after zeroing the variables $v_1, \ldots, v_l$, the $f_i$ is of degree 1 in $x_i$.
 3. The dependency graph $G = (V, E)$ with $V = \{x_1, \ldots, x_k\}$ and $E = \{(x_j, x_i) \mid j \neq i \text{ and } x_j \text{ appears in } f_i\}$ is acyclic.
@@ -16,17 +16,19 @@ Taking the preprocessed polynomials as given, we would like to find a set of tup
 
 ### Implication of system being solved
 
-Claim: If we find tuples $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ such that the conditions are met, we can find a rational parametrization of a non-empty component of the solution set of the system $p_1 = \cdots = p_m = 0$, with the variables outside $\{x_1, \ldots, x_k\}$ acting as free parameters.
+Claim: If we find tuples $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ and variables to zero $v_1, \ldots, v_l$ such that the conditions are met, we can find a rational parametrization of a non-empty component of the solution set of the system $p_1 = \cdots = p_m = 0$, with the variables outside $\{x_1, \ldots, x_k, v_1, \ldots, v_l\}$ acting as free parameters.
 
-Proof (TBA):
+Proof: The proof will be of two parts, first showing the construction of the rational parametrization that zeros each of the $f_i$, and the second showing that the resulting parametrization zeros each of the $p_j$.
 
-## Choosing the lex order (optional and unimportant for now)
+First part - By condition 2, for each $i$, the factor $f_i$ is exactly of degree 1 in $x_i$ after zeroing $v_1, \ldots, v_l$, so we can write $f_i = a_i x_i + b_i$ where $a_i$ and $b_i$ are rational functions in the variables other than $x_i$.
+$x_i = -\frac{b_i}{a_i}$ is a rational parametrization of the variety defined by $f_i = 0$.
+Because the dependency graph is acyclic, we can topologically sort the variables $x_1, \ldots, x_k$ and substitute the rational parametrizations in order, starting with the variables with no incoming edges.
 
-The lex order used for interreduction in step 2 affects which variables get eliminated from which polynomials, and hence how much structure the MILP in the next section has to work with. 
-We want an order that, after interreduction, leaves polynomials sharing as few variables as possible — this both reduces the size of $A$ and makes the acyclicity constraint (C3) easier to satisfy.
+Second part - By the coverage condition, for each $p'_j$, either it has a factor that becomes identically zero due to zeroing $v_1, \ldots, v_l$, or it has a factor $f_i$ that is used to rationally define $x_i$. 
+In the latter case, the substitution $x_i = -\frac{b_i}{a_i}$ forces $f_i = 0$. In either case, the entire substituted polynomial $p'_j$ evaluates to zero. 
+We can also note that because $p'_1, \ldots, p'_m$ are the result of interreducing the original system of equations $p_1, \ldots, p_m$, for each original equation $p_i$, there are some polynomials $h_{i1}, \ldots, h_{im}$ such that $p_i = h_{i1}p'_1 + \ldots + h_{im}p'_m$. 
+Thus, a solution to the system of equations $p'_1, \ldots, p'_m$ is also a solution to the system of equations $p_1, \ldots, p_m$.
 
-Interreduction under lex behaves like sparse elimination: when a variable $v$ is high in the order, one polynomial is picked as its "definer" (the one whose leading term involves $v$) and $v$ is removed from every other polynomial by reduction. 
-Choosing the order is therefore a variable-elimination ordering problem, well studied in sparse linear algebra (Markowitz / minimum-degree heuristics). 
 
 ## Solving the problem
 
@@ -89,6 +91,12 @@ When $s_{f, x} = 1$ this enforces $t_{x'} < t_x$ on every potential predecessor 
 **(C4) Pairwise distinct.** No variable is both selected (as some $x_i$) and zeroed (as some $v_j$), and each variable is selected at most once. For each $x \in V$:
 
 $$\sum_{f \in F} s_{f, x} + z_x \le 1.$$
+
+**(C5) Monomial factors.** A factor $f$ with $|\mathrm{mon}(f)| = 1$ (i.e. $f$ is a single monomial) cannot rationally define any variable: the equation $f = 0$ merely forces some variable in the product to zero but does not single out any one variable. Therefore:
+
+$$s_{f, x} = 0 \qquad \forall\, x \in V, \text{ whenever } |\mathrm{mon}(f)| = 1.$$
+
+In practice, such factors are excluded from the admissible set entirely, so no $s_{f,x}$ variable is ever created for them.
 
 ### Objective
 

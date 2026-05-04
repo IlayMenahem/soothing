@@ -7,7 +7,6 @@
 //! 3. completely factorize each surviving polynomial,
 //! 4. drop constant factors.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use symbolica::atom::{AtomCore, Symbol};
@@ -46,75 +45,120 @@ fn equation_supports(loaded: &LoadedMathematicaSystem) -> Vec<Vec<usize>> {
         .collect()
 }
 
-fn cooccurrence_graph(variable_count: usize, supports: &[Vec<usize>]) -> Vec<HashSet<usize>> {
-    let mut graph = vec![HashSet::new(); variable_count];
-
-    for support in supports {
-        for (i, &left) in support.iter().enumerate() {
-            for &right in support.iter().skip(i + 1) {
-                graph[left].insert(right);
-                graph[right].insert(left);
-            }
-        }
-    }
-
-    graph
-}
-
-fn active_neighbors(graph: &[HashSet<usize>], active: &[bool], variable: usize) -> Vec<usize> {
-    let mut neighbors: Vec<usize> = graph[variable]
+// For variable `v`, returns the minimum number of new variable slots introduced
+// across all non-definer equations when `v` is eliminated. This is minimized
+// over all choices of definer equation, since lex interreduction picks one
+// polynomial as v's definer and spreads only its variables into the others.
+// The pairwise co-occurrence graph overestimates here because it assumes all
+// pairs of v's neighbors must be cliqued, but only the definer's variables
+// actually propagate to each other equation.
+fn hyperedge_fill(variable: usize, supports: &[Vec<usize>]) -> usize {
+    let containing: Vec<usize> = supports
         .iter()
-        .copied()
-        .filter(|&neighbor| active[neighbor])
+        .enumerate()
+        .filter(|(_, s)| !s.is_empty() && s.binary_search(&variable).is_ok())
+        .map(|(i, _)| i)
         .collect();
-    neighbors.sort_unstable();
-    neighbors
-}
 
-fn fill_edge_count(graph: &[HashSet<usize>], active: &[bool], variable: usize) -> usize {
-    let neighbors = active_neighbors(graph, active, variable);
-    let mut missing_edges = 0;
-
-    for (i, &left) in neighbors.iter().enumerate() {
-        for &right in neighbors.iter().skip(i + 1) {
-            if !graph[left].contains(&right) {
-                missing_edges += 1;
-            }
-        }
+    if containing.len() <= 1 {
+        return 0;
     }
 
-    missing_edges
+    containing
+        .iter()
+        .map(|&di| {
+            containing
+                .iter()
+                .filter(|&&ei| ei != di)
+                .map(|&ei| {
+                    supports[di]
+                        .iter()
+                        .filter(|&&v| v != variable && supports[ei].binary_search(&v).is_err())
+                        .count()
+                })
+                .sum::<usize>()
+        })
+        .min()
+        .unwrap_or(0)
 }
 
 fn min_fill_order(variable_count: usize, supports: &[Vec<usize>]) -> Vec<usize> {
-    let mut graph = cooccurrence_graph(variable_count, supports);
+    let mut active_supports: Vec<Vec<usize>> = supports
+        .iter()
+        .map(|s| {
+            let mut v = s.clone();
+            v.sort_unstable();
+            v.dedup();
+            v
+        })
+        .collect();
     let mut active = vec![true; variable_count];
     let mut order = Vec::with_capacity(variable_count);
 
     while order.len() < variable_count {
         let selected = (0..variable_count)
-            .filter(|&variable| active[variable])
-            .min_by_key(|&variable| {
-                let neighbors = active_neighbors(&graph, &active, variable);
-                (
-                    fill_edge_count(&graph, &active, variable),
-                    neighbors.len(),
-                    variable,
-                )
+            .filter(|&v| active[v])
+            .min_by_key(|&v| {
+                let eq_count = active_supports
+                    .iter()
+                    .filter(|s| !s.is_empty() && s.binary_search(&v).is_ok())
+                    .count();
+                (hyperedge_fill(v, &active_supports), eq_count, v)
             })
             .expect("at least one active variable remains");
 
-        let neighbors = active_neighbors(&graph, &active, selected);
-        for (i, &left) in neighbors.iter().enumerate() {
-            for &right in neighbors.iter().skip(i + 1) {
-                graph[left].insert(right);
-                graph[right].insert(left);
+        let containing: Vec<usize> = active_supports
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| !s.is_empty() && s.binary_search(&selected).is_ok())
+            .map(|(i, _)| i)
+            .collect();
+
+        if containing.len() > 1 {
+            let definer_idx = containing
+                .iter()
+                .copied()
+                .min_by_key(|&di| {
+                    containing
+                        .iter()
+                        .filter(|&&ei| ei != di)
+                        .map(|&ei| {
+                            active_supports[di]
+                                .iter()
+                                .filter(|&&v| {
+                                    v != selected
+                                        && active_supports[ei].binary_search(&v).is_err()
+                                })
+                                .count()
+                        })
+                        .sum::<usize>()
+                })
+                .unwrap();
+
+            let definer_vars: Vec<usize> = active_supports[definer_idx]
+                .iter()
+                .copied()
+                .filter(|&v| v != selected)
+                .collect();
+
+            for &ei in &containing {
+                if ei == definer_idx {
+                    continue;
+                }
+                let eq = &mut active_supports[ei];
+                eq.retain(|&v| v != selected);
+                for &dv in &definer_vars {
+                    if eq.binary_search(&dv).is_err() {
+                        eq.push(dv);
+                    }
+                }
+                eq.sort_unstable();
             }
+            active_supports[definer_idx].clear();
+        } else if containing.len() == 1 {
+            active_supports[containing[0]].clear();
         }
-        for &neighbor in &neighbors {
-            graph[neighbor].remove(&selected);
-        }
-        graph[selected].clear();
+
         active[selected] = false;
         order.push(selected);
     }
