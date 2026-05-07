@@ -203,7 +203,7 @@ fn collect_identifiers(expr: &str) -> Vec<String> {
     out
 }
 
-pub(crate) fn equation_strings_from_mathematica(
+fn equation_strings_from_mathematica(
     text: &str,
 ) -> Result<Vec<String>, MathematicaLoadError> {
     let cleaned = strip_outer_braces(text);

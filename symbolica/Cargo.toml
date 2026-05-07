@@ -1,45 +1,28 @@
 [package]
-name = "symbolica-elim"
+name = "polynomial_milp"
 version = "0.1.0"
 edition = "2024"
-description = "DFS linear elimination using Symbolica: sampled predicates, exact Q predicates, and Mathematica loaders (standalone; no soothing-linear dependency)."
+description = "A MILP based solver for polynomial systems of equations."
 license = "MIT"
 
-[[bin]]
-name = "solve"
-path = "src/bin/solve.rs"
-
-[[bin]]
-name = "solve_exact"
-path = "src/bin/solve_exact.rs"
-
-[[bin]]
-name = "bench_solve"
-path = "src/bin/bench_solve.rs"
+[lib]
+name = "polynomial_milp"
+path = "lib.rs"
 
 [[bin]]
 name = "groebner"
-path = "src/bin/groebner.rs"
+path = "bin/groebner.rs"
 
 [[bin]]
 name = "factor"
-path = "src/bin/factor.rs"
+path = "bin/factor.rs"
 
 [[bin]]
 name = "milp_cover"
-path = "src/bin/milp_cover.rs"
-
-[profile.release]
-opt-level = 3
-lto = "fat"
+path = "bin/milp_cover.rs"
 
 [dependencies]
-ahash = "0.8"
 rayon = "1.10"
-num-integer = "0.1"
-num-rational = "0.4"
-num-traits = "0.2"
-rand = "0.8"
 regex = "1"
 symbolica = "1.5"
 thiserror = "1"

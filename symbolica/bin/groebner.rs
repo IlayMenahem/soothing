@@ -7,22 +7,18 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use symbolica::LicenseManager;
-use symbolica::atom::{AtomCore, Symbol};
+use symbolica::atom::AtomCore;
 use symbolica::domains::rational::Q;
 use symbolica::poly::{
     LexOrder, PolyVariable, groebner::GroebnerBasis, polynomial::MultivariatePolynomial,
 };
 
-use symbolica_elim::{
+use polynomial_milp::{
     PolynomialSystem, default_systems_dir_from_manifest,
-    load_mathematica_system_from_path_with_var_names,
+    load_mathematica_system_from_path_with_var_names, variable_order,
 };
 
 type QPolyLex = MultivariatePolynomial<Q, u16, LexOrder>;
-
-fn variable_order_lex(symbols: &[Symbol]) -> Arc<Vec<PolyVariable>> {
-    Arc::new(symbols.iter().copied().map(PolyVariable::from).collect())
-}
 
 fn ideal_lex_q(
     system: &PolynomialSystem,
@@ -56,11 +52,11 @@ fn main() {
     LicenseManager::set_license_key(key).unwrap();
 
     let path: PathBuf = std::env::args().nth(1).map_or_else(
-        || default_systems_dir_from_manifest().join("simplified_mathematica_system.txt"),
+        || default_systems_dir_from_manifest().join("s_system.txt"),
         PathBuf::from,
     );
 
-    println!("symbolica-elim — Gröbner basis (lex over ℚ)\n");
+    println!("polynomial-milp — Gröbner basis (lex over ℚ)\n");
     println!("Loading {}", path.display());
 
     let loaded = match load_mathematica_system_from_path_with_var_names(&path) {
@@ -78,7 +74,7 @@ fn main() {
         loaded.var_names.len()
     );
 
-    let var_order = variable_order_lex(&loaded.id_to_sym);
+    let var_order = variable_order(&loaded.id_to_sym);
 
     println!("\nGroebner basis (lex over Q, Symbolica `GroebnerBasis`)");
     let t0 = Instant::now();

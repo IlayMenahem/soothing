@@ -15,7 +15,7 @@ use symbolica::domains::rational::Q;
 use symbolica::poly::PolyVariable;
 use symbolica::poly::factor::Factorize;
 
-use symbolica_elim::{
+use polynomial_milp::{
     LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest, ideal_ext_lex,
     interreduce_polys, load_mathematica_system_from_path_with_var_names, variable_order,
 };
@@ -48,7 +48,7 @@ fn main() {
         PathBuf::from,
     );
 
-    println!("symbolica-elim — factor over AlgebraicExtension<RationalField> (ℚ(i))\n");
+    println!("polynomial-milp — factor over AlgebraicExtension<RationalField> (ℚ(i))\n");
     println!("Loading {}", path.display());
 
     let loaded = match load_mathematica_system_from_path_with_var_names(&path) {

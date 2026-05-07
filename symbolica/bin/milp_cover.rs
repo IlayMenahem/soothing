@@ -25,8 +25,8 @@ use symbolica::domains::rational::Q;
 use symbolica::poly::PolyVariable;
 use thiserror::Error;
 
-use symbolica_elim::atom_util::{parse_expression, substitute_symbol};
-use symbolica_elim::{
+use polynomial_milp::atom_util::{parse_expression, substitute_symbol};
+use polynomial_milp::{
     ExactPredicateError, LoadedMathematicaSystem, PolyExtLex, SubstitutionMap, VarId,
     default_systems_dir_from_manifest, is_numerator_zero_exact, is_zero_exact,
     load_mathematica_system_from_path_with_var_names, preprocess, rhs_denominator_nonzero_exact,
@@ -760,11 +760,12 @@ fn check_cover_preprocessed(
             residual = residual.together().expand();
 
             let vanishes =
-                is_numerator_zero_exact(&residual, &loaded.sym_to_vid, &loaded.id_to_sym)
-                    .map_err(|source| ParameterizationError::ExactCheck {
+                is_numerator_zero_exact(&residual, &loaded.sym_to_vid, &loaded.id_to_sym).map_err(
+                    |source| ParameterizationError::ExactCheck {
                         equation_index: poly_idx,
                         source,
-                    })?;
+                    },
+                )?;
             if vanishes {
                 covered = true;
                 break;
@@ -840,7 +841,7 @@ fn main() {
         }
     };
 
-    println!("symbolica-elim — MILP radical cover (good_lp / HiGHS)\n");
+    println!("polynomial-milp — MILP radical cover (good_lp / HiGHS)\n");
     println!("Loading {}", options.path.display());
 
     let loaded = match load_mathematica_system_from_path_with_var_names(&options.path) {
@@ -950,10 +951,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Once;
-    use symbolica_elim::{
+    use polynomial_milp::{
         ideal_ext_lex, load_mathematica_system_from_str_with_var_names, preprocess,
     };
+    use std::sync::Once;
 
     static LICENSE: Once = Once::new();
     fn activate_license() {
@@ -977,7 +978,7 @@ mod tests {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(source).expect("load");
         let field = AlgebraicExtension::new_complex(Q);
-        let var_order = symbolica_elim::variable_order(&loaded.id_to_sym);
+        let var_order = polynomial_milp::variable_order(&loaded.id_to_sym);
         let factor_groups = ideal_ext_lex(&loaded.system, &field, var_order)
             .expect("polynomial conversion")
             .into_iter()
@@ -1250,7 +1251,10 @@ mod tests {
         let x_vid = loaded.var_names.iter().position(|n| n == "x").unwrap();
         let x_local = *data.v_idx.get(&x_vid).expect("x in problem");
         for &(_, vloc) in &data.admissible {
-            assert_ne!(vloc, x_local, "x must not be admissible (degree-5 only in x)");
+            assert_ne!(
+                vloc, x_local,
+                "x must not be admissible (degree-5 only in x)"
+            );
         }
         let cover = solve_milp(&data).expect("feasible");
         assert!(

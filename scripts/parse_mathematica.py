@@ -1,4 +1,5 @@
 import re
+
 from sympy import Expr, Symbol
 
 _GREEK_MAP = {
@@ -66,103 +67,6 @@ def extract_variables(expression: str) -> set[str]:
     return variables
 
 
-def mathematica_to_jax(expr: str, var_to_index: dict[str, int]) -> str:
-    """
-    Convert Mathematica expression to Python/JAX expression.
-
-    Args:
-        expr: Mathematica expression string
-        var_to_index: Mapping from variable names to array indices
-
-    Handles:
-    - Power notation (^) -> **
-    - Greek symbols (\\[Symbol]) -> symbol
-    - Pi constant
-    - Implicit multiplication (e.g., 2x -> 2*x, 3(x+y) -> 3*(x+y))
-    """
-    # Replace power operator
-    result = expr.replace("^", "**")
-
-    # Replace Greek symbols and special characters
-    for mathematica_symbol, python_symbol in _GREEK_MAP.items():
-        result = result.replace(mathematica_symbol, python_symbol)
-
-    # Add explicit multiplication for implicit multiplication cases:
-    # 1. Space between identifiers/numbers (e.g., "a b" -> "a*b", "2 x" -> "2*x")
-    # 2. Number directly followed by letter (e.g., "2x" -> "2*x")
-    # 3. Number/variable followed by opening parenthesis
-    # 4. Closing parenthesis followed by number/variable
-
-    # Space between closing paren and identifier
-    result = re.sub(r"\)\s+([a-zA-Z])", r")*\1", result)
-
-    # Space between closing paren and number
-    result = re.sub(r"\)\s+(\d)", r")*\1", result)
-
-    # Space between identifier and opening paren
-    result = re.sub(r"([a-zA-Z_]\w*)\s+\(", r"\1*(", result)
-
-    # Space between number and opening paren
-    result = re.sub(r"(\d)\s+\(", r"\1*(", result)
-
-    # Space between two identifiers (e.g., "DkDkh1 kkh" -> "DkDkh1*kkh")
-    result = re.sub(r"([a-zA-Z_]\w*)\s+([a-zA-Z])", r"\1*\2", result)
-
-    # Space between number and identifier (e.g., "45 DkDkh1" -> "45*DkDkh1")
-    result = re.sub(r"(\d)\s+([a-zA-Z])", r"\1*\2", result)
-
-    # Space between identifier and number (e.g., "x 2" -> "x*2")
-    result = re.sub(r"([a-zA-Z_]\w*)\s+(\d)", r"\1*\2", result)
-
-    # Number directly followed by letter without space (e.g., "2x" -> "2*x")
-    result = re.sub(r"(\d)([a-zA-Z])", r"\1*\2", result)
-
-    # Variable directly followed by opening parenthesis (no space already handled above with space)
-    result = re.sub(r"([a-zA-Z_]\w*)\(", r"\1*(", result)
-
-    # Number directly followed by opening parenthesis (no space)
-    result = re.sub(r"(\d)\(", r"\1*(", result)
-
-    # Closing parenthesis directly followed by letter
-    result = re.sub(r"\)([a-zA-Z])", r")*\1", result)
-
-    # Closing parenthesis directly followed by number
-    result = re.sub(r"\)(\d)", r")*\1", result)
-
-    # Closing parenthesis directly followed by space and open parenthesis
-    result = re.sub(r"\) \(", r")*(", result)
-
-    # Closing parenthesis directly followed by space and open parenthesis
-    result = re.sub(r"\)\(", r")*(", result)
-
-    # Replace variables with array indexing
-    # Match identifiers that aren't part of jnp.* patterns
-    def replace_with_index(match):
-        word = match.group(0)
-        # Check if this word is preceded by "jnp." or followed by "."
-        start_pos = match.start()
-        end_pos = match.end()
-
-        # Check if preceded by "jnp."
-        if start_pos >= 4 and result[start_pos - 4 : start_pos] == "jnp.":
-            return word
-
-        # Check if this is "jnp" itself
-        if word == "jnp" and end_pos < len(result) and result[end_pos] == ".":
-            return word
-
-        # Replace with array index if this is a variable
-        if word in var_to_index:
-            return f"x[{var_to_index[word]}]"
-
-        return word
-
-    # Find all identifiers (including those that might be multi-part like DkDkh1)
-    result = re.sub(r"\b([a-zA-Z][a-zA-Z0-9]*)\b", replace_with_index, result)
-
-    return result
-
-
 def mathematica_to_sympy(expr: str) -> tuple[list[Expr], set[Symbol]]:
     """
     Convert Mathematica system of rational functions to SymPy polynomials.
@@ -177,10 +81,10 @@ def mathematica_to_sympy(expr: str) -> tuple[list[Expr], set[Symbol]]:
     """
     from sympy import E, I, Symbol, fraction, pi, together
     from sympy.parsing.sympy_parser import (
+        convert_xor,
+        implicit_multiplication_application,
         parse_expr,
         standard_transformations,
-        implicit_multiplication_application,
-        convert_xor,
     )
 
     sympy_greek_map = {
@@ -322,25 +226,12 @@ def mathematica_to_sympy(expr: str) -> tuple[list[Expr], set[Symbol]]:
 
     return sympy_exprs, all_symbols
 
+
 def generate_variable_mapping(variables: set[str]) -> tuple[dict[str, int], list[str]]:
     """Generate mapping from variable names to array indices."""
     sorted_vars = sorted(variables)
     var_to_index = {var: i for i, var in enumerate(sorted_vars)}
     return var_to_index, sorted_vars
-
-
-def generate_function(
-    func_name: str, expression: str, var_to_index: dict[str, int]
-) -> str:
-    """Generate a pure function for computing an equation."""
-    python_expr = mathematica_to_jax(expression, var_to_index)
-
-    lines = [
-        f"def {func_name}(x: Array) -> Array:",
-        f"    return {python_expr}",
-    ]
-
-    return "\n".join(lines)
 
 
 def generate_system_evaluator(func_names: list[str], sorted_vars: list[str]) -> str:
@@ -360,62 +251,3 @@ def generate_system_evaluator(func_names: list[str], sorted_vars: list[str]) -> 
     ]
 
     return "\n".join(lines)
-
-
-def convert_mathematica_system(
-    mathematica_str: str,
-    output_file: str | None = None,
-) -> str:
-    """
-    Convert complete Mathematica system to Python/JAX code.
-
-    Args:
-        mathematica_str: String containing Mathematica system of equations
-        output_file: Optional path to write generated code to file
-
-    Returns:
-        Complete Python code as a string
-    """
-    # Parse the system
-    system = parse_mathematica_system(mathematica_str)
-
-    # Extract all variables from all equations
-    all_variables = set()
-    for expr in system.values():
-        all_variables.update(extract_variables(expr))
-
-    # Generate code components
-    imports = [
-        "import jax.numpy as jnp",
-        "from jax import Array",
-        "",
-        "",
-    ]
-
-    # Generate variable mapping
-    var_to_index, sorted_vars = generate_variable_mapping(all_variables)
-
-    functions = []
-    func_names = []
-    for var_name, expression in system.items():
-        # Convert CamelCase to snake_case for function names
-        func_name = re.sub(r"(?<!^)(?=[A-Z])", "_", var_name).lower()
-        func_names.append(func_name)
-        functions.append(generate_function(func_name, expression, var_to_index))
-
-    system_evaluator = generate_system_evaluator(func_names, sorted_vars)
-
-    # Combine all parts
-    code_parts = imports + [f + "\n\n" for f in functions] + [system_evaluator]
-
-    generated_code = "\n".join(code_parts)
-
-    # Write to file if output path is provided
-    if output_file is not None:
-        with open(output_file, "w") as f:
-            f.write(generated_code)
-
-    return generated_code
-
-
-# Example usage

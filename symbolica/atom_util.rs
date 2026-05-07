@@ -3,10 +3,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use ahash::HashMap as AHashMap;
-use num_traits::ToPrimitive;
 use symbolica::atom::{Atom, AtomCore, DefaultNamespace, Symbol};
-use symbolica::domains::rational::Rational;
 use symbolica::id::Replacement;
 use symbolica::parser::ParseSettings;
 
@@ -49,17 +46,3 @@ pub fn vars_in_atom(expr: &Atom, sym_to_vid: &HashMap<Symbol, VarId>) -> HashSet
         .collect()
 }
 
-/// Evaluate `expr` at a partial assignment (`VarId` → rational), as `f64`.
-pub fn evaluate_atom(
-    expr: &Atom,
-    assignment: &HashMap<VarId, num_rational::Ratio<i64>>,
-    id_to_sym: &[Symbol],
-) -> Result<f64, String> {
-    let mut const_map: AHashMap<Atom, f64> = AHashMap::default();
-    for (&v, q) in assignment {
-        let sym = id_to_sym[v.0 as usize];
-        let qf = q.to_f64().unwrap_or(f64::NAN);
-        const_map.insert(Atom::var(sym), qf);
-    }
-    expr.evaluate(|r: &Rational| r.to_f64(), &const_map, &AHashMap::default())
-}

@@ -8,9 +8,7 @@ from typing import Sequence
 
 import sympy as sp
 import z3  # type: ignore[import-untyped]
-
-from soothing.parse_mathematica import mathematica_to_sympy
-
+from parse_mathematica import mathematica_to_sympy
 
 _NUMERIC_CONSTANT_PRECISION = 80
 
@@ -69,7 +67,9 @@ def sympy_to_z3(expr: sp.Basic, variables: dict[str, z3.ArithRef]) -> z3.ArithRe
 
 def constraints_from_system_text(system_text: str) -> SystemConstraints:
     polynomials, symbols = mathematica_to_sympy(system_text)
-    variables = {str(symbol): z3.Real(str(symbol)) for symbol in sorted(symbols, key=str)}
+    variables = {
+        str(symbol): z3.Real(str(symbol)) for symbol in sorted(symbols, key=str)
+    }
     constraints = [
         sympy_to_z3(polynomial, variables) == z3.RealVal(0)
         for polynomial in polynomials
@@ -122,7 +122,9 @@ def solve_system_text(
         solutions.append(solution)
 
         if not ordered_variables:
-            return SolveResult(status=z3.unsat, solutions=solutions, reached_limit=False)
+            return SolveResult(
+                status=z3.unsat, solutions=solutions, reached_limit=False
+            )
 
         solver.add(
             z3.Or(
@@ -186,18 +188,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description="Solve a benchmark polynomial system with Z3 over the reals."
     )
     parser.add_argument("system_path", type=Path)
-    parser.add_argument("--max-solutions", type=int, default=10)
+    parser.add_argument("--max-solutions", type=int, default=1)
     parser.add_argument("--timeout-ms", type=int, default=30_000)
     parser.add_argument("--decimal-places", type=int, default=20)
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = parse_args(argv)
+if __name__ == "__main__":
+    args = parse_args()
+
     result = solve_system_file(
         args.system_path,
         max_solutions=args.max_solutions,
         timeout_ms=args.timeout_ms,
     )
+
     print(format_result(result, decimal_places=args.decimal_places))
-    return 0 if result.status != z3.unknown else 2
+    print(result)
