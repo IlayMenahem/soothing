@@ -95,11 +95,11 @@ struct ProblemData {
     /// Inverse of `v_ids`.
     v_idx: HashMap<usize, usize>,
     /// Admissible pairs `(factor_idx, local_var_idx)`: those for which the
-    /// factor has at least one monomial of degree exactly 1 in the variable.
+    /// factor has at least one monomial of degree between 1 and 4 in the variable.
     admissible: Vec<(usize, usize)>,
     /// For each admissible pair, the indices into the factor's `monomial_vars`
-    /// of monomials of degree exactly 1 in the selected variable (i.e. `M^1_{f,x}`).
-    deg1_monomials: Vec<Vec<usize>>,
+    /// of monomials of degree 1 to 4 in the selected variable (i.e. `M^{[1,4]}_{f,x}`).
+    deg1to4_monomials: Vec<Vec<usize>>,
     /// For each admissible pair, the indices into the factor's `monomial_vars`
     /// of monomials of degree exactly 0 in the selected variable (the "constant term"
     /// w.r.t. that variable). Used by C2d.
@@ -183,7 +183,7 @@ fn build_problem(
     let v_idx: HashMap<usize, usize> = v_set.iter().enumerate().map(|(i, v)| (*v, i)).collect();
 
     let mut admissible = Vec::new();
-    let mut deg1_monomials = Vec::new();
+    let mut deg1to4_monomials = Vec::new();
     let mut deg0_monomials = Vec::new();
     for (fi, info) in factors.iter().enumerate() {
         if info.monomial_vars.len() == 1 {
@@ -191,10 +191,12 @@ fn build_problem(
             continue;
         }
         for &vid in &info.vars {
-            let m1 = info.monomials_deg(vid, 1);
-            if !m1.is_empty() {
+            let m1to4: Vec<usize> = (1u16..=4)
+                .flat_map(|d| info.monomials_deg(vid, d))
+                .collect();
+            if !m1to4.is_empty() {
                 admissible.push((fi, v_idx[&vid]));
-                deg1_monomials.push(m1);
+                deg1to4_monomials.push(m1to4);
                 deg0_monomials.push(info.monomials_deg(vid, 0));
             }
         }
@@ -206,7 +208,7 @@ fn build_problem(
         v_ids: v_set,
         v_idx,
         admissible,
-        deg1_monomials,
+        deg1to4_monomials,
         deg0_monomials,
     }
 }
@@ -258,6 +260,10 @@ enum ParameterizationError {
         equation_index: usize,
         residual: Atom,
     },
+    #[error(
+        "algebraic substitution for degree-{degree} factor defining `{variable}` is not yet implemented"
+    )]
+    AlgebraicSubstitutionNotImplemented { variable: String, degree: u16 },
 }
 
 /// All MILP decision/auxiliary variables, indexed parallel to the data
@@ -290,7 +296,7 @@ fn add_milp_variables(vars: &mut ProblemVariables, data: &ProblemData) -> MilpVa
     let zeta: Vec<_> = data.factors.iter().map(|_| vars.add(unit())).collect();
     let y: Vec<_> = data.f_by_poly.iter().map(|_| vars.add(unit())).collect();
     let a: Vec<Vec<_>> = data
-        .deg1_monomials
+        .deg1to4_monomials
         .iter()
         .map(|ms| ms.iter().map(|_| vars.add(unit())).collect())
         .collect();
@@ -394,10 +400,10 @@ fn add_linearity_constraints<M: SolverModel>(
         let info = &data.factors[fi];
         let selected_vid = data.v_ids[vloc];
 
-        // C2a: every monomial of degree >= 2 in the selected variable must
+        // C2a: every monomial of degree >= 5 in the selected variable must
         // have one of its non-selected variables zeroed.
         for (m, monomial) in info.monomial_vars.iter().enumerate() {
-            if info.monomial_degree(m, selected_vid) < 2 {
+            if info.monomial_degree(m, selected_vid) < 5 {
                 continue;
             }
             let killers: Expression = monomial
@@ -408,9 +414,9 @@ fn add_linearity_constraints<M: SolverModel>(
             model = model.with(constraint!(vars.s[k] - killers <= 0));
         }
 
-        // C2b: a degree-1 monomial survives only if none of its non-selected
-        // variables are zeroed.
-        for (slot, &m) in data.deg1_monomials[k].iter().enumerate() {
+        // C2b: a monomial of degree 1-4 in x survives only if none of its
+        // non-selected variables are zeroed.
+        for (slot, &m) in data.deg1to4_monomials[k].iter().enumerate() {
             for &vid in &info.monomial_vars[m] {
                 if vid == selected_vid {
                     continue;
@@ -422,7 +428,7 @@ fn add_linearity_constraints<M: SolverModel>(
             }
         }
 
-        // C2c: at least one degree-1 monomial must survive.
+        // C2c: at least one monomial of degree 1-4 must survive.
         let surviving = sum_vars(&vars.a[k]);
         model = model.with(constraint!(vars.s[k] - surviving <= 0));
     }
@@ -430,11 +436,9 @@ fn add_linearity_constraints<M: SolverModel>(
 }
 
 /// C2d: for each selected pair `(f, x)`, at least one degree-0-in-x monomial of `f`
-/// (the "constant term" w.r.t. x) must not be entirely zeroed. This guarantees
-/// `b_coeff = f(x=0) ≠ 0`, so the parametrization `x = -b/a` is non-zero.
-/// Combined with C2b/C2c (which guarantee `a_coeff ≠ 0`), this prevents any
-/// defined variable from evaluating to zero through the substitution chain, closing
-/// the gap that produces `0^(-k)` infinities during cover expansion.
+/// (the "constant term" w.r.t. x, i.e. f(x=0)) must not be entirely zeroed. This
+/// guarantees x=0 is not a root of f after zeroing, preventing the defined variable
+/// from taking the trivial value zero through the substitution chain.
 fn add_nonzero_rhs_constraints<M: SolverModel>(
     mut model: M,
     data: &ProblemData,
@@ -629,7 +633,25 @@ fn cover_substitution(
 
     for &(factor_index, selected_vid, _) in &cover.selected {
         let var = var_id_from_global(selected_vid);
-        let rhs = linear_factor_rhs(loaded, &data.factors[factor_index].poly, selected_vid)?;
+        let fi = &data.factors[factor_index];
+        let max_deg = fi
+            .vars
+            .iter()
+            .position(|&v| v == selected_vid)
+            .map_or(0u16, |slot| {
+                fi.monomial_degrees
+                    .iter()
+                    .map(|degs| degs[slot])
+                    .max()
+                    .unwrap_or(0)
+            });
+        if max_deg > 1 {
+            return Err(ParameterizationError::AlgebraicSubstitutionNotImplemented {
+                variable: var_name(loaded, selected_vid).to_string(),
+                degree: max_deg,
+            });
+        }
+        let rhs = linear_factor_rhs(loaded, &fi.poly, selected_vid)?;
         insert_cover_binding(loaded, &mut substitution, &mut assigned, var, rhs)?;
     }
 
@@ -893,6 +915,12 @@ fn main() {
             );
             std::process::exit(6);
         }
+        Err(ParameterizationError::AlgebraicSubstitutionNotImplemented { variable, degree }) => {
+            println!(
+                "Note: preprocessed cover check skipped — degree-{degree} algebraic solve for \
+                 `{variable}` is not yet implemented."
+            );
+        }
         Err(error) => {
             eprintln!("\nPreprocessed cover check failed: {error}");
             std::process::exit(6);
@@ -904,6 +932,12 @@ fn main() {
             "\nParameterization check: {} original equation(s) vanish after {} substitution(s).",
             report.checked_equations, report.binding_count
         ),
+        Err(ParameterizationError::AlgebraicSubstitutionNotImplemented { variable, degree }) => {
+            println!(
+                "\nNote: parameterization check skipped — degree-{degree} algebraic solve for \
+                 `{variable}` is not yet implemented."
+            );
+        }
         Err(error) => {
             eprintln!("\nparameterization check failed: {error}");
             std::process::exit(5);
@@ -1016,15 +1050,15 @@ mod tests {
     }
 
     #[test]
-    fn admissible_requires_a_degree_one_monomial() {
-        // Every monomial has degree >= 2 in every variable it touches, so no
-        // pair (f, x) can ever be the linear definer of x.
+    fn admissible_requires_bounded_degree_monomial() {
+        // Every monomial has degree >= 5 in every variable it touches, so no
+        // pair (f, x) can ever be an algebraic definer of x (degrees 1-4 only).
         // Use raw factors to avoid the polynomial being split by complex factoring.
-        let (_loaded, data) = problem_from_raw_factors("{x^2 * y^2 + z^2 == 0}");
+        let (_loaded, data) = problem_from_raw_factors("{x^5 + y^5 == 0}");
         assert_eq!(data.factors.len(), 1);
         assert!(
             data.admissible.is_empty(),
-            "no monomial has degree 1 in any single variable; got {:?}",
+            "no monomial has degree 1-4 in any single variable; got {:?}",
             data.admissible
         );
     }
@@ -1041,11 +1075,13 @@ mod tests {
     }
 
     #[test]
-    fn admissible_excludes_quadratic_radical_solves() {
-        let (_loaded, data) = problem_from("{x^2 + y^2 + 1 == 0}");
+    fn admissible_includes_degree_2_monomials() {
+        // Degrees 1-4 are now allowed: a factor with only degree-2 monomials in a
+        // variable should be admissible even though it has no degree-1 monomial.
+        let (_loaded, data) = problem_from_raw_factors("{x^2 + y^2 + 1 == 0}");
         assert!(
-            data.admissible.is_empty(),
-            "no degree-1 monomial in any variable"
+            !data.admissible.is_empty(),
+            "degree-2 monomials in x and y should make the pairs admissible"
         );
     }
 
@@ -1118,12 +1154,11 @@ mod tests {
     }
 
     #[test]
-    fn solve_does_not_select_pair_with_unkillable_high_degree_monomial() {
-        // (x + 1)*(x^2 + y + 1) splits into two factors. The pair
-        // (x^2 + y + 1, x) has no degree-1 monomial in x and so is never even
-        // admissible; admissibility for this polynomial is only via (x+1, x)
-        // and (x^2+y+1, y).
-        let (loaded, data) = problem_from("{(x + 1) * (x^2 + y + 1) == 0}");
+    fn solve_does_not_select_pair_with_unkillable_degree5_monomial() {
+        // (x + 1)*(x^5 + y + 1) splits into two factors. The pair
+        // (x^5 + y + 1, x) has no monomial of degree 1-4 in x and so is never
+        // admissible; the only admissible pair for x is (x+1, x).
+        let (loaded, data) = problem_from("{(x + 1) * (x^5 + y + 1) == 0}");
         let x_vid = loaded.var_names.iter().position(|n| n == "x").unwrap();
         let x_local = data.v_idx[&x_vid];
         for &(fi, vloc) in &data.admissible {
@@ -1134,7 +1169,7 @@ mod tests {
             assert_eq!(
                 data.factors[fi].vars.len(),
                 1,
-                "a non-linear factor was made admissible for x"
+                "only the linear factor (x+1) should be admissible for x"
             );
         }
         // And the MILP picks a feasible cover.
@@ -1180,6 +1215,48 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn solve_selects_degree_two_factor_when_needed() {
+        // x^2 + z = 0 and z + 1 = 0: z can be linearly defined first (t_z < t_x),
+        // then x is defined by the quadratic x^2 + z = 0 (degree 2 in x).
+        let (loaded, data) = problem_from("{x^2 + z == 0, z + 1 == 0}");
+        let cover = solve_milp(&data).expect("feasible");
+        assert!(topo_ok(&data, &cover));
+        // Both polynomials should be covered by selection.
+        for j in 0..data.f_by_poly.len() {
+            let by_selection = cover
+                .selected
+                .iter()
+                .any(|(fi, _, _)| data.f_by_poly[j].contains(fi));
+            let by_zeroing = cover.zeroed_polynomials.contains(&j);
+            assert!(by_selection || by_zeroing, "polynomial {j} is not covered");
+        }
+        // x should appear as a selected variable (defined via the quadratic factor).
+        let x_vid = loaded.var_names.iter().position(|n| n == "x").unwrap();
+        assert!(
+            cover.selected.iter().any(|&(_, vid, _)| vid == x_vid),
+            "x should be a selected (defined) variable; cover = {cover:?}"
+        );
+    }
+
+    #[test]
+    fn solve_degree_five_monomial_not_admissible_for_that_variable() {
+        // x^5 + y = 0 as a raw factor: x has only a degree-5 monomial (outside
+        // the 1-4 range), so (f, x) is never admissible.  The MILP must cover
+        // the polynomial via (f, y) — selecting y as the defined variable.
+        let (loaded, data) = problem_from_raw_factors("{x^5 + y == 0}");
+        let x_vid = loaded.var_names.iter().position(|n| n == "x").unwrap();
+        let x_local = *data.v_idx.get(&x_vid).expect("x in problem");
+        for &(_, vloc) in &data.admissible {
+            assert_ne!(vloc, x_local, "x must not be admissible (degree-5 only in x)");
+        }
+        let cover = solve_milp(&data).expect("feasible");
+        assert!(
+            !cover.selected.iter().any(|&(_, vid, _)| vid == x_vid),
+            "x must not be selected as a defined variable"
+        );
     }
 
     #[test]

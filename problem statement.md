@@ -10,22 +10,21 @@ There is a set of multivariate polynomials $p_1, \ldots, p_m$ we do the followin
 
 Taking the preprocessed polynomials as given, we would like to find a set of tuples of factors and variables $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ and a set of variables to zero $v_1, \ldots, v_l$, maximizing the number of preprocessed polynomials that become identically zero after zeroing $v_1, \ldots, v_l$, subject to the following conditions:
 1. each polynomial has a factor $f$ such that $s_{f,x} = 1$ for some variable $x$ (i.e., $f$ is selected as the linear definer for some variable), or has a factor that becomes identically zero after zeroing $v_1, \ldots, v_l$.
-2. for each tuple $(f_i, x_i)$, after zeroing the variables $v_1, \ldots, v_l$, the $f_i$ is of degree 1 in $x_i$.
+2. for each tuple $(f_i, x_i)$, after zeroing the variables $v_1, \ldots, v_l$, the $f_i$ is of degree between 1 and 4 in $x_i$.
 3. The dependency graph $G = (V, E)$ with $V = \{x_1, \ldots, x_k\}$ and $E = \{(x_j, x_i) \mid j \neq i \text{ and } x_j \text{ appears in } f_i\}$ is acyclic.
 4. The variables $x_1, \ldots, x_k, v_1, \ldots, v_l$ are pairwise distinct.
 
 ### Implication of system being solved
 
-Claim: If we find tuples $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ and variables to zero $v_1, \ldots, v_l$ such that the conditions are met, we can find a rational parametrization of a non-empty component of the solution set of the system $p_1 = \cdots = p_m = 0$, with the variables outside $\{x_1, \ldots, x_k, v_1, \ldots, v_l\}$ acting as free parameters.
+Claim: If we find tuples $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ and variables to zero $v_1, \ldots, v_l$ such that the conditions are met, we can find an algebraic parametrization of a non-empty component of the solution set of the system $p_1 = \cdots = p_m = 0$, with the variables outside $\{x_1, \ldots, x_k, v_1, \ldots, v_l\}$ acting as free parameters.
 
-Proof: The proof will be of two parts, first showing the construction of the rational parametrization that zeros each of the $f_i$, and the second showing that the resulting parametrization zeros each of the $p_j$.
+Proof: The proof will be of two parts, first showing the construction of the algebraic parametrization that zeros each of the $f_i$, and the second showing that the resulting parametrization zeros each of the $p_j$.
 
-First part - By condition 2, for each $i$, the factor $f_i$ is exactly of degree 1 in $x_i$ after zeroing $v_1, \ldots, v_l$, so we can write $f_i = a_i x_i + b_i$ where $a_i$ and $b_i$ are rational functions in the variables other than $x_i$.
-$x_i = -\frac{b_i}{a_i}$ is a rational parametrization of the variety defined by $f_i = 0$.
-Because the dependency graph is acyclic, we can topologically sort the variables $x_1, \ldots, x_k$ and substitute the rational parametrizations in order, starting with the variables with no incoming edges.
+First part - By condition 2, for each $i$, the factor $f_i$ is of degree $d_i \in \{1,2,3,4\}$ in $x_i$ after zeroing $v_1, \ldots, v_l$, so we can write $f_i = \sum_{j=0}^{d_i} c_j^{(i)} x_i^j$ where the coefficients $c_j^{(i)}$ are polynomials in the variables other than $x_i$, with $c_{d_i}^{(i)} \ne 0$. Since polynomials of degree 1 through 4 admit closed-form solutions (the linear formula, the quadratic formula, Cardano's cubic formula, and Ferrari's quartic formula), each $x_i$ can be expressed as an algebraic function of the remaining variables.
+Because the dependency graph is acyclic, we can topologically sort the variables $x_1, \ldots, x_k$ and substitute the algebraic expressions in order, starting with the variables with no incoming edges.
 
-Second part - By the coverage condition, for each $p'_j$, either it has a factor that becomes identically zero due to zeroing $v_1, \ldots, v_l$, or it has a factor $f_i$ that is used to rationally define $x_i$. 
-In the latter case, the substitution $x_i = -\frac{b_i}{a_i}$ forces $f_i = 0$. In either case, the entire substituted polynomial $p'_j$ evaluates to zero. 
+Second part - By the coverage condition, for each $p'_j$, either it has a factor that becomes identically zero due to zeroing $v_1, \ldots, v_l$, or it has a factor $f_i$ that is used to algebraically define $x_i$. 
+In the latter case, the substitution of the algebraic expression for $x_i$ forces $f_i = 0$. In either case, the entire substituted polynomial $p'_j$ evaluates to zero. 
 We can also note that because $p'_1, \ldots, p'_m$ are the result of interreducing the original system of equations $p_1, \ldots, p_m$, for each original equation $p_i$, there are some polynomials $h_{i1}, \ldots, h_{im}$ such that $p_i = h_{i1}p'_1 + \ldots + h_{im}p'_m$. 
 Thus, a solution to the system of equations $p'_1, \ldots, p'_m$ is also a solution to the system of equations $p_1, \ldots, p_m$.
 
@@ -36,7 +35,7 @@ We formulate the problem as a mixed-integer linear program (MILP).
 
 ### Notation
 
-Let $P$ be the set of preprocessed polynomials, $F$ the set of factors and $V$ the set of variables. For $p \in P$, let $F_p \subseteq F$ be the factors of $p$. For $f \in F$, let $\mathrm{mon}(f)$ be its monomials and $\mathrm{vars}(f) \subseteq V$ the variables appearing in $f$. For a monomial $m$, let $\mathrm{vars}(m)$ be its variables and $\deg_x(m)$ its degree in $x$. Let $M^d_{f,x} = \{m \in \mathrm{mon}(f) : \deg_x(m) = d\}$.
+Let $P$ be the set of preprocessed polynomials, $F$ the set of factors and $V$ the set of variables. For $p \in P$, let $F_p \subseteq F$ be the factors of $p$. For $f \in F$, let $\mathrm{mon}(f)$ be its monomials and $\mathrm{vars}(f) \subseteq V$ the variables appearing in $f$. For a monomial $m$, let $\mathrm{vars}(m)$ be its variables and $\deg_x(m)$ its degree in $x$. Let $M^d_{f,x} = \{m \in \mathrm{mon}(f) : \deg_x(m) = d\}$ and $M^{[1,4]}_{f,x} = \bigcup_{d=1}^{4} M^d_{f,x} = \{m \in \mathrm{mon}(f) : 1 \le \deg_x(m) \le 4\}$.
 
 ### Variables
 
@@ -49,7 +48,7 @@ Auxiliary indicator variables (continuous in $[0, 1]$; pinned to $\{0,1\}$ by th
 
 - $\zeta_f \in [0, 1]$ for each $f \in F$. $\zeta_f = 1$ iff $f$ becomes identically zero after zeroing $\{v : z_v = 1\}$.
 - $y_p \in [0, 1]$ for each $p \in P$. $y_p = 1$ iff $p$ becomes identically zero after zeroing.
-- $a_{f, x, m} \in [0, 1]$ for each $(f, x) \in F \times V$ and each $m \in M^1_{f, x}$. $a_{f, x, m} = 1$ indicates that monomial $m$ (which has degree 1 in $x$) survives the zeroing.
+- $a_{f, x, m} \in [0, 1]$ for each $(f, x) \in F \times V$ and each $m \in M^{[1,4]}_{f, x}$. $a_{f, x, m} = 1$ indicates that monomial $m$ (which has degree between 1 and 4 in $x$) survives the zeroing.
 - $t_x \in [0, |V|]$ for each $x \in V$. Topological position of $x$, used to enforce acyclicity.
 
 ### Factor-zeroing definition
@@ -66,21 +65,21 @@ $$\zeta_f \le \sum_{v \in \mathrm{vars}(m)} z_v.$$
 
 $$\sum_{f \in F_p} \left( \zeta_f + \sum_{x \in V} s_{f, x} \right) \ge 1 \qquad \forall\, p \in P.$$
 
-**(C2) Linearity.** For each selected pair $(f, x)$, after zeroing, $f$ must be of degree at most $1$ in $x$ with at least one degree-$1$ monomial surviving.
+**(C2) Bounded degree.** For each selected pair $(f, x)$, after zeroing, $f$ must be of degree between 1 and 4 in $x$, with at least one monomial of degree 1–4 in $x$ surviving.
 
-(C2a) Every monomial of $f$ of degree $\ge 2$ in $x$ must be killed by some zeroed variable other than $x$. For each $(f, x) \in F \times V$ and each $m \in \mathrm{mon}(f)$ with $\deg_x(m) \ge 2$:
+(C2a) Every monomial of $f$ of degree $\ge 5$ in $x$ must be killed by some zeroed variable other than $x$. For each $(f, x) \in F \times V$ and each $m \in \mathrm{mon}(f)$ with $\deg_x(m) \ge 5$:
 
 $$s_{f, x} \le \sum_{v \in \mathrm{vars}(m) \setminus \{x\}} z_v.$$
 
-(C2b) A monomial $m$ of degree exactly $1$ in $x$ survives only if none of its non-$x$ variables are zeroed. For each $(f, x) \in F \times V$, each $m \in M^1_{f, x}$, and each $v \in \mathrm{vars}(m) \setminus \{x\}$:
+(C2b) A monomial $m$ of degree 1 to 4 in $x$ survives only if none of its non-$x$ variables are zeroed. For each $(f, x) \in F \times V$, each $m \in M^{[1,4]}_{f, x}$, and each $v \in \mathrm{vars}(m) \setminus \{x\}$:
 
 $$a_{f, x, m} \le 1 - z_v.$$
 
-(C2c) If $f$ is selected for $x$, at least one degree-$1$-in-$x$ monomial must survive. For each $(f, x) \in F \times V$:
+(C2c) If $f$ is selected for $x$, at least one monomial of degree 1–4 in $x$ must survive. For each $(f, x) \in F \times V$:
 
-$$s_{f, x} \le \sum_{m \in M^1_{f, x}} a_{f, x, m}.$$
+$$s_{f, x} \le \sum_{m \in M^{[1,4]}_{f, x}} a_{f, x, m}.$$
 
-(If $M^1_{f, x} = \emptyset$ — including the case $x \notin \mathrm{vars}(f)$ — this forces $s_{f, x} = 0$.)
+(If $M^{[1,4]}_{f, x} = \emptyset$ — including the case $x \notin \mathrm{vars}(f)$ — this forces $s_{f, x} = 0$.)
 
 **(C3) Acyclicity.** Use a topological-order encoding on the potential vertices. For each $(f, x) \in F \times V$ and each $x' \in \mathrm{vars}(f) \setminus \{x\}$:
 
@@ -92,7 +91,7 @@ When $s_{f, x} = 1$ this enforces $t_{x'} < t_x$ on every potential predecessor 
 
 $$\sum_{f \in F} s_{f, x} + z_x \le 1.$$
 
-**(C5) Monomial factors.** A factor $f$ with $|\mathrm{mon}(f)| = 1$ (i.e. $f$ is a single monomial) cannot rationally define any variable: the equation $f = 0$ merely forces some variable in the product to zero but does not single out any one variable. Therefore:
+**(C5) Monomial factors.** A factor $f$ with $|\mathrm{mon}(f)| = 1$ (i.e. $f$ is a single monomial) cannot algebraically define any variable: the equation $f = 0$ merely forces some variable in the product to zero but does not single out any one variable. Therefore:
 
 $$s_{f, x} = 0 \qquad \forall\, x \in V, \text{ whenever } |\mathrm{mon}(f)| = 1.$$
 
@@ -104,7 +103,7 @@ A polynomial $p$ becomes identically zero after zeroing iff at least one of its 
 
 $$y_p \le \sum_{f \in F_p} \zeta_f.$$
 
-The primary objective is to maximize the number of preprocessed polynomials that become identically zero. As a secondary (tiebreaking) objective, we maximize the number of **free variables** — variables that are neither selected ($x_i$) nor zeroed ($v_j$), i.e., the variables outside $\{x_1,\ldots,x_k,v_1,\ldots,v_l\}$ that act as free parameters in the rational parametrization.
+The primary objective is to maximize the number of preprocessed polynomials that become identically zero. As a secondary (tiebreaking) objective, we maximize the number of **free variables** — variables that are neither selected ($x_i$) nor zeroed ($v_j$), i.e., the variables outside $\{x_1,\ldots,x_k,v_1,\ldots,v_l\}$ that act as free parameters in the algebraic parametrization.
 
 The two objectives are combined with a weight $\varepsilon = \frac{1}{|V|+1}$ on the secondary term so that the secondary never overrides a unit difference in the primary (since the primary is integer-valued and the secondary term is bounded by $|V| \cdot \varepsilon < 1$):
 
