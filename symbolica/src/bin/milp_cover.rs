@@ -317,7 +317,17 @@ fn add_milp_variables(vars: &mut ProblemVariables, data: &ProblemData) -> MilpVa
 }
 
 fn objective(vars: &MilpVariables) -> Expression {
-    vars.y.iter().map(|v| Expression::from(*v)).sum()
+    let n = vars.z.len() as f64;
+    // Weight < 1/(n) so the secondary term never overrides a 1-unit primary difference.
+    let eps = 1.0 / (n + 1.0);
+    let primary: Expression = vars.y.iter().map(|v| Expression::from(*v)).sum();
+    let secondary: Expression = vars
+        .z
+        .iter()
+        .chain(vars.s.iter())
+        .map(|v| Expression::from(*v))
+        .sum();
+    primary - eps * secondary
 }
 
 fn add_factor_zero_constraints<M: SolverModel>(

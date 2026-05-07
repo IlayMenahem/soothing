@@ -104,6 +104,10 @@ A polynomial $p$ becomes identically zero after zeroing iff at least one of its 
 
 $$y_p \le \sum_{f \in F_p} \zeta_f.$$
 
-Maximize the number of preprocessed polynomials that become identically zero:
+The primary objective is to maximize the number of preprocessed polynomials that become identically zero. As a secondary (tiebreaking) objective, we maximize the number of **free variables** — variables that are neither selected ($x_i$) nor zeroed ($v_j$), i.e., the variables outside $\{x_1,\ldots,x_k,v_1,\ldots,v_l\}$ that act as free parameters in the rational parametrization.
 
-$$\max \; \sum_{p \in P} y_p.$$
+The two objectives are combined with a weight $\varepsilon = \frac{1}{|V|+1}$ on the secondary term so that the secondary never overrides a unit difference in the primary (since the primary is integer-valued and the secondary term is bounded by $|V| \cdot \varepsilon < 1$):
+
+$$\max \; \sum_{p \in P} y_p \;-\; \frac{1}{|V|+1}\!\left(\sum_{(f,x)\,\in\,\text{admissible}} s_{f,x} + \sum_{v \in V} z_v\right).$$
+
+Equivalently, ties in the primary objective are broken by minimizing the total number of selected and zeroed variables, i.e., maximizing the number of free parameters.
