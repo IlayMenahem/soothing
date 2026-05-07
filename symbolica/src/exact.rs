@@ -104,6 +104,26 @@ pub fn is_linear_in_exact(
     is_zero_exact(&q, &extended_map, &extended_syms)
 }
 
+/// `true` iff `expr`, viewed as a rational function, has numerator equal to the zero polynomial.
+///
+/// Unlike [`is_zero_exact`], this tolerates rational expressions (e.g. `1/π^2 * p`):
+/// only the numerator polynomial of `expr` matters for vanishing.
+pub fn is_numerator_zero_exact(
+    expr: &Atom,
+    sym_to_vid: &HashMap<Symbol, VarId>,
+    id_to_sym: &[Symbol],
+) -> Result<bool, ExactPredicateError> {
+    let expanded = expr.clone().expand();
+    let rp = expanded
+        .try_to_rational_polynomial::<_, _, u16>(
+            &Q,
+            &Z,
+            poly_var_map(&expanded, sym_to_vid, id_to_sym),
+        )
+        .map_err(ExactPredicateError::Conversion)?;
+    Ok(rp.numerator.is_zero())
+}
+
 /// `true` if `expr` represents a rational function whose denominator is not the zero polynomial.
 pub fn rhs_denominator_nonzero_exact(
     expr: &Atom,

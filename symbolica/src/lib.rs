@@ -20,7 +20,8 @@ pub use elimination_exact::{
     is_solution_nonzero_kappah_exact,
 };
 pub use exact::{
-    ExactPredicateError, is_linear_in_exact, is_zero_exact, rhs_denominator_nonzero_exact,
+    ExactPredicateError, is_linear_in_exact, is_numerator_zero_exact, is_zero_exact,
+    rhs_denominator_nonzero_exact,
 };
 pub use factor_prep::{
     ExtQ, PolyExtLex, Preprocessed, RationalField, ideal_ext_lex, interreduce_polys, preprocess,

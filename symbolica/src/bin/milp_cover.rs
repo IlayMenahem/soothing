@@ -28,7 +28,7 @@ use thiserror::Error;
 use symbolica_elim::atom_util::{parse_expression, substitute_symbol};
 use symbolica_elim::{
     ExactPredicateError, LoadedMathematicaSystem, PolyExtLex, SubstitutionMap, VarId,
-    default_systems_dir_from_manifest, is_zero_exact,
+    default_systems_dir_from_manifest, is_numerator_zero_exact, is_zero_exact,
     load_mathematica_system_from_path_with_var_names, preprocess, rhs_denominator_nonzero_exact,
 };
 
@@ -676,12 +676,10 @@ fn check_cover_parameterizes_original(
         }
         residual = residual.together().expand();
 
-        let vanishes =
-            is_zero_exact(&residual, &loaded.sym_to_vid, &loaded.id_to_sym).map_err(|source| {
-                ParameterizationError::ExactCheck {
-                    equation_index,
-                    source,
-                }
+        let vanishes = is_numerator_zero_exact(&residual, &loaded.sym_to_vid, &loaded.id_to_sym)
+            .map_err(|source| ParameterizationError::ExactCheck {
+                equation_index,
+                source,
             })?;
         if !vanishes {
             return Err(ParameterizationError::EquationDoesNotVanish {
@@ -730,11 +728,12 @@ fn check_cover_preprocessed(
             }
             residual = residual.together().expand();
 
-            let vanishes = is_zero_exact(&residual, &loaded.sym_to_vid, &loaded.id_to_sym)
-                .map_err(|source| ParameterizationError::ExactCheck {
-                    equation_index: poly_idx,
-                    source,
-                })?;
+            let vanishes =
+                is_numerator_zero_exact(&residual, &loaded.sym_to_vid, &loaded.id_to_sym)
+                    .map_err(|source| ParameterizationError::ExactCheck {
+                        equation_index: poly_idx,
+                        source,
+                    })?;
             if vanishes {
                 covered = true;
                 break;

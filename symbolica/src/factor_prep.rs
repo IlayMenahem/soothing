@@ -190,8 +190,15 @@ pub fn ideal_ext_lex(
         .collect()
 }
 
-/// Fixpoint interreduction: each polynomial is replaced by its remainder
-/// modulo all the others until nothing changes.
+/// Fixpoint interreduction using Gauss-Seidel sequential updates: each
+/// polynomial is reduced modulo all others and written back immediately, so
+/// later reductions in the same pass see already-updated values.
+///
+/// This guarantees the polynomial ideal is preserved at every step: replacing
+/// `p_i` with `p_i - q·p_j` keeps `p_i = (p_i - q·p_j) + q·p_j` in the
+/// span of the new set, so `⟨old⟩ = ⟨new⟩` after each single substitution.
+/// The simultaneous (Jacobi) approach lacks this guarantee and can silently
+/// shrink the ideal.
 pub fn interreduce_polys(mut polys: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
     if polys.is_empty() {
         return polys;
@@ -199,25 +206,24 @@ pub fn interreduce_polys(mut polys: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
     MultivariatePolynomial::unify_variables_list(&mut polys);
 
     loop {
-        let n = polys.len();
-        let next: Vec<PolyExtLex> = (0..n)
-            .map(|i| {
-                let others: Vec<PolyExtLex> = polys
-                    .iter()
-                    .enumerate()
-                    .filter(|(j, _)| *j != i)
-                    .map(|(_, p)| p.clone())
-                    .filter(|p| !p.is_zero())
-                    .collect();
-                polys[i].reduce(&others)
-            })
-            .collect();
-
-        if next == polys {
-            return next;
+        let mut changed = false;
+        for i in 0..polys.len() {
+            let others: Vec<PolyExtLex> = polys
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .map(|(_, p)| p.clone())
+                .filter(|p| !p.is_zero())
+                .collect();
+            let reduced = polys[i].reduce(&others);
+            if reduced != polys[i] {
+                polys[i] = reduced;
+                changed = true;
+            }
         }
-
-        polys = next;
+        if !changed {
+            return polys;
+        }
     }
 }
 
@@ -313,6 +319,27 @@ mod tests {
     #[test]
     fn interreduce_empty_is_empty() {
         assert!(interreduce_polys(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn interreduce_preserves_ideal_for_symmetric_pair() {
+        // With Jacobi (simultaneous) updates, both x+y and x-y are reduced
+        // against each other at the same time, giving {2y, -2y}, then {0, 0},
+        // which loses x entirely — the ideal shrinks from ⟨x,y⟩ to ⟨y⟩ to 0.
+        // Gauss-Seidel updates x+y → 2y first, then reduces x-y by 2y and
+        // finds x-y unchanged, so the result is {2y, x-y} — both generators
+        // of ⟨x,y⟩ survive.
+        activate_license();
+        let loaded = load("{x + y == 0, x - y == 0}");
+        let field = AlgebraicExtension::new_complex(Q);
+        let var_order = variable_order(&loaded.id_to_sym);
+        let polys = ideal_ext_lex(&loaded.system, &field, var_order).expect("ideal_ext_lex");
+        let reduced = interreduce_polys(polys);
+        let non_zero_count = reduced.iter().filter(|p| !p.is_zero()).count();
+        assert_eq!(
+            non_zero_count, 2,
+            "both generators of <x,y> must survive; got {non_zero_count} non-zero polynomial(s)"
+        );
     }
 
     #[test]
