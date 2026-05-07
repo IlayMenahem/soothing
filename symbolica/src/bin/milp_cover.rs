@@ -316,17 +316,16 @@ fn add_milp_variables(vars: &mut ProblemVariables, data: &ProblemData) -> MilpVa
     }
 }
 
+fn sum_vars(vars: &[Variable]) -> Expression {
+    vars.iter().map(|v| Expression::from(*v)).sum()
+}
+
 fn objective(vars: &MilpVariables) -> Expression {
-    let n = vars.z.len() as f64;
-    // Weight < 1/(n) so the secondary term never overrides a 1-unit primary difference.
+    let n = (vars.z.len() + vars.s.len()) as f64;
+    // eps*(|z|+|s|) < 1: secondary tiebreaker never overrides a 1-unit primary difference.
     let eps = 1.0 / (n + 1.0);
-    let primary: Expression = vars.y.iter().map(|v| Expression::from(*v)).sum();
-    let secondary: Expression = vars
-        .z
-        .iter()
-        .chain(vars.s.iter())
-        .map(|v| Expression::from(*v))
-        .sum();
+    let primary = sum_vars(&vars.y);
+    let secondary = sum_vars(&vars.z) + sum_vars(&vars.s);
     primary - eps * secondary
 }
 
@@ -424,7 +423,7 @@ fn add_linearity_constraints<M: SolverModel>(
         }
 
         // C2c: at least one degree-1 monomial must survive.
-        let surviving: Expression = vars.a[k].iter().map(|v| Expression::from(*v)).sum();
+        let surviving = sum_vars(&vars.a[k]);
         model = model.with(constraint!(vars.s[k] - surviving <= 0));
     }
     model
@@ -451,7 +450,7 @@ fn add_nonzero_rhs_constraints<M: SolverModel>(
                 model = model.with(constraint!(vars.b[k][slot] + vars.z[vl] <= 1));
             }
         }
-        let surviving: Expression = vars.b[k].iter().map(|v| Expression::from(*v)).sum();
+        let surviving = sum_vars(&vars.b[k]);
         model = model.with(constraint!(vars.s[k] - surviving <= 0));
     }
     model

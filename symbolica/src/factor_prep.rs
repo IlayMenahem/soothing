@@ -211,9 +211,8 @@ pub fn interreduce_polys(mut polys: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
             let others: Vec<PolyExtLex> = polys
                 .iter()
                 .enumerate()
-                .filter(|(j, _)| *j != i)
+                .filter(|(j, p)| *j != i && !p.is_zero())
                 .map(|(_, p)| p.clone())
-                .filter(|p| !p.is_zero())
                 .collect();
             let reduced = polys[i].reduce(&others);
             if reduced != polys[i] {
