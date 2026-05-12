@@ -126,8 +126,7 @@ fn min_fill_order(variable_count: usize, supports: &[Vec<usize>]) -> Vec<usize> 
                             active_supports[di]
                                 .iter()
                                 .filter(|&&v| {
-                                    v != selected
-                                        && active_supports[ei].binary_search(&v).is_err()
+                                    v != selected && active_supports[ei].binary_search(&v).is_err()
                                 })
                                 .count()
                         })

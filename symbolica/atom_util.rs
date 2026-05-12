@@ -45,4 +45,3 @@ pub fn vars_in_atom(expr: &Atom, sym_to_vid: &HashMap<Symbol, VarId>) -> HashSet
         .filter_map(|s| sym_to_vid.get(&s).copied())
         .collect()
 }
-
