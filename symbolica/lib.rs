@@ -4,6 +4,7 @@ pub mod atom_util;
 pub mod exact;
 pub mod factor_prep;
 pub mod mathematica;
+pub mod milp_cover;
 pub mod substitution;
 pub mod system;
 pub mod var_id;
