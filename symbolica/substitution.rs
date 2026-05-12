@@ -50,21 +50,11 @@ impl SubstitutionMap {
         self.bindings.get(&v)
     }
 
-    #[must_use]
-    pub fn contains(&self, v: VarId) -> bool {
-        self.bindings.contains_key(&v)
-    }
-
     pub fn insert(&mut self, v: VarId, rhs: Atom) {
         if self.bindings.insert(v, rhs).is_some() {
             self.insertion.retain(|x| *x != v);
         }
         self.insertion.push(v);
-    }
-
-    #[must_use]
-    pub fn insertion_order(&self) -> &[VarId] {
-        &self.insertion
     }
 
     pub fn replay_order(

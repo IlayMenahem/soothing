@@ -27,7 +27,7 @@ pub fn parse_expression(data: String) -> Result<Atom, String> {
 }
 
 /// Parse a single identifier as an atom (one variable).
-pub fn parse_identifier(name: &str) -> Result<Atom, String> {
+pub(crate) fn parse_identifier(name: &str) -> Result<Atom, String> {
     parse_expression(name.to_string())
 }
 
@@ -39,10 +39,9 @@ pub fn substitute_symbol(expr: &Atom, x: Symbol, rhs: Atom) -> Atom {
 }
 
 /// Variables from `expr` that appear in `sym_to_vid`.
-pub fn vars_in_atom(expr: &Atom, sym_to_vid: &HashMap<Symbol, VarId>) -> HashSet<VarId> {
+pub(crate) fn vars_in_atom(expr: &Atom, sym_to_vid: &HashMap<Symbol, VarId>) -> HashSet<VarId> {
     expr.get_all_symbols(false)
         .into_iter()
         .filter_map(|s| sym_to_vid.get(&s).copied())
         .collect()
 }
-
