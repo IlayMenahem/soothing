@@ -80,15 +80,15 @@ fn main() {
     };
     println!(
         "  {} non-trivial polynomial(s), elapsed {:?}",
-        pre.factor_groups.len(),
+        pre.len(),
         t_pre.elapsed()
     );
-    if pre.factor_groups.is_empty() {
+    if pre.is_empty() {
         println!("Nothing to cover — all polynomials reduced to zero.");
         return;
     }
 
-    let data = build_problem(pre.factor_groups, &loaded);
+    let data = build_problem(pre, &loaded);
     println!(
         "  |F|={}, |V|={}, |A|={}",
         data.factors.len(),

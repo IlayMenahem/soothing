@@ -238,7 +238,7 @@ fn equation_strings_from_mathematica(text: &str) -> Result<Vec<String>, Mathemat
 }
 
 /// One [`Symbol`] per `var_names` entry (parse order must match equation parsing).
-pub fn symbols_for_var_names(var_names: &[String]) -> Result<Vec<Symbol>, MathematicaLoadError> {
+fn symbols_for_var_names(var_names: &[String]) -> Result<Vec<Symbol>, MathematicaLoadError> {
     let parsed: Vec<Result<Symbol, MathematicaLoadError>> = (0..var_names.len())
         .into_par_iter()
         .map(|i| {

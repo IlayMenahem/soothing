@@ -202,7 +202,7 @@ mod tests {
         let loaded = load_mathematica_system_from_str_with_var_names(source).expect("load");
         let field = AlgebraicExtension::new_complex(Q);
         let pre = preprocess(&loaded, &field).expect("preprocess");
-        let data = build_problem(pre.factor_groups, &loaded);
+        let data = build_problem(pre, &loaded);
         (loaded, data)
     }
 
@@ -227,11 +227,11 @@ mod tests {
             .expect("load");
         let field = AlgebraicExtension::new_complex(Q);
         let mut pre = preprocess(&loaded, &field).expect("preprocess");
-        assert_eq!(pre.factor_groups.len(), 2);
-        let shared = pre.factor_groups[0][0].clone();
-        pre.factor_groups[1].push(shared);
+        assert_eq!(pre.len(), 2);
+        let shared = pre[0][0].clone();
+        pre[1].push(shared);
 
-        let data = build_problem(pre.factor_groups, &loaded);
+        let data = build_problem(pre, &loaded);
         assert_eq!(
             data.factors.len(),
             2,
