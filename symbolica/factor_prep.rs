@@ -18,8 +18,7 @@ use symbolica::poly::{LexOrder, PolyVariable, polynomial::MultivariatePolynomial
 use crate::mathematica::LoadedMathematicaSystem;
 use crate::system::PolynomialSystem;
 
-pub type RationalField = Q;
-pub type ExtQ = AlgebraicExtension<RationalField>;
+pub type ExtQ = AlgebraicExtension<Q>;
 pub type PolyExtLex = MultivariatePolynomial<ExtQ, u16, LexOrder>;
 
 #[must_use]
@@ -126,8 +125,7 @@ fn min_fill_order(variable_count: usize, supports: &[Vec<usize>]) -> Vec<usize> 
                             active_supports[di]
                                 .iter()
                                 .filter(|&&v| {
-                                    v != selected
-                                        && active_supports[ei].binary_search(&v).is_err()
+                                    v != selected && active_supports[ei].binary_search(&v).is_err()
                                 })
                                 .count()
                         })
@@ -226,13 +224,6 @@ pub fn interreduce_polys(mut polys: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
     }
 }
 
-/// Preprocessed view of the input system: for each (non-trivial) original
-/// polynomial, the list of its non-constant irreducible factors in
-/// [`LexOrder`]. Zero polynomials are dropped entirely.
-pub struct Preprocessed {
-    pub factor_groups: Vec<Vec<PolyExtLex>>,
-}
-
 fn non_constant_factors(poly: PolyExtLex) -> Vec<PolyExtLex> {
     poly.factor()
         .into_iter()
@@ -252,15 +243,16 @@ fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> {
         .collect()
 }
 
-pub fn preprocess(loaded: &LoadedMathematicaSystem, field: &ExtQ) -> Result<Preprocessed, String> {
+pub fn preprocess(
+    loaded: &LoadedMathematicaSystem,
+    field: &ExtQ,
+) -> Result<Vec<Vec<PolyExtLex>>, String> {
     let var_order = heuristic_variable_order(loaded);
     let polys = ideal_ext_lex(&loaded.system, field, var_order)
         .map_err(|e| format!("equation -> polynomial over AlgebraicExtension<Q>: {e}"))?;
     let polys = interreduce_polys(polys);
 
-    Ok(Preprocessed {
-        factor_groups: factor_groups_from_polys(polys),
-    })
+    Ok(factor_groups_from_polys(polys))
 }
 
 #[cfg(test)]
@@ -347,9 +339,9 @@ mod tests {
         let loaded = load("{q == q + 1}");
         let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
         assert!(
-            pre.factor_groups.is_empty(),
+            pre.is_empty(),
             "constant-only system should produce no factor groups, got {:?}",
-            pre.factor_groups.len()
+            pre.len()
         );
     }
 
@@ -357,8 +349,8 @@ mod tests {
     fn preprocess_factors_are_non_constant_and_non_zero() {
         let loaded = load("{(x + 1)^2 * (y + 2) == 0, (x^2 + 1) == 0}");
         let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
-        assert!(!pre.factor_groups.is_empty());
-        for group in &pre.factor_groups {
+        assert!(!pre.is_empty());
+        for group in &pre {
             assert!(!group.is_empty());
             for f in group {
                 assert!(!f.is_constant());
@@ -371,8 +363,8 @@ mod tests {
     fn preprocess_returns_one_group_per_nonzero_equation() {
         let loaded = load("{x + 1 == 0, y + 2 == 0, z + 3 == 0}");
         let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
-        assert_eq!(pre.factor_groups.len(), 3);
-        for group in &pre.factor_groups {
+        assert_eq!(pre.len(), 3);
+        for group in &pre {
             assert_eq!(group.len(), 1);
         }
     }
