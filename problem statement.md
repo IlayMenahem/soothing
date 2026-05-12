@@ -29,6 +29,10 @@ We can also note that because $p'_1, \ldots, p'_m$ are the result of interreduci
 Thus, a solution to the system of equations $p'_1, \ldots, p'_m$ is also a solution to the system of equations $p_1, \ldots, p_m$.
 
 
+### Measuring capability
+
+If the method finds tuples $(f_1, x_1), (f_2, x_2), \ldots, (f_k, x_k)$ and variables to zero $v_1, \ldots, v_l$ such that the conditions are met, we can take a point in the solution $p$ and find the full dimension of the solution by computing #variables - rank of the Jacobian of the system at $p$.
+
 ## Solving the problem
 
 We formulate the problem as a mixed-integer linear program (MILP).
