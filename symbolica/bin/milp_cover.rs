@@ -14,8 +14,8 @@ use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
 
 use polynomial_milp::milp_cover::{
-    ParameterizationError, build_problem, check_cover_parameterizes_original,
-    check_cover_preprocessed, print_cover, print_variable_sets, solve_milp,
+    ParameterizationError, build_problem, certify_cover_groebner, check_cover_preprocessed,
+    print_certification, print_cover, print_variable_sets, solve_milp,
 };
 use polynomial_milp::{
     default_systems_dir_from_manifest, load_mathematica_system_from_path_with_var_names, preprocess,
@@ -138,20 +138,14 @@ fn main() {
         }
     }
 
-    match check_cover_parameterizes_original(&loaded, &data, &cover) {
-        Ok(report) => println!(
-            "\nParameterization check: {} original equation(s) vanish after {} substitution(s).",
-            report.checked_equations, report.binding_count
-        ),
-        Err(ParameterizationError::AlgebraicSubstitutionNotImplemented { variable, degree }) => {
-            println!(
-                "\nNote: parameterization check skipped — degree-{degree} algebraic solve for \
-                 `{variable}` is not yet implemented."
-            );
+    let t_cert = Instant::now();
+    match certify_cover_groebner(&loaded, &data, &cover) {
+        Ok(report) => {
+            print_certification(&report);
+            println!("  (certification elapsed {:?})", t_cert.elapsed());
         }
-        Err(error) => {
-            eprintln!("\nparameterization check failed: {error}");
-            std::process::exit(5);
+        Err(e) => {
+            eprintln!("\nSymbolic certification failed: {e}");
         }
     }
 

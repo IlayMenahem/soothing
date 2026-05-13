@@ -7,11 +7,15 @@
 //!   correctness checks against the original / preprocessed systems.
 //! - [`report`]: human-readable console output.
 
+pub mod certification;
 pub mod milp;
 pub mod parameterization;
 pub mod problem;
 pub mod report;
 
+pub use certification::{
+    CertificationError, CertificationReport, certify_cover_groebner, print_certification,
+};
 pub use milp::{Cover, solve_milp};
 pub use parameterization::{
     ParameterizationError, ParameterizationReport, PreprocessedCheckReport,
