@@ -272,7 +272,7 @@ fn run_worker_milp(path: &Path) -> ! {
 enum SubprocessResult {
     Stdout(String),
     Timeout,
-    Crashed(String),
+    Crashed,
 }
 
 /// Run `self_exe` with `args`, killing it after `timeout` (best-effort via SIGKILL).
@@ -288,7 +288,7 @@ fn run_subprocess(self_exe: &Path, args: &[&str], timeout: Duration) -> Subproce
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return SubprocessResult::Crashed(format!("spawn: {e}")),
+        Err(_) => return SubprocessResult::Crashed,
     };
 
     let id = child.id();
@@ -308,26 +308,18 @@ fn run_subprocess(self_exe: &Path, args: &[&str], timeout: Duration) -> Subproce
     if let Some(mut s) = child.stdout.take() {
         let _ = s.read_to_string(&mut stdout);
     }
-    let mut stderr = String::new();
-    if let Some(mut s) = child.stderr.take() {
-        let _ = s.read_to_string(&mut stderr);
-    }
-
     match wait_result {
         Ok(status) if status.success() => SubprocessResult::Stdout(stdout),
         Ok(status) if status.code().is_none() => SubprocessResult::Timeout,
-        Ok(status) => {
-            let preview = stderr.trim().lines().next().unwrap_or("").to_string();
-            SubprocessResult::Crashed(format!("exit {:?}: {}", status.code(), preview))
-        }
-        Err(e) => SubprocessResult::Crashed(format!("wait: {e}")),
+        Ok(_) => SubprocessResult::Crashed,
+        Err(_) => SubprocessResult::Crashed,
     }
 }
 
 enum Timing {
     Ok { elapsed: Duration, basis_len: usize },
     Timeout,
-    Error(String),
+    Error,
 }
 
 enum MilpOutcome {
@@ -347,7 +339,7 @@ enum MilpOutcome {
     },
     Empty,
     Timeout,
-    Error(String),
+    Error,
 }
 
 struct Row {
@@ -362,7 +354,7 @@ fn groebner_display(t: &Timing) -> String {
     match t {
         Timing::Ok { elapsed, .. } => format!("{:.3}", elapsed.as_secs_f64()),
         Timing::Timeout => "TIMEOUT".to_string(),
-        Timing::Error(_) => "ERR".to_string(),
+        Timing::Error => "ERR".to_string(),
     }
 }
 
@@ -372,7 +364,7 @@ fn milp_status(o: &MilpOutcome) -> &'static str {
         MilpOutcome::Infeasible { .. } => "infeasible",
         MilpOutcome::Empty => "empty",
         MilpOutcome::Timeout => "timeout",
-        MilpOutcome::Error(_) => "error",
+        MilpOutcome::Error => "error",
     }
 }
 
@@ -407,7 +399,7 @@ fn winner(row: &Row) -> &'static str {
                 _ => "n/a",
             };
         }
-        Timing::Error(_) => return "n/a",
+        Timing::Error => return "n/a",
     };
     match &row.milp {
         MilpOutcome::Ok { solve, .. } => {
@@ -463,7 +455,7 @@ fn row_to_csv_line(row: &Row) -> String {
     let (gb_secs, gb_status) = match &row.groebner {
         Timing::Ok { elapsed, .. } => (elapsed.as_secs_f64().to_string(), "ok"),
         Timing::Timeout => (String::new(), "timeout"),
-        Timing::Error(_) => (String::new(), "error"),
+        Timing::Error => (String::new(), "error"),
     };
     let (polys, coverage, free, sel, zero) = match &row.milp {
         MilpOutcome::Ok { polys, coverage, free_params, selected, zeroed, .. } => {
@@ -516,8 +508,7 @@ fn collect_inputs(dir: &Path) -> Vec<PathBuf> {
 fn parse_groebner_stdout(stdout: &str) -> Result<WorkerGroebnerResult, String> {
     stdout
         .lines()
-        .filter(|l| l.trim_start().starts_with('{'))
-        .last()
+        .rfind(|l| l.trim_start().starts_with('{'))
         .ok_or_else(|| "no JSON line on stdout".to_string())
         .and_then(|line| serde_json::from_str(line).map_err(|e| format!("parse: {e}")))
 }
@@ -525,8 +516,7 @@ fn parse_groebner_stdout(stdout: &str) -> Result<WorkerGroebnerResult, String> {
 fn parse_milp_stdout(stdout: &str) -> Result<WorkerMilpResult, String> {
     stdout
         .lines()
-        .filter(|l| l.trim_start().starts_with('{'))
-        .last()
+        .rfind(|l| l.trim_start().starts_with('{'))
         .ok_or_else(|| "no JSON line on stdout".to_string())
         .and_then(|line| serde_json::from_str(line).map_err(|e| format!("parse: {e}")))
 }
@@ -543,11 +533,11 @@ fn run_groebner_via_subprocess(self_exe: &Path, path: &Path, timeout: Duration) 
                 elapsed: Duration::from_secs_f64(r.elapsed_secs),
                 basis_len: r.basis_len,
             },
-            Ok(r) => Timing::Error(r.error.unwrap_or_else(|| "worker error".into())),
-            Err(e) => Timing::Error(e),
+            Ok(_) => Timing::Error,
+            Err(_) => Timing::Error,
         },
         SubprocessResult::Timeout => Timing::Timeout,
-        SubprocessResult::Crashed(e) => Timing::Error(e),
+        SubprocessResult::Crashed => Timing::Error,
     }
 }
 
@@ -574,12 +564,12 @@ fn run_milp_via_subprocess(self_exe: &Path, path: &Path, timeout: Duration) -> M
                     polys: r.polys,
                 },
                 "empty" => MilpOutcome::Empty,
-                _ => MilpOutcome::Error(r.error.unwrap_or_else(|| "worker error".into())),
+                _ => MilpOutcome::Error,
             },
-            Err(e) => MilpOutcome::Error(e),
+            Err(_) => MilpOutcome::Error,
         },
         SubprocessResult::Timeout => MilpOutcome::Timeout,
-        SubprocessResult::Crashed(e) => MilpOutcome::Error(e),
+        SubprocessResult::Crashed => MilpOutcome::Error,
     }
 }
 
@@ -603,17 +593,14 @@ fn process_file(
 
     let groebner = match (!no_cache).then(|| cache_key(path)).flatten() {
         Some(k) => match cache_load(&k) {
-            Some(c) => {
-                let t = match c.status.as_str() {
-                    "ok" => Timing::Ok {
-                        elapsed: Duration::from_secs_f64(c.elapsed_secs),
-                        basis_len: c.basis_len,
-                    },
-                    "timeout" => Timing::Timeout,
-                    _ => Timing::Error("cached-error".into()),
-                };
-                t
-            }
+            Some(c) => match c.status.as_str() {
+                "ok" => Timing::Ok {
+                    elapsed: Duration::from_secs_f64(c.elapsed_secs),
+                    basis_len: c.basis_len,
+                },
+                "timeout" => Timing::Timeout,
+                _ => Timing::Error,
+            },
             None => {
                 let t = run_groebner_via_subprocess(self_exe, path, timeout);
                 let cached = match &t {
@@ -627,7 +614,7 @@ fn process_file(
                         status: "timeout".into(),
                         basis_len: 0,
                     }),
-                    Timing::Error(_) => None,
+                    Timing::Error => None,
                 };
                 if let Some(c) = cached {
                     cache_store(&k, &c);
