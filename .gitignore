@@ -6,18 +6,13 @@
 *.blg
 *.synctex.gz
 *.out
-.DS_Store
 
-examples.md
-res
 systems/
-scripts/
-!/scripts/
-!/scripts/run_milp_cover_all.py
 
 temp.**
 *.prof
 *.lock
+.DS_Store
 
 *.egg-info/
 __pycache__/

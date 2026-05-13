@@ -22,15 +22,26 @@ References (per family):
 from __future__ import annotations
 
 import argparse
+import itertools
 import math
 import random
 import re
 import sys
-import itertools
 from pathlib import Path
 from typing import Callable, Sequence
 
-from sympy import Expr, Integer, Matrix, Rational, Symbol, expand, prod, signsimp, symbols
+from sympy import (
+    Expr,
+    Integer,
+    Matrix,
+    Rational,
+    Symbol,
+    expand,
+    prod,
+    signsimp,
+    symbols,
+)
+
 
 def sympy_to_dag_string(expr: Expr) -> str:
     """Emit syntax compatible with ``soothing-linear`` rational DAG: ``^`` for powers, ``/`` for divide."""
@@ -49,7 +60,7 @@ def rules_from_equations(equations: Sequence[Expr]) -> str:
     for eq in equations:
         rhs = sympy_to_dag_string(expand(eq))
         parts.append(f"0 -> ({rhs})")
-    
+
     return ", ".join(parts)
 
 
@@ -60,7 +71,7 @@ def cyclic(n: int) -> list[Expr]:
 
     z = [Symbol(f"z{i}") for i in range(1, n + 1)]
     eqs: list[Expr] = []
-    
+
     for m in range(0, n - 1):
         s: Expr = Integer(0)
         for j in range(1, n + 1):
@@ -72,7 +83,7 @@ def cyclic(n: int) -> list[Expr]:
             s += term
         eqs.append(s)
     eqs.append(prod(z) - 1)
-    
+
     return eqs
 
 
@@ -80,10 +91,10 @@ def katsura(n: int) -> list[Expr]:
     """Katsura-(n) PoSSo formulation: variables x0..xn (n+1 vars), n+1 equations."""
     if n < 1:
         raise ValueError("katsura requires n >= 1")
-    
+
     x = [Symbol(f"x{i}") for i in range(0, n + 1)]
     eqs: list[Expr] = []
-    
+
     for m in range(0, n):
         s: Expr = Integer(0)
         for l in range(-n, n + 1):
@@ -91,7 +102,7 @@ def katsura(n: int) -> list[Expr]:
                 s += x[abs(l)] * x[abs(m - l)]
         eqs.append(s - x[m])
     eqs.append(x[0] + 2 * sum(x[i] for i in range(1, n + 1)) - 1)
-    
+
     return eqs
 
 
@@ -99,7 +110,7 @@ def noonburg(k: int) -> list[Expr]:
     """Noonburg benchmark: x_i * (sum_j x_j^2 - x_i^2 - 11/10) + 1 = 0."""
     if k < 1:
         raise ValueError("noonburg requires k >= 1")
-    
+
     xs = [Symbol(f"x{i}") for i in range(1, k + 1)]
     sum_sq = sum(t**2 for t in xs)
     return [x_i * (sum_sq - x_i**2 - Rational(11, 10)) + 1 for x_i in xs]
@@ -109,10 +120,10 @@ def eco(n: int) -> list[Expr]:
     """Morgan economics Eco-n (Verschelde demo eco5, eco6, …). Variables x1..xn."""
     if n < 2:
         raise ValueError("eco requires n >= 2")
-    
+
     xs = [Symbol(f"x{i}") for i in range(1, n + 1)]
     eqs: list[Expr] = []
-    
+
     for e in range(0, n - 2):
         s = xs[e]
         for j in range(n - 2 - e):
@@ -124,7 +135,7 @@ def eco(n: int) -> list[Expr]:
             eqs.append(prod_s - Integer(e + 1))
     eqs.append(xs[n - 2] * xs[n - 1] - Integer(n - 1))
     eqs.append(sum(xs[0 : n - 1]) + Integer(1))
-    
+
     return eqs
 
 
@@ -141,7 +152,7 @@ def nash_2x2() -> list[Expr]:
     c = ((-1, 1), (1, -1))
     eq_row = r[0][0] * q + r[0][1] * (1 - q) - (r[1][0] * q + r[1][1] * (1 - q))
     eq_col = c[0][0] * p + c[1][0] * (1 - p) - (c[0][1] * p + c[1][1] * (1 - p))
-    
+
     return [expand(eq_row), expand(eq_col)]
 
 
@@ -149,16 +160,16 @@ def adjacent_minors(rows: int, cols: int) -> list[Expr]:
     """Vanishing adjacent 2×2 minors; variables m_i_j for entries."""
     if rows < 2 or cols < 2:
         raise ValueError("adjacent_minors requires rows >= 2 and cols >= 2")
-    
+
     m = [[Symbol(f"m_{i}_{j}") for j in range(1, cols + 1)] for i in range(1, rows + 1)]
-    
+
     eqs: list[Expr] = []
     for i in range(rows - 1):
         for j in range(cols - 1):
             a, b = m[i][j], m[i][j + 1]
             c2, d = m[i + 1][j], m[i + 1][j + 1]
             eqs.append(expand(a * d - b * c2))
-    
+
     return eqs
 
 
@@ -166,13 +177,158 @@ def sparse_toric(n: int) -> list[Expr]:
     """Sparse binomial cycle: x_i^2 * x_{i+1} - 1 (indices mod n)."""
     if n < 2:
         raise ValueError("sparse_toric requires n >= 2")
-    
+
     xs = [Symbol(f"t{i}") for i in range(1, n + 1)]
     eqs: list[Expr] = []
-    
+
     for i in range(n):
         eqs.append(xs[i] ** 2 * xs[(i + 1) % n] - 1)
-    
+
+    return eqs
+
+
+def spin_network_chain(n: int, *, seed: int = 0) -> list[Expr]:
+    """
+    Spin network chain inspired by SU(2) recoupling in loop quantum gravity.
+
+    n trivalent vertices in a chain.  Variables: chain spins e1..e_{n+1} and
+    arm spins a1..a_n.  Each vertex equation encodes the shifted triangle
+    inequality (physical regime with non-zero background spin):
+
+        (e_i + e_{i+1} - a_i + c1)(e_i - e_{i+1} + a_i + c2)(-e_i + e_{i+1} + a_i + c3) = 0
+
+    where c1, c2, c3 are non-zero random integers.  The constant term c1*c2*c3 ≠ 0
+    prevents zeroing variables from making any equation identically zero, so the
+    MILP must select one linear factor per vertex.
+
+    MILP solution: defines a_i linearly in terms of e_i, e_{i+1} (degree-1,
+    so the parameterization check fully verifies).
+    Free parameters: all n+1 chain spins e1..e_{n+1}.
+
+    Gröbner basis becomes infeasible around n >= 7 once the generic (non-zero)
+    constants break the accidental Gröbner-form structure of the homogeneous case.
+    """
+    if n < 1:
+        raise ValueError("spin_network_chain requires n >= 1")
+    rng = random.Random(seed)
+    nonzero = [c for c in range(-4, 5) if c != 0]
+    chain = [Symbol(f"e{i}") for i in range(1, n + 2)]
+    arms = [Symbol(f"a{i}") for i in range(1, n + 1)]
+    eqs: list[Expr] = []
+    for i in range(n):
+        e1, e2, a = chain[i], chain[i + 1], arms[i]
+        c1, c2, c3 = rng.choice(nonzero), rng.choice(nonzero), rng.choice(nonzero)
+        eqs.append(
+            expand((e1 + e2 - a + c1) * (e1 - e2 + a + c2) * (-e1 + e2 + a + c3))
+        )
+    return eqs
+
+
+def factored_chain(n: int, *, seed: int = 0) -> list[Expr]:
+    """
+    n equations in n+1 variables x1..x_{n+1}.
+
+    Equation i = (a*x_i + b*x_{i+1} + c) * (d*x_i + e*x_{i+1} + f) where the
+    two linear factors are non-proportional, so symbolica's factorer recovers
+    both.  The acyclic chain structure (x_1 <- x_2 <- ... <- x_n, with x_{n+1}
+    free) means the MILP cover selects one linear factor per equation and fully
+    parametrizes the solution in one free parameter.
+
+    Gröbner basis is infeasible for n >= 20 because the product structure
+    creates 2^n solution components that the basis must simultaneously
+    represent.
+    """
+    if n < 2:
+        raise ValueError("factored_chain requires n >= 2")
+    rng = random.Random(seed)
+    xs = [Symbol(f"x{i}") for i in range(1, n + 2)]
+    nonzero = [c for c in range(-3, 4) if c != 0]
+    eqs: list[Expr] = []
+    for i in range(n):
+        a = rng.randint(1, 4)
+        b = rng.choice(nonzero)
+        c = rng.randint(-5, 5)
+        while True:
+            d = rng.choice(nonzero)
+            e = rng.randint(1, 4)
+            if a * e != b * d:
+                break
+        f_const = rng.randint(-5, 5)
+        f1 = a * xs[i] + b * xs[i + 1] + c
+        f2 = d * xs[i] + e * xs[i + 1] + f_const
+        eqs.append(expand(f1 * f2))
+    return eqs
+
+
+def random_factored(
+    n_vars: int, n_eqs: int, *, seed: int, vars_per_factor: int = 3
+) -> list[Expr]:
+    """
+    Random sparse factored system: n_vars variables (x1..x_{n_vars}), n_eqs
+    equations.  Each equation is a product of two random linear factors, each
+    involving vars_per_factor distinct variables chosen uniformly at random.
+
+    NOTE: purely random variable selection often creates cyclic dependencies in
+    the factor graph, making the MILP infeasible.  Use random_factored_dag for
+    a version that guarantees an acyclic cover.
+    """
+    if n_vars < vars_per_factor:
+        raise ValueError(
+            f"random_factored requires n_vars >= vars_per_factor ({vars_per_factor})"
+        )
+    if n_eqs < 1:
+        raise ValueError("random_factored requires n_eqs >= 1")
+    rng = random.Random(seed)
+    xs = [Symbol(f"x{i}") for i in range(1, n_vars + 1)]
+    nonzero = [c for c in range(-3, 4) if c != 0]
+    eqs: list[Expr] = []
+    for _ in range(n_eqs):
+        factors: list[Expr] = []
+        for _ in range(2):
+            chosen = rng.sample(xs, vars_per_factor)
+            coeffs = [rng.choice(nonzero) for _ in chosen]
+            const = rng.randint(-5, 5)
+            factors.append(sum(c * x for c, x in zip(coeffs, chosen)) + const)
+        eqs.append(expand(prod(factors)))
+    return eqs
+
+
+def random_factored_dag(
+    n_vars: int, n_eqs: int, *, seed: int, fan_in: int = 3
+) -> list[Expr]:
+    """
+    Random sparse factored system with a guaranteed acyclic dependency graph.
+    n_vars variables (x1..x_{n_vars}), n_eqs equations (n_eqs <= n_vars).
+
+    Variables are implicitly ordered x_1 < x_2 < ... < x_{n_vars}.  Equation i
+    defines x_i: it is the product of two linear factors, each involving x_i
+    and up to fan_in-1 random predecessors from x_1..x_{i-1}.  Dependencies
+    always point from lower to higher index, so the factor graph is a DAG and
+    the MILP always finds a valid cover.  Variables x_{n_eqs+1}..x_{n_vars} are
+    free parameters.
+
+    Hard for Gröbner basis at n_vars >= 15: the product structure creates 2^n
+    solution components across a high-dimensional variable space.
+    """
+    if n_eqs > n_vars:
+        raise ValueError("random_factored_dag requires n_eqs <= n_vars")
+    if n_eqs < 1:
+        raise ValueError("random_factored_dag requires n_eqs >= 1")
+    rng = random.Random(seed)
+    xs = [Symbol(f"x{i}") for i in range(1, n_vars + 1)]
+    nonzero = [c for c in range(-3, 4) if c != 0]
+    eqs: list[Expr] = []
+    for i in range(n_eqs):
+        n_preds = min(fan_in - 1, i)
+
+        def make_factor(head_idx: int) -> Expr:
+            preds = rng.sample(xs[:head_idx], n_preds) if n_preds > 0 else []
+            terms: list[Expr] = [rng.randint(1, 4) * xs[head_idx]]
+            for pred in preds:
+                terms.append(rng.choice(nonzero) * pred)
+            return sum(terms) + rng.randint(-5, 5)
+
+        eqs.append(expand(make_factor(i) * make_factor(i)))
     return eqs
 
 
@@ -202,14 +358,22 @@ def random_distances(joints: int, *, seed: int) -> list[Expr]:
     zs = [Symbol(f"z{i}") for i in range(joints)]
 
     eqs.extend([xs[0] - 0, ys[0] - 0, zs[0] - 0])
-    
+
     for edge in edges:
         i, j = edge
-        eqs.append((xs[i] - xs[j])**2 + (ys[i] - ys[j])**2 + (zs[i] - zs[j])**2 - distances[edge]**2)
+        eqs.append(
+            (xs[i] - xs[j]) ** 2
+            + (ys[i] - ys[j]) ** 2
+            + (zs[i] - zs[j]) ** 2
+            - distances[edge] ** 2
+        )
 
     return eqs
 
-def chemical_steady_state_random(species: int, reactions: int, *, seed: int) -> list[Expr]:
+
+def chemical_steady_state_random(
+    species: int, reactions: int, *, seed: int
+) -> list[Expr]:
     """
     Mass-action: ``d x / d t = S * v(x)`` with polynomial rates ``v_j``; steady state ``S * v(x) = 0``.
 
@@ -320,7 +484,7 @@ def factor_chain(n: int, k: int, *, seed: int) -> list[Expr]:
             indices[0] = i
         prod_expr: Expr = Integer(1)
         for j in indices:
-            prod_expr *= (xs[j] - constants[j])
+            prod_expr *= xs[j] - constants[j]
         eqs.append(expand(prod_expr))
     return eqs
 
@@ -352,29 +516,29 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Emit one benchmark polynomial system as a Mathematica rule list.",
     )
-    
+
     p.add_argument(
         "--family",
         required=True,
         choices=ALL_FAMILIES,
         help="Benchmark family name",
     )
-    
+
     p.add_argument(
         "--n",
         type=int,
         default=None,
-        help="Primary size parameter (cyclic, katsura, noonburg, eco, sparse_toric). "
-        "Ignored for nash, adjacent_minors, random_distances, chemical_steady_state_random.",
+        help="Primary size parameter (cyclic, katsura, noonburg, eco, sparse_toric, "
+        "factored_chain). Ignored for multi-parameter families.",
     )
-    
+
     p.add_argument(
         "--rows",
         type=int,
         default=None,
         help="Matrix row count for adjacent_minors (>=2).",
     )
-    
+
     p.add_argument(
         "--cols",
         type=int,
@@ -421,9 +585,9 @@ def parse_args() -> argparse.Namespace:
         "--seed",
         type=int,
         default=42,
-        help="RNG seed for random_distances and chemical_steady_state_random (default: 42).",
+        help="RNG seed (default: 42).",
     )
-    
+
     p.add_argument(
         "-o",
         "--output",
@@ -431,7 +595,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Write to this file instead of stdout.",
     )
-    
+
     return p.parse_args()
 
 
@@ -490,4 +654,3 @@ if __name__ == "__main__":
         args.output.write_text(text + "\n", encoding="utf-8")
     else:
         sys.stdout.write(text + "\n")
-
