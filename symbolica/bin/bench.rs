@@ -29,8 +29,8 @@ use symbolica::domains::rational::Q;
 
 use polynomial_milp::milp_cover::{build_problem, solve_milp};
 use polynomial_milp::{
-    groebner_basis_from_system_lex_q, load_mathematica_system_from_path_with_var_names,
-    preprocess, variable_order,
+    groebner_basis_from_system_lex_q, load_mathematica_system_from_path_with_var_names, preprocess,
+    variable_order,
 };
 
 const LICENSE_KEY: &str = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
@@ -80,8 +80,9 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Mode, String> {
             "--no-cache" => no_cache = true,
             "--csv" => csv = Some(PathBuf::from(it.next().ok_or("--csv requires a path")?)),
             "--worker-groebner" => {
-                worker_groebner =
-                    Some(PathBuf::from(it.next().ok_or("--worker-groebner needs path")?));
+                worker_groebner = Some(PathBuf::from(
+                    it.next().ok_or("--worker-groebner needs path")?,
+                ));
             }
             "--worker-milp" => {
                 worker_milp = Some(PathBuf::from(it.next().ok_or("--worker-milp needs path")?));
@@ -98,10 +99,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Mode, String> {
         return Ok(Mode::WorkerMilp { path });
     }
     Ok(Mode::Orchestrator {
-        dir: dir.unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../systems/bench")
-        }),
+        dir: dir.unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../systems/bench")),
         timeout: Duration::from_secs(timeout_secs),
         no_cache,
         csv,
@@ -161,8 +159,8 @@ struct WorkerMilpResult {
 }
 
 fn worker_groebner_result(path: &Path) -> Result<WorkerGroebnerResult, String> {
-    let loaded = load_mathematica_system_from_path_with_var_names(path)
-        .map_err(|e| format!("load: {e}"))?;
+    let loaded =
+        load_mathematica_system_from_path_with_var_names(path).map_err(|e| format!("load: {e}"))?;
     let var_order = variable_order(&loaded.id_to_sym);
     let t = Instant::now();
     let gb = groebner_basis_from_system_lex_q(&loaded.system, var_order, false)
@@ -188,8 +186,8 @@ fn run_worker_groebner(path: &Path) -> ! {
 }
 
 fn worker_milp_result(path: &Path) -> Result<WorkerMilpResult, String> {
-    let loaded = load_mathematica_system_from_path_with_var_names(path)
-        .map_err(|e| format!("load: {e}"))?;
+    let loaded =
+        load_mathematica_system_from_path_with_var_names(path).map_err(|e| format!("load: {e}"))?;
     let field = AlgebraicExtension::new_complex(Q);
     let t_pre = Instant::now();
     let pre = preprocess(&loaded, &field).map_err(|e| format!("preprocess: {e}"))?;
@@ -423,14 +421,19 @@ fn print_markdown(rows: &[Row]) {
     println!("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|");
     for row in rows {
         let cov = match &row.milp {
-            MilpOutcome::Ok { polys, coverage, .. } => format!("{}/{}", coverage, polys),
+            MilpOutcome::Ok {
+                polys, coverage, ..
+            } => format!("{}/{}", coverage, polys),
             MilpOutcome::Infeasible { polys, .. } => format!("0/{}", polys),
             _ => "-".to_string(),
         };
         let (free, sel, zero) = match &row.milp {
-            MilpOutcome::Ok { free_params, selected, zeroed, .. } => {
-                (*free_params, *selected, *zeroed)
-            }
+            MilpOutcome::Ok {
+                free_params,
+                selected,
+                zeroed,
+                ..
+            } => (*free_params, *selected, *zeroed),
             _ => (0, 0, 0),
         };
         println!(
@@ -458,9 +461,14 @@ fn row_to_csv_line(row: &Row) -> String {
         Timing::Error => (String::new(), "error"),
     };
     let (polys, coverage, free, sel, zero) = match &row.milp {
-        MilpOutcome::Ok { polys, coverage, free_params, selected, zeroed, .. } => {
-            (*polys, *coverage, *free_params, *selected, *zeroed)
-        }
+        MilpOutcome::Ok {
+            polys,
+            coverage,
+            free_params,
+            selected,
+            zeroed,
+            ..
+        } => (*polys, *coverage, *free_params, *selected, *zeroed),
         MilpOutcome::Infeasible { polys, .. } => (*polys, 0, 0, 0, 0),
         _ => (0, 0, 0, 0, 0),
     };
@@ -585,8 +593,8 @@ fn process_file(
         .unwrap_or("?")
         .to_string();
 
-    let loaded = load_mathematica_system_from_path_with_var_names(path)
-        .map_err(|e| format!("load: {e}"))?;
+    let loaded =
+        load_mathematica_system_from_path_with_var_names(path).map_err(|e| format!("load: {e}"))?;
     let n_eqs = loaded.system.equations.len();
     let n_vars = loaded.var_names.len();
     drop(loaded);
@@ -627,7 +635,13 @@ fn process_file(
 
     let milp = run_milp_via_subprocess(self_exe, path, timeout);
 
-    Ok(Row { name, n_eqs, n_vars, groebner, milp })
+    Ok(Row {
+        name,
+        n_eqs,
+        n_vars,
+        groebner,
+        milp,
+    })
 }
 
 fn main() {
@@ -642,7 +656,12 @@ fn main() {
     match mode {
         Mode::WorkerGroebner { path } => run_worker_groebner(&path),
         Mode::WorkerMilp { path } => run_worker_milp(&path),
-        Mode::Orchestrator { dir, timeout, no_cache, csv } => {
+        Mode::Orchestrator {
+            dir,
+            timeout,
+            no_cache,
+            csv,
+        } => {
             LicenseManager::set_license_key(LICENSE_KEY).ok();
             let self_exe = std::env::current_exe().expect("current_exe");
             eprintln!(

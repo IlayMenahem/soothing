@@ -28,8 +28,6 @@ struct MilpVariables {
     zeta: Vec<Variable>,
     y: Vec<Variable>,
     a: Vec<Vec<Variable>>,
-    /// C2d: per-admissible-pair survival indicators for degree-0 monomials.
-    b: Vec<Vec<Variable>>,
     t: Vec<Variable>,
 }
 
@@ -50,12 +48,7 @@ fn add_milp_variables(vars: &mut ProblemVariables, data: &ProblemData) -> MilpVa
     let zeta: Vec<_> = data.factors.iter().map(|_| vars.add(unit())).collect();
     let y: Vec<_> = data.f_by_poly.iter().map(|_| vars.add(unit())).collect();
     let a: Vec<Vec<_>> = data
-        .deg1to4_monomials
-        .iter()
-        .map(|ms| ms.iter().map(|_| vars.add(unit())).collect())
-        .collect();
-    let b: Vec<Vec<_>> = data
-        .deg0_monomials
+        .pos_deg_monomials
         .iter()
         .map(|ms| ms.iter().map(|_| vars.add(unit())).collect())
         .collect();
@@ -71,7 +64,6 @@ fn add_milp_variables(vars: &mut ProblemVariables, data: &ProblemData) -> MilpVa
         zeta,
         y,
         a,
-        b,
         t,
     }
 }
@@ -145,7 +137,14 @@ fn add_coverage_constraints<M: SolverModel>(
     Ok(model)
 }
 
-fn add_linearity_constraints<M: SolverModel>(
+/// (C2′) Non-degenerate definer: for each selected pair `(f, x)`, at least one
+/// monomial of `f` of positive degree in `x` must survive the zeroing. This
+/// enforces that the leading coefficient `c_d` of `f` viewed as a polynomial in
+/// `x` is not identically zero after zeroing — i.e., `f` retains positive
+/// degree in `x` and therefore defines `x` as an algebraic function of the
+/// remaining variables. The bounded-degree (1..=4) cap from the radical-form
+/// era has been removed.
+fn add_definer_constraints<M: SolverModel>(
     mut model: M,
     data: &ProblemData,
     vars: &MilpVariables,
@@ -154,23 +153,9 @@ fn add_linearity_constraints<M: SolverModel>(
         let info = &data.factors[fi];
         let selected_vid = data.v_ids[vloc];
 
-        // C2a: every monomial of degree >= 5 in the selected variable must
-        // have one of its non-selected variables zeroed.
-        for (m, monomial) in info.monomial_vars.iter().enumerate() {
-            if info.monomial_degree(m, selected_vid) < 5 {
-                continue;
-            }
-            let killers: Expression = monomial
-                .iter()
-                .filter(|&&vid| vid != selected_vid)
-                .filter_map(|vid| data.v_idx.get(vid).map(|&vl| Expression::from(vars.z[vl])))
-                .sum();
-            model = model.with(constraint!(vars.s[k] - killers <= 0));
-        }
-
-        // C2b: a monomial of degree 1-4 in x survives only if none of its
-        // non-selected variables are zeroed.
-        for (slot, &m) in data.deg1to4_monomials[k].iter().enumerate() {
+        // (C2′a) a monomial of positive degree in x survives only if none of
+        // its non-selected variables are zeroed.
+        for (slot, &m) in data.pos_deg_monomials[k].iter().enumerate() {
             for &vid in &info.monomial_vars[m] {
                 if vid == selected_vid {
                     continue;
@@ -182,33 +167,8 @@ fn add_linearity_constraints<M: SolverModel>(
             }
         }
 
-        // C2c: at least one monomial of degree 1-4 must survive.
+        // (C2′b) at least one monomial of positive degree in x must survive.
         let surviving = sum_vars(&vars.a[k]);
-        model = model.with(constraint!(vars.s[k] - surviving <= 0));
-    }
-    model
-}
-
-/// C2d: for each selected pair `(f, x)`, at least one degree-0-in-x monomial of `f`
-/// (the "constant term" w.r.t. x, i.e. f(x=0)) must not be entirely zeroed. This
-/// guarantees x=0 is not a root of f after zeroing, preventing the defined variable
-/// from taking the trivial value zero through the substitution chain.
-fn add_nonzero_rhs_constraints<M: SolverModel>(
-    mut model: M,
-    data: &ProblemData,
-    vars: &MilpVariables,
-) -> M {
-    for (k, &(fi, _)) in data.admissible.iter().enumerate() {
-        let info = &data.factors[fi];
-        for (slot, &m) in data.deg0_monomials[k].iter().enumerate() {
-            for &vid in &info.monomial_vars[m] {
-                let Some(&vl) = data.v_idx.get(&vid) else {
-                    continue;
-                };
-                model = model.with(constraint!(vars.b[k][slot] + vars.z[vl] <= 1));
-            }
-        }
-        let surviving = sum_vars(&vars.b[k]);
         model = model.with(constraint!(vars.s[k] - surviving <= 0));
     }
     model
@@ -296,8 +256,7 @@ pub fn solve_milp(data: &ProblemData) -> Result<Cover, ResolutionError> {
     let model = add_factor_zero_constraints(model, data, &m);
     let model = add_polynomial_zero_link(model, data, &m);
     let model = add_coverage_constraints(model, data, &m)?;
-    let model = add_linearity_constraints(model, data, &m);
-    let model = add_nonzero_rhs_constraints(model, data, &m);
+    let model = add_definer_constraints(model, data, &m);
     let model = add_acyclicity_constraints(model, data, &m);
     let model = add_distinctness_constraints(model, data, &m);
     let solution = model.solve()?;
@@ -419,20 +378,19 @@ mod tests {
     }
 
     #[test]
-    fn solve_does_not_select_pair_with_unkillable_degree5_monomial() {
+    fn solve_admits_high_degree_factor_for_x() {
         let (loaded, data) = problem_from("{(x + 1) * (x^5 + y + 1) == 0}");
         let x_vid = loaded.var_names.iter().position(|n| n == "x").unwrap();
         let x_local = data.v_idx[&x_vid];
-        for &(fi, vloc) in &data.admissible {
-            if vloc != x_local {
-                continue;
-            }
-            assert_eq!(
-                data.factors[fi].vars.len(),
-                1,
-                "only the linear factor (x+1) should be admissible for x"
-            );
-        }
+        let x_pairs: Vec<_> = data
+            .admissible
+            .iter()
+            .filter(|(_, vloc)| *vloc == x_local)
+            .collect();
+        assert!(
+            x_pairs.len() >= 2,
+            "both (x+1) and (x^5+y+1) should be admissible for x under the spec; got {x_pairs:?}"
+        );
         let _cover = solve_milp(&data).expect("feasible");
     }
 
@@ -457,20 +415,15 @@ mod tests {
     }
 
     #[test]
-    fn solve_degree_five_monomial_not_admissible_for_that_variable() {
+    fn solve_degree_five_factor_admissible_for_x() {
         let (loaded, data) = problem_from_raw_factors("{x^5 + y == 0}");
         let x_vid = loaded.var_names.iter().position(|n| n == "x").unwrap();
         let x_local = *data.v_idx.get(&x_vid).expect("x in problem");
-        for &(_, vloc) in &data.admissible {
-            assert_ne!(
-                vloc, x_local,
-                "x must not be admissible (degree-5 only in x)"
-            );
-        }
-        let cover = solve_milp(&data).expect("feasible");
         assert!(
-            !cover.selected.iter().any(|&(_, vid, _)| vid == x_vid),
-            "x must not be selected as a defined variable"
+            data.admissible.iter().any(|&(_, vloc)| vloc == x_local),
+            "x must be admissible under the positive-degree rule (degree 5 in x)"
         );
+        let cover = solve_milp(&data).expect("feasible");
+        let _ = cover;
     }
 }

@@ -54,15 +54,13 @@ pub struct ProblemData {
     /// Inverse of `v_ids`.
     pub v_idx: HashMap<usize, usize>,
     /// Admissible pairs `(factor_idx, local_var_idx)`: those for which the
-    /// factor has at least one monomial of degree between 1 and 4 in the variable.
+    /// factor is non-monomial and has at least one monomial of positive degree
+    /// in the variable (i.e., `x` appears in `f`).
     pub admissible: Vec<(usize, usize)>,
     /// For each admissible pair, the indices into the factor's `monomial_vars`
-    /// of monomials of degree 1 to 4 in the selected variable (i.e. `M^{[1,4]}_{f,x}`).
-    pub deg1to4_monomials: Vec<Vec<usize>>,
-    /// For each admissible pair, the indices into the factor's `monomial_vars`
-    /// of monomials of degree exactly 0 in the selected variable (the "constant term"
-    /// w.r.t. that variable). Used by C2d.
-    pub deg0_monomials: Vec<Vec<usize>>,
+    /// of monomials of positive degree in the selected variable
+    /// (i.e. `M^{>=1}_{f,x}`).
+    pub pos_deg_monomials: Vec<Vec<usize>>,
 }
 
 fn factor_info(f: PolyExtLex, sym_to_vid: &HashMap<Symbol, VarId>) -> FactorInfo {
@@ -142,21 +140,17 @@ pub fn build_problem(
     let v_idx: HashMap<usize, usize> = v_set.iter().enumerate().map(|(i, v)| (*v, i)).collect();
 
     let mut admissible = Vec::new();
-    let mut deg1to4_monomials = Vec::new();
-    let mut deg0_monomials = Vec::new();
+    let mut pos_deg_monomials = Vec::new();
     for (fi, info) in factors.iter().enumerate() {
         if info.monomial_vars.len() == 1 {
             // C5: a single-monomial factor cannot define any variable.
             continue;
         }
         for &vid in &info.vars {
-            let m1to4: Vec<usize> = (1u16..=4)
-                .flat_map(|d| info.monomials_deg(vid, d))
-                .collect();
-            if !m1to4.is_empty() {
+            let pos: Vec<usize> = positive_degree_monomials(info, vid);
+            if !pos.is_empty() {
                 admissible.push((fi, v_idx[&vid]));
-                deg1to4_monomials.push(m1to4);
-                deg0_monomials.push(info.monomials_deg(vid, 0));
+                pos_deg_monomials.push(pos);
             }
         }
     }
@@ -167,9 +161,20 @@ pub fn build_problem(
         v_ids: v_set,
         v_idx,
         admissible,
-        deg1to4_monomials,
-        deg0_monomials,
+        pos_deg_monomials,
     }
+}
+
+/// Indices of monomials of `info` with strictly positive degree in `vid`.
+fn positive_degree_monomials(info: &FactorInfo, vid: usize) -> Vec<usize> {
+    let Some(slot) = info.vars.iter().position(|v| *v == vid) else {
+        return Vec::new();
+    };
+    info.monomial_degrees
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, degs)| (degs[slot] >= 1).then_some(idx))
+        .collect()
 }
 
 pub fn var_name(loaded: &LoadedMathematicaSystem, global_vid: usize) -> &str {
@@ -182,7 +187,6 @@ mod tests {
     use crate::factor_prep::{ideal_ext_lex, preprocess};
     use crate::mathematica::load_mathematica_system_from_str_with_var_names;
     use crate::milp_cover::milp::solve_milp;
-    use good_lp::ResolutionError;
     use std::sync::Once;
     use symbolica::LicenseManager;
     use symbolica::domains::algebraic_number::AlgebraicExtension;
@@ -246,22 +250,26 @@ mod tests {
     }
 
     #[test]
-    fn admissible_requires_bounded_degree_monomial() {
+    fn admissible_allows_high_degree_factor() {
         let (_loaded, data) = problem_from_raw_factors("{x^5 + y^5 == 0}");
         assert_eq!(data.factors.len(), 1);
-        assert!(
-            data.admissible.is_empty(),
-            "no monomial has degree 1-4 in any single variable; got {:?}",
+        assert_eq!(
+            data.admissible.len(),
+            2,
+            "x and y both appear with positive degree in the factor; got {:?}",
             data.admissible
         );
     }
 
     #[test]
-    fn admissible_excludes_pure_high_degree_polynomial() {
+    fn admissible_includes_pure_high_degree_polynomial() {
         let (_loaded, data) = problem_from("{x^5 + x + 3 == 0}");
-        assert!(!data.admissible.is_empty());
-        let cover = solve_milp(&data);
-        assert!(matches!(cover, Err(ResolutionError::Infeasible)));
+        assert!(
+            !data.admissible.is_empty(),
+            "x has positive degree in the factor; pair (f, x) is admissible"
+        );
+        let cover = solve_milp(&data).expect("feasible: x admissibly defined by the factor");
+        let _ = cover;
     }
 
     #[test]

@@ -58,7 +58,7 @@ fn var_id_from_global(global_vid: usize) -> VarId {
     VarId(u32::try_from(global_vid).expect("global variable id must fit in VarId"))
 }
 
-fn factor_to_atom(factor: &PolyExtLex) -> Result<Atom, ParameterizationError> {
+pub(crate) fn factor_to_atom(factor: &PolyExtLex) -> Result<Atom, ParameterizationError> {
     let factor_string = factor
         .to_string()
         .split_once(" % ")
