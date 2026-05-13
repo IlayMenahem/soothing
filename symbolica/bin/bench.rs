@@ -2,14 +2,13 @@
 //!
 //! Usage:
 //!   `bench <dir> [--timeout SECS] [--no-cache] [--csv PATH]`     (orchestrator)
-//!   `bench --worker-groebner <path> --timeout SECS`              (one-shot)
-//!   `bench --worker-milp <path> --timeout SECS`                  (one-shot)
+//!   `bench --worker-groebner <path>`                              (one-shot)
+//!   `bench --worker-milp <path>`                                  (one-shot)
 //!
 //! The orchestrator launches a fresh **subprocess** per algorithm per system,
 //! so a runaway Buchberger run (which Symbolica cannot interrupt) is reliably
-//! killed by the OS after the timeout instead of accumulating orphan threads
-//! that drag down the rest of the sweep. Each worker prints a single JSON
-//! line with its result.
+//! killed by the OS after the timeout. Each worker prints a single JSON line
+//! with its result.
 //!
 //! Gröbner timings are memoized on disk under `target/bench-cache/` keyed by a
 //! blake3 hash of the file contents.
@@ -30,12 +29,21 @@ use symbolica::domains::rational::Q;
 
 use polynomial_milp::milp_cover::{build_problem, solve_milp};
 use polynomial_milp::{
-    default_systems_dir_from_manifest, groebner_basis_from_system_lex_q,
-    load_mathematica_system_from_path_with_var_names, preprocess, variable_order,
+    groebner_basis_from_system_lex_q, load_mathematica_system_from_path_with_var_names,
+    preprocess, variable_order,
 };
 
 const LICENSE_KEY: &str = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
 
+/// Default CSV output path: `<repo_root>/results/bench_results.csv`.
+fn default_csv_path() -> PathBuf {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap_or(Path::new("."));
+    repo_root.join("results").join("bench_results.csv")
+}
+
+#[derive(Debug)]
 enum Mode {
     Orchestrator {
         dir: PathBuf,
@@ -90,7 +98,10 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Mode, String> {
         return Ok(Mode::WorkerMilp { path });
     }
     Ok(Mode::Orchestrator {
-        dir: dir.unwrap_or_else(|| default_systems_dir_from_manifest().join("bench")),
+        dir: dir.unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../systems/bench")
+        }),
         timeout: Duration::from_secs(timeout_secs),
         no_cache,
         csv,
@@ -110,14 +121,12 @@ fn cache_dir() -> PathBuf {
 
 fn cache_key(path: &Path) -> Option<String> {
     let content = fs::read(path).ok()?;
-    let hash = blake3::hash(&content);
-    Some(hash.to_hex().to_string())
+    Some(blake3::hash(&content).to_hex().to_string())
 }
 
 fn cache_load(key: &str) -> Option<CachedGroebner> {
     let path = cache_dir().join(format!("{key}.json"));
-    let bytes = fs::read(&path).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    serde_json::from_slice(&fs::read(&path).ok()?).ok()
 }
 
 fn cache_store(key: &str, value: &CachedGroebner) {
@@ -125,9 +134,8 @@ fn cache_store(key: &str, value: &CachedGroebner) {
     if fs::create_dir_all(&dir).is_err() {
         return;
     }
-    let path = dir.join(format!("{key}.json"));
     if let Ok(bytes) = serde_json::to_vec(value) {
-        let _ = fs::write(&path, bytes);
+        let _ = fs::write(dir.join(format!("{key}.json")), bytes);
     }
 }
 
@@ -152,120 +160,111 @@ struct WorkerMilpResult {
     error: Option<String>,
 }
 
+fn worker_groebner_result(path: &Path) -> Result<WorkerGroebnerResult, String> {
+    let loaded = load_mathematica_system_from_path_with_var_names(path)
+        .map_err(|e| format!("load: {e}"))?;
+    let var_order = variable_order(&loaded.id_to_sym);
+    let t = Instant::now();
+    let gb = groebner_basis_from_system_lex_q(&loaded.system, var_order, false)
+        .map_err(|e| format!("groebner: {e}"))?;
+    Ok(WorkerGroebnerResult {
+        status: "ok".into(),
+        elapsed_secs: t.elapsed().as_secs_f64(),
+        basis_len: gb.system.len(),
+        error: None,
+    })
+}
+
 fn run_worker_groebner(path: &Path) -> ! {
     LicenseManager::set_license_key(LICENSE_KEY).ok();
-    let result = (|| -> Result<WorkerGroebnerResult, String> {
-        let loaded = load_mathematica_system_from_path_with_var_names(path)
-            .map_err(|e| format!("load: {e}"))?;
-        let var_order = variable_order(&loaded.id_to_sym);
-        let t = Instant::now();
-        let gb = groebner_basis_from_system_lex_q(&loaded.system, var_order, false)
-            .map_err(|e| format!("groebner: {e}"))?;
-        let elapsed = t.elapsed();
-        Ok(WorkerGroebnerResult {
-            status: "ok".into(),
-            elapsed_secs: elapsed.as_secs_f64(),
-            basis_len: gb.system.len(),
-            error: None,
-        })
-    })();
-    let payload = match result {
-        Ok(r) => r,
-        Err(e) => WorkerGroebnerResult {
-            status: "error".into(),
-            elapsed_secs: 0.0,
-            basis_len: 0,
-            error: Some(e),
-        },
-    };
+    let payload = worker_groebner_result(path).unwrap_or_else(|e| WorkerGroebnerResult {
+        status: "error".into(),
+        elapsed_secs: 0.0,
+        basis_len: 0,
+        error: Some(e),
+    });
     println!("{}", serde_json::to_string(&payload).unwrap());
     std::process::exit(0);
 }
 
-fn run_worker_milp(path: &Path) -> ! {
-    LicenseManager::set_license_key(LICENSE_KEY).ok();
-    let result = (|| -> Result<WorkerMilpResult, String> {
-        let loaded = load_mathematica_system_from_path_with_var_names(path)
-            .map_err(|e| format!("load: {e}"))?;
-        let field = AlgebraicExtension::new_complex(Q);
-        let t_pre = Instant::now();
-        let pre = preprocess(&loaded, &field).map_err(|e| format!("preprocess: {e}"))?;
-        let pre_secs = t_pre.elapsed().as_secs_f64();
-        let polys = pre.len();
-        if polys == 0 {
-            return Ok(WorkerMilpResult {
-                status: "empty".into(),
-                preprocess_secs: pre_secs,
-                solve_secs: 0.0,
-                polys: 0,
-                coverage: 0,
-                free_params: 0,
-                selected: 0,
-                zeroed: 0,
-                error: None,
-            });
-        }
-        let data = build_problem(pre, &loaded);
-        let n_vars_in_factors = data.v_ids.len();
-        let t_solve = Instant::now();
-        let solve = solve_milp(&data);
-        let solve_secs = t_solve.elapsed().as_secs_f64();
-        match solve {
-            Ok(cover) => {
-                let selected = cover.selected.len();
-                let zeroed = cover.zeroed_locals.len();
-                let coverage = cover.zeroed_polynomials.len();
-                let free_params = n_vars_in_factors.saturating_sub(selected + zeroed);
-                Ok(WorkerMilpResult {
-                    status: "ok".into(),
-                    preprocess_secs: pre_secs,
-                    solve_secs,
-                    polys,
-                    coverage,
-                    free_params,
-                    selected,
-                    zeroed,
-                    error: None,
-                })
-            }
-            Err(good_lp::ResolutionError::Infeasible) => Ok(WorkerMilpResult {
-                status: "infeasible".into(),
-                preprocess_secs: pre_secs,
-                solve_secs,
-                polys,
-                coverage: 0,
-                free_params: 0,
-                selected: 0,
-                zeroed: 0,
-                error: None,
-            }),
-            Err(e) => Ok(WorkerMilpResult {
-                status: "error".into(),
-                preprocess_secs: pre_secs,
-                solve_secs,
-                polys,
-                coverage: 0,
-                free_params: 0,
-                selected: 0,
-                zeroed: 0,
-                error: Some(format!("{e:?}")),
-            }),
-        }
-    })();
-    let payload = match result {
-        Ok(r) => r,
-        Err(e) => WorkerMilpResult {
-            status: "error".into(),
-            preprocess_secs: 0.0,
+fn worker_milp_result(path: &Path) -> Result<WorkerMilpResult, String> {
+    let loaded = load_mathematica_system_from_path_with_var_names(path)
+        .map_err(|e| format!("load: {e}"))?;
+    let field = AlgebraicExtension::new_complex(Q);
+    let t_pre = Instant::now();
+    let pre = preprocess(&loaded, &field).map_err(|e| format!("preprocess: {e}"))?;
+    let pre_secs = t_pre.elapsed().as_secs_f64();
+    let polys = pre.len();
+    if polys == 0 {
+        return Ok(WorkerMilpResult {
+            status: "empty".into(),
+            preprocess_secs: pre_secs,
             solve_secs: 0.0,
             polys: 0,
             coverage: 0,
             free_params: 0,
             selected: 0,
             zeroed: 0,
-            error: Some(e),
-        },
-    };
+            error: None,
+        });
+    }
+    let data = build_problem(pre, &loaded);
+    let n_vars_in_factors = data.v_ids.len();
+    let t_solve = Instant::now();
+    match solve_milp(&data) {
+        Ok(cover) => {
+            let selected = cover.selected.len();
+            let zeroed = cover.zeroed_locals.len();
+            Ok(WorkerMilpResult {
+                status: "ok".into(),
+                preprocess_secs: pre_secs,
+                solve_secs: t_solve.elapsed().as_secs_f64(),
+                polys,
+                coverage: cover.zeroed_polynomials.len(),
+                free_params: n_vars_in_factors.saturating_sub(selected + zeroed),
+                selected,
+                zeroed,
+                error: None,
+            })
+        }
+        Err(good_lp::ResolutionError::Infeasible) => Ok(WorkerMilpResult {
+            status: "infeasible".into(),
+            preprocess_secs: pre_secs,
+            solve_secs: t_solve.elapsed().as_secs_f64(),
+            polys,
+            coverage: 0,
+            free_params: 0,
+            selected: 0,
+            zeroed: 0,
+            error: None,
+        }),
+        Err(e) => Ok(WorkerMilpResult {
+            status: "error".into(),
+            preprocess_secs: pre_secs,
+            solve_secs: t_solve.elapsed().as_secs_f64(),
+            polys,
+            coverage: 0,
+            free_params: 0,
+            selected: 0,
+            zeroed: 0,
+            error: Some(format!("{e:?}")),
+        }),
+    }
+}
+
+fn run_worker_milp(path: &Path) -> ! {
+    LicenseManager::set_license_key(LICENSE_KEY).ok();
+    let payload = worker_milp_result(path).unwrap_or_else(|e| WorkerMilpResult {
+        status: "error".into(),
+        preprocess_secs: 0.0,
+        solve_secs: 0.0,
+        polys: 0,
+        coverage: 0,
+        free_params: 0,
+        selected: 0,
+        zeroed: 0,
+        error: Some(e),
+    });
     println!("{}", serde_json::to_string(&payload).unwrap());
     std::process::exit(0);
 }
@@ -276,6 +275,11 @@ enum SubprocessResult {
     Crashed(String),
 }
 
+/// Run `self_exe` with `args`, killing it after `timeout` (best-effort via SIGKILL).
+///
+/// The timeout is wall-clock. Callers pass `algorithm_timeout + grace_period` so that
+/// a subprocess that completes near the deadline still has time to flush its JSON output
+/// before the watchdog fires.
 fn run_subprocess(self_exe: &Path, args: &[&str], timeout: Duration) -> SubprocessResult {
     let mut child = match Command::new(self_exe)
         .args(args)
@@ -291,7 +295,7 @@ fn run_subprocess(self_exe: &Path, args: &[&str], timeout: Duration) -> Subproce
     let (tx, rx) = mpsc::channel();
     let watchdog = thread::spawn(move || {
         if rx.recv_timeout(timeout).is_err() {
-            // SAFETY: best-effort kill; child may have exited already.
+            // best-effort: child may have already exited
             let _ = Command::new("kill").arg("-9").arg(id.to_string()).status();
         }
     });
@@ -311,14 +315,10 @@ fn run_subprocess(self_exe: &Path, args: &[&str], timeout: Duration) -> Subproce
 
     match wait_result {
         Ok(status) if status.success() => SubprocessResult::Stdout(stdout),
+        Ok(status) if status.code().is_none() => SubprocessResult::Timeout,
         Ok(status) => {
-            if status.code().is_none() {
-                SubprocessResult::Timeout
-            } else {
-                let trimmed = stderr.trim();
-                let preview = trimmed.lines().next().unwrap_or("").to_string();
-                SubprocessResult::Crashed(format!("exit {:?}: {}", status.code(), preview))
-            }
+            let preview = stderr.trim().lines().next().unwrap_or("").to_string();
+            SubprocessResult::Crashed(format!("exit {:?}: {}", status.code(), preview))
         }
         Err(e) => SubprocessResult::Crashed(format!("wait: {e}")),
     }
@@ -358,13 +358,9 @@ struct Row {
     milp: MilpOutcome,
 }
 
-fn fmt_secs(d: Duration) -> String {
-    format!("{:.3}", d.as_secs_f64())
-}
-
-fn fmt_groebner(t: &Timing) -> String {
+fn groebner_display(t: &Timing) -> String {
     match t {
-        Timing::Ok { elapsed, .. } => fmt_secs(*elapsed),
+        Timing::Ok { elapsed, .. } => format!("{:.3}", elapsed.as_secs_f64()),
         Timing::Timeout => "TIMEOUT".to_string(),
         Timing::Error(_) => "ERR".to_string(),
     }
@@ -382,7 +378,9 @@ fn milp_status(o: &MilpOutcome) -> &'static str {
 
 fn milp_solve_secs(o: &MilpOutcome) -> f64 {
     match o {
-        MilpOutcome::Ok { solve, .. } | MilpOutcome::Infeasible { solve, .. } => solve.as_secs_f64(),
+        MilpOutcome::Ok { solve, .. } | MilpOutcome::Infeasible { solve, .. } => {
+            solve.as_secs_f64()
+        }
         _ => 0.0,
     }
 }
@@ -396,26 +394,33 @@ fn milp_pre_secs(o: &MilpOutcome) -> f64 {
     }
 }
 
+fn milp_faster_than(milp_secs: f64, gb_secs: f64) -> bool {
+    milp_secs * 2.0 < gb_secs
+}
+
 fn winner(row: &Row) -> &'static str {
     let gb_secs = match &row.groebner {
-        Timing::Ok { elapsed, .. } => Some(elapsed.as_secs_f64()),
-        Timing::Timeout => None,
+        Timing::Ok { elapsed, .. } => elapsed.as_secs_f64(),
+        Timing::Timeout => {
+            return match &row.milp {
+                MilpOutcome::Ok { .. } => "MILP (gb TIMEOUT)",
+                _ => "n/a",
+            };
+        }
         Timing::Error(_) => return "n/a",
     };
     match &row.milp {
         MilpOutcome::Ok { solve, .. } => {
             let m = solve.as_secs_f64();
-            match gb_secs {
-                None => "MILP (gb TIMEOUT)",
-                Some(g) if m * 2.0 < g => "MILP",
-                Some(g) if g * 2.0 < m => "groebner",
-                _ => "tie",
+            if milp_faster_than(m, gb_secs) {
+                "MILP"
+            } else if milp_faster_than(gb_secs, m) {
+                "groebner"
+            } else {
+                "tie"
             }
         }
-        _ => match gb_secs {
-            Some(_) => "groebner",
-            None => "n/a",
-        },
+        _ => "groebner",
     }
 }
 
@@ -423,9 +428,7 @@ fn print_markdown(rows: &[Row]) {
     println!(
         "| system | n_eqs | n_vars | t_groebner (s) | t_milp_solve (s) | t_milp_pre (s) | coverage | free | sel | zero | milp_status | winner |"
     );
-    println!(
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|"
-    );
+    println!("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|");
     for row in rows {
         let cov = match &row.milp {
             MilpOutcome::Ok { polys, coverage, .. } => format!("{}/{}", coverage, polys),
@@ -433,12 +436,9 @@ fn print_markdown(rows: &[Row]) {
             _ => "-".to_string(),
         };
         let (free, sel, zero) = match &row.milp {
-            MilpOutcome::Ok {
-                free_params,
-                selected,
-                zeroed,
-                ..
-            } => (*free_params, *selected, *zeroed),
+            MilpOutcome::Ok { free_params, selected, zeroed, .. } => {
+                (*free_params, *selected, *zeroed)
+            }
             _ => (0, 0, 0),
         };
         println!(
@@ -446,7 +446,7 @@ fn print_markdown(rows: &[Row]) {
             row.name,
             row.n_eqs,
             row.n_vars,
-            fmt_groebner(&row.groebner),
+            groebner_display(&row.groebner),
             milp_solve_secs(&row.milp),
             milp_pre_secs(&row.milp),
             cov,
@@ -459,48 +459,45 @@ fn print_markdown(rows: &[Row]) {
     }
 }
 
+fn row_to_csv_line(row: &Row) -> String {
+    let (gb_secs, gb_status) = match &row.groebner {
+        Timing::Ok { elapsed, .. } => (elapsed.as_secs_f64().to_string(), "ok"),
+        Timing::Timeout => (String::new(), "timeout"),
+        Timing::Error(_) => (String::new(), "error"),
+    };
+    let (polys, coverage, free, sel, zero) = match &row.milp {
+        MilpOutcome::Ok { polys, coverage, free_params, selected, zeroed, .. } => {
+            (*polys, *coverage, *free_params, *selected, *zeroed)
+        }
+        MilpOutcome::Infeasible { polys, .. } => (*polys, 0, 0, 0, 0),
+        _ => (0, 0, 0, 0, 0),
+    };
+    format!(
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        row.name,
+        row.n_eqs,
+        row.n_vars,
+        gb_secs,
+        gb_status,
+        milp_solve_secs(&row.milp),
+        milp_pre_secs(&row.milp),
+        milp_status(&row.milp),
+        coverage,
+        polys,
+        free,
+        sel,
+        zero,
+        winner(row),
+    )
+}
+
 fn write_csv(path: &Path, rows: &[Row]) -> std::io::Result<()> {
-    let mut buf = String::new();
-    buf.push_str(
-        "system,n_eqs,n_vars,t_groebner_s,gb_status,t_milp_solve_s,t_milp_pre_s,milp_status,coverage,polys,free_params,selected,zeroed,winner\n",
-    );
-    for row in rows {
-        let (gb_secs, gb_status) = match &row.groebner {
-            Timing::Ok { elapsed, .. } => (elapsed.as_secs_f64().to_string(), "ok"),
-            Timing::Timeout => ("".to_string(), "timeout"),
-            Timing::Error(_) => ("".to_string(), "error"),
-        };
-        let (polys, coverage, free, sel, zero) = match &row.milp {
-            MilpOutcome::Ok {
-                polys,
-                coverage,
-                free_params,
-                selected,
-                zeroed,
-                ..
-            } => (*polys, *coverage, *free_params, *selected, *zeroed),
-            MilpOutcome::Infeasible { polys, .. } => (*polys, 0, 0, 0, 0),
-            _ => (0, 0, 0, 0, 0),
-        };
-        buf.push_str(&format!(
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
-            row.name,
-            row.n_eqs,
-            row.n_vars,
-            gb_secs,
-            gb_status,
-            milp_solve_secs(&row.milp),
-            milp_pre_secs(&row.milp),
-            milp_status(&row.milp),
-            coverage,
-            polys,
-            free,
-            sel,
-            zero,
-            winner(row),
-        ));
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
     }
-    fs::write(path, buf)
+    let header = "system,n_eqs,n_vars,t_groebner_s,gb_status,t_milp_solve_s,t_milp_pre_s,milp_status,coverage,polys,free_params,selected,zeroed,winner\n";
+    let body: String = rows.iter().map(|r| row_to_csv_line(r) + "\n").collect();
+    fs::write(path, format!("{header}{body}"))
 }
 
 fn collect_inputs(dir: &Path) -> Vec<PathBuf> {
@@ -517,32 +514,28 @@ fn collect_inputs(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn parse_groebner_stdout(stdout: &str) -> Result<WorkerGroebnerResult, String> {
-    let line = stdout
+    stdout
         .lines()
         .filter(|l| l.trim_start().starts_with('{'))
         .last()
-        .ok_or_else(|| "no JSON line on stdout".to_string())?;
-    serde_json::from_str(line).map_err(|e| format!("parse: {e}"))
+        .ok_or_else(|| "no JSON line on stdout".to_string())
+        .and_then(|line| serde_json::from_str(line).map_err(|e| format!("parse: {e}")))
 }
 
 fn parse_milp_stdout(stdout: &str) -> Result<WorkerMilpResult, String> {
-    let line = stdout
+    stdout
         .lines()
         .filter(|l| l.trim_start().starts_with('{'))
         .last()
-        .ok_or_else(|| "no JSON line on stdout".to_string())?;
-    serde_json::from_str(line).map_err(|e| format!("parse: {e}"))
+        .ok_or_else(|| "no JSON line on stdout".to_string())
+        .and_then(|line| serde_json::from_str(line).map_err(|e| format!("parse: {e}")))
 }
 
-fn run_groebner_via_subprocess(
-    self_exe: &Path,
-    path: &Path,
-    timeout: Duration,
-) -> Timing {
+fn run_groebner_via_subprocess(self_exe: &Path, path: &Path, timeout: Duration) -> Timing {
     let timeout_str = timeout.as_secs().to_string();
     let path_str = path.to_string_lossy().to_string();
     let args = ["--worker-groebner", &path_str, "--timeout", &timeout_str];
-    // give the subprocess a small grace period beyond the algorithm timeout
+    // 5-second grace period so the worker can flush its JSON output before SIGKILL fires
     let wall = timeout + Duration::from_secs(5);
     match run_subprocess(self_exe, &args, wall) {
         SubprocessResult::Stdout(s) => match parse_groebner_stdout(&s) {
@@ -558,11 +551,7 @@ fn run_groebner_via_subprocess(
     }
 }
 
-fn run_milp_via_subprocess(
-    self_exe: &Path,
-    path: &Path,
-    timeout: Duration,
-) -> MilpOutcome {
+fn run_milp_via_subprocess(self_exe: &Path, path: &Path, timeout: Duration) -> MilpOutcome {
     let timeout_str = timeout.as_secs().to_string();
     let path_str = path.to_string_lossy().to_string();
     let args = ["--worker-milp", &path_str, "--timeout", &timeout_str];
@@ -612,56 +601,46 @@ fn process_file(
     let n_vars = loaded.var_names.len();
     drop(loaded);
 
-    let cached = if no_cache {
-        None
-    } else {
-        cache_key(path).and_then(|k| cache_load(&k).map(|c| (k, c)))
-    };
-
-    let groebner = match cached {
-        Some((_, c)) => match c.status.as_str() {
-            "ok" => Timing::Ok {
-                elapsed: Duration::from_secs_f64(c.elapsed_secs),
-                basis_len: c.basis_len,
-            },
-            "timeout" => Timing::Timeout,
-            _ => Timing::Error("cached-error".into()),
-        },
-        None => {
-            let t = run_groebner_via_subprocess(self_exe, path, timeout);
-            if !no_cache {
-                if let Some(k) = cache_key(path) {
-                    let cached = match &t {
-                        Timing::Ok { elapsed, basis_len } => Some(CachedGroebner {
-                            elapsed_secs: elapsed.as_secs_f64(),
-                            status: "ok".into(),
-                            basis_len: *basis_len,
-                        }),
-                        Timing::Timeout => Some(CachedGroebner {
-                            elapsed_secs: timeout.as_secs_f64(),
-                            status: "timeout".into(),
-                            basis_len: 0,
-                        }),
-                        Timing::Error(_) => None,
-                    };
-                    if let Some(c) = cached {
-                        cache_store(&k, &c);
-                    }
-                }
+    let groebner = match (!no_cache).then(|| cache_key(path)).flatten() {
+        Some(k) => match cache_load(&k) {
+            Some(c) => {
+                let t = match c.status.as_str() {
+                    "ok" => Timing::Ok {
+                        elapsed: Duration::from_secs_f64(c.elapsed_secs),
+                        basis_len: c.basis_len,
+                    },
+                    "timeout" => Timing::Timeout,
+                    _ => Timing::Error("cached-error".into()),
+                };
+                t
             }
-            t
-        }
+            None => {
+                let t = run_groebner_via_subprocess(self_exe, path, timeout);
+                let cached = match &t {
+                    Timing::Ok { elapsed, basis_len } => Some(CachedGroebner {
+                        elapsed_secs: elapsed.as_secs_f64(),
+                        status: "ok".into(),
+                        basis_len: *basis_len,
+                    }),
+                    Timing::Timeout => Some(CachedGroebner {
+                        elapsed_secs: timeout.as_secs_f64(),
+                        status: "timeout".into(),
+                        basis_len: 0,
+                    }),
+                    Timing::Error(_) => None,
+                };
+                if let Some(c) = cached {
+                    cache_store(&k, &c);
+                }
+                t
+            }
+        },
+        None => run_groebner_via_subprocess(self_exe, path, timeout),
     };
 
     let milp = run_milp_via_subprocess(self_exe, path, timeout);
 
-    Ok(Row {
-        name,
-        n_eqs,
-        n_vars,
-        groebner,
-        milp,
-    })
+    Ok(Row { name, n_eqs, n_vars, groebner, milp })
 }
 
 fn main() {
@@ -676,15 +655,9 @@ fn main() {
     match mode {
         Mode::WorkerGroebner { path } => run_worker_groebner(&path),
         Mode::WorkerMilp { path } => run_worker_milp(&path),
-        Mode::Orchestrator {
-            dir,
-            timeout,
-            no_cache,
-            csv,
-        } => {
+        Mode::Orchestrator { dir, timeout, no_cache, csv } => {
             LicenseManager::set_license_key(LICENSE_KEY).ok();
-            let self_exe = std::env::current_exe()
-                .expect("current_exe");
+            let self_exe = std::env::current_exe().expect("current_exe");
             eprintln!(
                 "bench: self={} dir={} timeout={:?}",
                 self_exe.display(),
@@ -701,13 +674,12 @@ fn main() {
                 eprintln!("  > {}", path.file_name().unwrap().to_string_lossy());
                 match process_file(&self_exe, path, timeout, no_cache) {
                     Ok(row) => {
-                        let win = winner(&row);
                         eprintln!(
                             "    gb={} milp={:.3} ({}) -> {}",
-                            fmt_groebner(&row.groebner),
+                            groebner_display(&row.groebner),
                             milp_solve_secs(&row.milp),
                             milp_status(&row.milp),
-                            win
+                            winner(&row),
                         );
                         rows.push(row);
                     }
@@ -716,16 +688,54 @@ fn main() {
             }
             println!();
             print_markdown(&rows);
-            let csv_path = csv.unwrap_or_else(|| {
-                let mut p = dir.clone();
-                p.set_extension("csv");
-                p
-            });
-            if let Err(e) = write_csv(&csv_path, &rows) {
-                eprintln!("CSV write failed: {e}");
-            } else {
-                eprintln!("\nWrote {}", csv_path.display());
+            let csv_path = csv.unwrap_or_else(default_csv_path);
+            match write_csv(&csv_path, &rows) {
+                Ok(()) => eprintln!("\nWrote {}", csv_path.display()),
+                Err(e) => eprintln!("CSV write failed: {e}"),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_args_uses_default_dir() {
+        let options = match parse_args(std::iter::empty::<String>()).expect("parse args") {
+            Mode::Orchestrator { dir, .. } => dir,
+            _ => panic!("expected orchestrator"),
+        };
+        assert!(options.ends_with("systems/bench"));
+    }
+
+    #[test]
+    fn parse_args_accepts_a_path() {
+        let options = match parse_args(["systems/my_bench".to_string()]).expect("parse args") {
+            Mode::Orchestrator { dir, .. } => dir,
+            _ => panic!("expected orchestrator"),
+        };
+        assert_eq!(options, PathBuf::from("systems/my_bench"));
+    }
+
+    #[test]
+    fn parse_args_rejects_unknown_flag() {
+        let err = parse_args(["--objective".to_string()]).expect_err("error");
+        assert!(err.contains("unknown option"));
+    }
+
+    #[test]
+    fn milp_faster_than_checks_2x_threshold() {
+        assert!(milp_faster_than(1.0, 3.0));
+        assert!(!milp_faster_than(3.0, 3.0));
+        assert!(!milp_faster_than(3.0, 1.0));
+    }
+
+    #[test]
+    fn default_csv_path_is_in_results_dir() {
+        let p = default_csv_path();
+        assert!(p.to_str().unwrap().contains("results"));
+        assert_eq!(p.file_name().unwrap(), "bench_results.csv");
     }
 }
