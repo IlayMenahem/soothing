@@ -57,6 +57,13 @@ def main() -> int:
         action="store_true",
         help="Print paths that would be written without writing files.",
     )
+    p.add_argument(
+        "--milp-bench",
+        action="store_true",
+        help="Also emit the MILP-vs-Buchberger benchmark inputs: "
+        "chemical_steady_state_random, random_distances, block_gauge, factor_chain "
+        "across a curated parameter sweep.",
+    )
     args = p.parse_args()
 
     nmax = args.max_size
@@ -121,6 +128,44 @@ def main() -> int:
             text = rules_from_equations(g.adjacent_minors(n, n))
             write(f"adjacent_minors_r{n}_c{n}.txt", text)
             count += 1
+
+    if args.milp_bench:
+        chem_species = [s for s in (6, 8, 10, 12) if s <= nmax]
+        if not chem_species:
+            chem_species = [min(6, max(2, nmax))]
+        for species in chem_species:
+            reactions = 2 * species
+            for seed in (1, 2, 3):
+                text = rules_from_equations(
+                    g.chemical_steady_state_random(species, reactions, seed=seed)
+                )
+                write(f"chemical_s{species}_r{reactions}_seed{seed}.txt", text)
+                count += 1
+
+        for joints in (4, 6, 8):
+            if joints > max(2, nmax + 2):
+                continue
+            for seed in (1, 2, 3):
+                text = rules_from_equations(g.random_distances(joints, seed=seed))
+                write(f"random_distances_j{joints}_seed{seed}.txt", text)
+                count += 1
+
+        for m in (4, 6, 8):
+            if m > max(2, nmax + 2):
+                continue
+            for seed in (1, 2, 3):
+                text = rules_from_equations(g.block_gauge(m, seed=seed))
+                write(f"block_gauge_m{m}_seed{seed}.txt", text)
+                count += 1
+
+        for n in (4, 6, 8):
+            if n > max(2, nmax + 2):
+                continue
+            for k in (2, 3):
+                for seed in (1, 2):
+                    text = rules_from_equations(g.factor_chain(n, k, seed=seed))
+                    write(f"factor_chain_n{n}_k{k}_seed{seed}.txt", text)
+                    count += 1
 
     if not args.dry_run:
         print(f"Wrote {count} files under {out.resolve()}", file=sys.stderr)

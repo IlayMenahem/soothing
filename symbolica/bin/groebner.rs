@@ -3,49 +3,14 @@
 //! Usage: `groebner [path]` — default path: `systems/simplified_mathematica_system.txt` next to the crate.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Instant;
 
 use symbolica::LicenseManager;
-use symbolica::atom::AtomCore;
-use symbolica::domains::rational::Q;
-use symbolica::poly::{
-    LexOrder, PolyVariable, groebner::GroebnerBasis, polynomial::MultivariatePolynomial,
-};
 
 use polynomial_milp::{
-    PolynomialSystem, default_systems_dir_from_manifest,
+    default_systems_dir_from_manifest, groebner_basis_from_system_lex_q,
     load_mathematica_system_from_path_with_var_names, variable_order,
 };
-
-type QPolyLex = MultivariatePolynomial<Q, u16, LexOrder>;
-
-fn ideal_lex_q(
-    system: &PolynomialSystem,
-    var_order: Arc<Vec<PolyVariable>>,
-) -> Result<Vec<QPolyLex>, String> {
-    system
-        .equations
-        .iter()
-        .map(|eq| {
-            eq.expand()
-                .try_to_polynomial::<_, u16>(&Q, Some(var_order.clone()))
-        })
-        .collect()
-}
-
-fn groebner_basis_lex_q(ideal: &[QPolyLex], print_stats: bool) -> GroebnerBasis<Q, u16, LexOrder> {
-    GroebnerBasis::new(ideal, print_stats)
-}
-
-fn groebner_basis_from_system_lex_q(
-    system: &PolynomialSystem,
-    var_order: Arc<Vec<PolyVariable>>,
-    print_stats: bool,
-) -> Result<GroebnerBasis<Q, u16, LexOrder>, String> {
-    let ideal = ideal_lex_q(system, var_order)?;
-    Ok(groebner_basis_lex_q(&ideal, print_stats))
-}
 
 fn main() {
     let key = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";

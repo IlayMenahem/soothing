@@ -256,6 +256,75 @@ def chemical_steady_state_random(species: int, reactions: int, *, seed: int) -> 
     return eqs
 
 
+def block_gauge(m: int, *, seed: int) -> list[Expr]:
+    """
+    Synthetic ``MILP-friendly'' family: each equation has the form
+    ``x_i * f_i(x) + y_i * g_i(x)`` with random sparse ``f_i`` and ``g_i`` of
+    degree 2-3 in a shared variable pool.
+
+    Zeroing the gauge variables ``{x_i, y_i}`` makes the whole equation
+    identically zero, so MILP coverage is easy. The lex Gröbner basis sees
+    ``m`` random multivariate polynomials whose ideal has no symmetry to
+    exploit.
+    """
+    if m < 1:
+        raise ValueError("block_gauge requires m >= 1")
+
+    rng = random.Random(seed)
+    shared_pool = max(3, m // 2)
+    zs = [Symbol(f"z{i}") for i in range(shared_pool)]
+    xs = [Symbol(f"xg{i}") for i in range(m)]
+    ys = [Symbol(f"yg{i}") for i in range(m)]
+
+    def random_sparse(degree: int) -> Expr:
+        term_count = rng.randint(2, max(3, shared_pool))
+        acc: Expr = Integer(0)
+        for _ in range(term_count):
+            coef = Integer(rng.randint(-5, 5))
+            if coef == 0:
+                coef = Integer(1)
+            mono: Expr = Integer(1)
+            for _ in range(rng.randint(1, degree)):
+                mono *= rng.choice(zs)
+            acc += coef * mono
+        return acc
+
+    eqs: list[Expr] = []
+    for i in range(m):
+        f = random_sparse(rng.choice([2, 3]))
+        g = random_sparse(rng.choice([2, 3]))
+        eqs.append(expand(xs[i] * f + ys[i] * g))
+    return eqs
+
+
+def factor_chain(n: int, k: int, *, seed: int) -> list[Expr]:
+    """
+    Synthetic ``MILP-friendly'' family: each equation is a product of
+    overlapping linear factors ``prod_j (x_{i_j} - a_{i_j})``. Many factors
+    are shared across equations, so a small set of definers covers everything;
+    lex Gröbner instead sees high-degree dense polynomials after expansion.
+    """
+    if n < 2:
+        raise ValueError("factor_chain requires n >= 2")
+    if k < 2:
+        raise ValueError("factor_chain requires k >= 2")
+
+    rng = random.Random(seed)
+    xs = [Symbol(f"u{i}") for i in range(n)]
+    constants = [Integer(rng.randint(1, 9)) for _ in range(n)]
+
+    eqs: list[Expr] = []
+    for i in range(n):
+        indices = sorted(set(rng.sample(range(n), min(k, n))))
+        if i not in indices:
+            indices[0] = i
+        prod_expr: Expr = Integer(1)
+        for j in indices:
+            prod_expr *= (xs[j] - constants[j])
+        eqs.append(expand(prod_expr))
+    return eqs
+
+
 FAMILY_HANDLERS: dict[str, Callable[[int], list[Expr]]] = {
     "cyclic": cyclic,
     "katsura": katsura,
@@ -272,6 +341,8 @@ ALL_FAMILIES: tuple[str, ...] = tuple(
             "adjacent_minors",
             "random_distances",
             "chemical_steady_state_random",
+            "block_gauge",
+            "factor_chain",
         ),
     ),
 )
@@ -333,6 +404,20 @@ def parse_args() -> argparse.Namespace:
     )
 
     p.add_argument(
+        "--k",
+        type=int,
+        default=None,
+        help="Factors per equation for factor_chain (>=2).",
+    )
+
+    p.add_argument(
+        "--m",
+        type=int,
+        default=None,
+        help="Number of polynomials for block_gauge (>=1).",
+    )
+
+    p.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -384,6 +469,16 @@ if __name__ == "__main__":
             args.reactions,
             seed=args.seed,
         )
+    elif fam == "block_gauge":
+        if args.m is None:
+            print("block_gauge requires --m", file=sys.stderr)
+            sys.exit(2)
+        eqs = block_gauge(args.m, seed=args.seed)
+    elif fam == "factor_chain":
+        if args.n is None or args.k is None:
+            print("factor_chain requires --n and --k", file=sys.stderr)
+            sys.exit(2)
+        eqs = factor_chain(args.n, args.k, seed=args.seed)
     else:
         if args.n is None:
             print(f"{fam} requires --n", file=sys.stderr)

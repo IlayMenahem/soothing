@@ -21,9 +21,16 @@ path = "bin/factor.rs"
 name = "milp_cover"
 path = "bin/milp_cover.rs"
 
+[[bin]]
+name = "bench"
+path = "bin/bench.rs"
+
 [dependencies]
 rayon = "1.10"
 regex = "1"
 symbolica = "1.5"
 thiserror = "1"
 good_lp = { version = "1", default-features = false, features = ["highs"] }
+blake3 = "1.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
