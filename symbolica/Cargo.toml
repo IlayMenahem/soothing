@@ -25,6 +25,10 @@ path = "bin/milp_cover.rs"
 name = "bench"
 path = "bin/bench.rs"
 
+[[bin]]
+name = "sig_groebner"
+path = "bin/sig_groebner.rs"
+
 [dependencies]
 rayon = "1.10"
 regex = "1"
