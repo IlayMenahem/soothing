@@ -17,7 +17,7 @@ fn main() {
     LicenseManager::set_license_key(key).unwrap();
 
     let path: PathBuf = std::env::args().nth(1).map_or_else(
-        || default_systems_dir_from_manifest().join("s_system.txt"),
+        || default_systems_dir_from_manifest().join("system.txt"),
         PathBuf::from,
     );
 

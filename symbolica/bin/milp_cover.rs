@@ -69,7 +69,7 @@ fn main() {
 
     let field = AlgebraicExtension::new_complex(Q);
 
-    println!("\nPreprocessing (interreduce + square-free factor)");
+    println!("\nPreprocessing (interreduce + factor)");
     let t_pre = Instant::now();
     let pre = match preprocess(&loaded, &field) {
         Ok(pre) => pre,
