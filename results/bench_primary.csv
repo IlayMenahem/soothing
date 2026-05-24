@@ -1,0 +1,10 @@
+system,n_eqs,n_vars,baseline,status,elapsed_secs,basis_len,num_components,max_dim,num_solutions,polys,coverage,free_params,selected,zeroed,error
+system,29,22,symbolica-gb-lex,timeout,60.000000,,,,,,,,,,
+system,29,22,symbolica-f5-lex,timeout,60.000000,,,,,,,,,,
+system,29,22,symbolica-gvw-lex,timeout,60.000000,,,,,,,,,,
+system,29,22,singular-gb-lex,timeout,60.000000,,,,,,,,,,
+system,29,22,singular-primdecGTZ,timeout,60.000000,,,,,,,,,,
+system,29,22,m2-gb-lex,timeout,60.000000,,,,,,,,,,
+system,29,22,m2-decompose,timeout,60.000000,,,,,,,,,,
+system,29,22,homotopy-jl,timeout,600.000000,,,,,,,,,,
+system,29,22,milp-cover,ok,0.108496,,,,,27,21,2,6,14,

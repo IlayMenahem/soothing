@@ -60,16 +60,22 @@ def build_bench() -> None:
         sys.exit(result.returncode)
 
 
-def run_bench(systems_dir: Path, csv_path: Path, timeout: int) -> None:
+def run_bench(
+    systems_dir: Path,
+    csv_path: Path,
+    timeout: int,
+    only_baselines: list[str] | None,
+) -> None:
     print(f"[3/3] Running bench (timeout={timeout}s) ...", flush=True)
-    result = subprocess.run(
-        [
-            str(BENCH_BIN),
-            str(systems_dir),
-            "--csv", str(csv_path),
-            "--timeout", str(timeout),
-        ],
-    )
+    argv = [
+        str(BENCH_BIN),
+        str(systems_dir),
+        "--csv", str(csv_path),
+        "--timeout", str(timeout),
+    ]
+    if only_baselines:
+        argv += ["--only", ",".join(only_baselines)]
+    result = subprocess.run(argv)
     if result.returncode != 0:
         sys.exit(result.returncode)
     print(f"\nResults written to {csv_path}", flush=True)
@@ -93,6 +99,8 @@ def parse_args() -> argparse.Namespace:
                    help="Also generate MILP-friendly families (chemical, distances, gauge, chain).")
     p.add_argument("--no-build", action="store_true",
                    help="Skip cargo build (assume bench binary already exists).")
+    p.add_argument("--only", type=str, default=None,
+                   help="Comma-separated baseline labels to run (default: all available).")
     return p.parse_args()
 
 
@@ -118,7 +126,12 @@ def main() -> int:
             return 1
 
         args.csv.parent.mkdir(parents=True, exist_ok=True)
-        run_bench(systems_dir, args.csv, args.timeout)
+        only_baselines = (
+            [s.strip() for s in args.only.split(",") if s.strip()]
+            if args.only is not None
+            else None
+        )
+        run_bench(systems_dir, args.csv, args.timeout, only_baselines)
     finally:
         if tmp is not None:
             tmp.cleanup()
