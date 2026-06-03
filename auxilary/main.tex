@@ -12,6 +12,7 @@
 \newtheorem*{proof*}{Proof}
 
 \title{Method statement}
+\author{Ilay Menahem}
 
 \begin{document}
 
@@ -76,7 +77,6 @@ The argument above shows existence of the parametrization wherever each leading 
     \item The parametrization is valid on the open set where every $\ell_i \neq 0$. Non-emptiness reduces to checking that the saturation $\langle f_1,\ldots,f_k\rangle : (\prod_i \ell_i)^\infty$ is not the unit ideal --- equivalently, that the GB contains no nonzero element of the parameter subring.
 \end{enumerate}
 
-This step is independent of the degree of any $f_i$ in $x_i$ and replaces the role formerly played by the degree $\le 4$ restriction (which guaranteed solvability by radicals).
 
 \subsection{Measuring Capability}
 
@@ -128,14 +128,14 @@ A factor $f$ is identically zero after zeroing iff every monomial of $f$ contain
     \sum_{f \in F_p} \left( \zeta_f + \sum_{x \in V} s_{f, x} \right) \ge 1 \qquad \forall\, p \in P.
 \]
 
-\textbf{(C2$'$) Non-degenerate definer.} For each selected pair $(f, x)$, after zeroing, $f$ must have positive degree in $x$: at least one monomial of $f$ of positive degree in $x$ must survive. This is exactly the condition $c_{d_i}^{(i)} \not\equiv 0$ in the proof, and replaces the former $1 \le d_i \le 4$ bounded-degree restriction (the upper bound was needed only for radical solvability, not for the existence of the parametrization).
+\textbf{(C2) Non-degenerate definer.} For each selected pair $(f, x)$, after zeroing, $f$ must have positive degree in $x$: at least one monomial of $f$ of positive degree in $x$ must survive.
 
 \begin{itemize}
-    \item[(C2$'$a)] A monomial $m \in M^{\ge 1}_{f, x}$ survives only if none of its non-$x$ variables are zeroed. For each $(f, x) \in F \times V$, each $m \in M^{\ge 1}_{f, x}$, and each $v \in \mathrm{vars}(m) \setminus \{x\}$:
+    \item[(C2a)] A monomial $m \in M^{\ge 1}_{f, x}$ survives only if none of its non-$x$ variables are zeroed. For each $(f, x) \in F \times V$, each $m \in M^{\ge 1}_{f, x}$, and each $v \in \mathrm{vars}(m) \setminus \{x\}$:
     \[
         a_{f, x, m} \le 1 - z_v.
     \]
-    \item[(C2$'$b)] If $f$ is selected for $x$, at least one monomial of positive degree in $x$ must survive. For each $(f, x) \in F \times V$:
+    \item[(C2b)] If $f$ is selected for $x$, at least one monomial of positive degree in $x$ must survive. For each $(f, x) \in F \times V$:
     \[
         s_{f, x} \le \sum_{m \in M^{\ge 1}_{f, x}} a_{f, x, m}.
     \]
@@ -161,17 +161,14 @@ In practice, such factors are excluded from the admissible set entirely, so no $
 
 \subsection{Objective}
 
-A polynomial $p$ becomes identically zero after zeroing iff at least one of its factors does. Link the objective indicator to the factor indicators: for each $p \in P$,
+A polynomial is zeroed iff at least one of its factors is, so for each $p \in P$,
 \[
     y_p \le \sum_{f \in F_p} \zeta_f.
 \]
 
-The primary objective is to maximize the number of preprocessed polynomials that become identically zero. As a secondary (tiebreaking) objective, we maximize the number of \emph{free variables} --- variables that are neither selected ($x_i$) nor zeroed ($v_j$), i.e., the variables outside $\{x_1,\ldots,x_k,v_1,\ldots,v_l\}$ that act as free parameters in the algebraic parametrization.
-
-The two objectives are combined with a weight $\varepsilon = \frac{1}{|V|+1}$ on the secondary term so that the secondary never overrides a unit difference in the primary (since the primary is integer-valued and the secondary term is bounded by $|V| \cdot \varepsilon < 1$):
+Maximize the number of zeroed polynomials, breaking ties by maximizing the number of \emph{free} variables --- those neither selected nor zeroed. Setting $\varepsilon = \frac{1}{|V|+1}$ keeps the tiebreaker bounded by $|V|\varepsilon < 1$, so it never overrides a unit difference in the primary term:
 \[
-    \max \; \sum_{p \in P} y_p \;-\; \frac{1}{|V|+1}\!\left(\sum_{(f,x)\,\in\,\text{admissible}} s_{f,x} + \sum_{v \in V} z_v\right).
+    \max \; \sum_{p \in P} y_p \;-\; \varepsilon\!\left(\sum_{(f,x)} s_{f,x} + \sum_{v \in V} z_v\right).
 \]
-Equivalently, ties in the primary objective are broken by minimizing the total number of selected and zeroed variables, i.e., maximizing the number of free parameters.
 
 \end{document}
