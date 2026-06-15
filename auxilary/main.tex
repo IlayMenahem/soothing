@@ -5,6 +5,8 @@
 \usepackage{amsthm}
 \usepackage{hyperref}
 \usepackage{geometry}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta}
 
 \geometry{margin=1in}
 
@@ -121,6 +123,85 @@ Let $P$ be the set of preprocessed polynomials, $F$ the set of factors, and $V$ 
 \[
     M^{\ge 1}_{f,x} = \{m \in \mathrm{mon}(f) : \deg_x(m) \ge 1\}.
 \]
+
+\subsection{Worked example}
+
+Take $V = \{x_1, x_2, x_3, x_4\}$ over a field $k$, skip the first zeroing and the interreduction, and start from the system
+\[
+\begin{aligned}
+    p_1 &= (x_1 - 1)(x_1 + 1), &\qquad
+    p_2 &= (x_2 - x_1)(x_2 + x_1 + 1), \\
+    p_3 &= (x_3 - x_1 x_2)\, x_4, &\qquad
+    p_4 &= x_4\,(x_1 + x_2 + x_3 + 1).
+\end{aligned}
+\]
+Step~3 records the irreducible factors; the factor $x_4$ is shared by $p_3$ and $p_4$:
+\[
+    F = \{\, x_1 - 1,\; x_1 + 1,\; x_2 - x_1,\; x_2 + x_1 + 1,\; x_3 - x_1 x_2,\; x_4,\; x_1 + x_2 + x_3 + 1 \,\}.
+\]
+The monomial factor $x_4$ is excluded as a definer by (C5), so no $s_{x_4, x}$ variable is created; it still participates through $\zeta_{x_4}$.
+
+\paragraph{Selection.} Zero $Z = \{x_4\}$ and select the tuples
+\[
+    (x_1 - 1,\; x_1), \qquad (x_2 - x_1,\; x_2),
+\]
+leaving $x_3$ free.
+
+\paragraph{Conditions.} The selection satisfies the three conditions of Section~3.
+\begin{itemize}
+    \item \textbf{Coverage.} $p_1$ contains the selected factor $x_1 - 1$ and $p_2$ contains $x_2 - x_1$. Both $p_3$ and $p_4$ contain the factor $x_4$, which becomes identically zero after zeroing $x_4$.
+    \item \textbf{Non-degenerate definer.} After zeroing $x_4$, the factor $x_1 - 1$ has positive degree in $x_1$ and $x_2 - x_1$ has positive degree in $x_2$.
+    \item \textbf{Acyclicity.} The dependency graph has the single edge $x_1 \to x_2$ (from $x_1 \in \mathrm{vars}(x_2 - x_1)$), which is acyclic; the order $x_2 > x_1$ is consistent with it.
+\end{itemize}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    >={Stealth[round]},
+    poly/.style={draw, rounded corners, minimum height=7mm, minimum width=10mm},
+    fac/.style={draw, dashed, rounded corners, minimum height=7mm},
+    var/.style={circle, draw, thick, minimum size=9mm},
+    free/.style={circle, draw, dashed, minimum size=9mm},
+    zero/.style={circle, draw, gray, fill=gray!12, text=gray, minimum size=9mm},
+    every node/.style={font=\small},
+]
+    % polynomials
+    \node[poly] (p1) at (0, 3)   {$p_1$};
+    \node[poly] (p2) at (0, 2)   {$p_2$};
+    \node[poly] (p3) at (0, 1)   {$p_3$};
+    \node[poly] (p4) at (0, 0)   {$p_4$};
+    % chosen factors / zeroing
+    \node[fac]  (f1) at (3.4, 3) {$x_1 - 1$};
+    \node[fac]  (f2) at (3.4, 2) {$x_2 - x_1$};
+    \node[fac]  (zz) at (3.4, 0.5) {$x_4 = 0$};
+    % variables
+    \node[var]  (v1) at (7, 3)   {$x_1$};
+    \node[var]  (v2) at (7, 2)   {$x_2$};
+    \node[free] (v3) at (7, 1)   {$x_3$};
+    \node[zero] (v4) at (7, 0)   {$x_4$};
+    % coverage edges
+    \draw[->] (p1) -- (f1);  \draw[->] (f1) -- node[above, font=\scriptsize] {defines} (v1);
+    \draw[->] (p2) -- (f2);  \draw[->] (f2) -- node[above, font=\scriptsize] {defines} (v2);
+    \draw[->] (p3) -- (zz);
+    \draw[->] (p4) -- (zz);
+    \draw[->, gray] (zz) -- (v4);
+    % dependency edge (triangular order)
+    \draw[->, thick] (v1) to[bend left=40] node[right, font=\scriptsize] {depends on} (v2);
+    % free annotation
+    \node[font=\scriptsize] at (8.3, 1) {free};
+\end{tikzpicture}
+\caption{Run of the worked example. Each polynomial is covered by a selected factor (dashed) that defines a variable, or by zeroing $x_4$. The dependency edge $x_1 \to x_2$ fixes the triangular order; $x_3$ stays free and $x_4$ is zeroed.}
+\end{figure}
+
+After substituting $x_4 = 0$ the triangular set
+\[
+    x_1 - 1 = 0, \qquad x_2 - x_1 = 0
+\]
+back-substitutes to $x_1 = 1,\ x_2 = 1$, giving the subvariety
+\[
+    \{(1, 1, t, 0) : t \in k\} \subseteq V(p_1, p_2, p_3, p_4),
+\]
+of dimension $1$ (the free parameter $x_3 = t$); the Jacobian probe of Section~4 returns the same value. Choosing $x_1 + 1$ for $p_1$ instead yields the parallel branch $\{(-1, -1, t, 0)\}$, illustrating the factor choice of Claim~2.
 
 \subsection{Variables}
 
