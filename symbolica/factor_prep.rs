@@ -246,11 +246,16 @@ fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> {
 pub fn preprocess(
     loaded: &LoadedMathematicaSystem,
     field: &ExtQ,
+    interreduce: bool,
 ) -> Result<Vec<Vec<PolyExtLex>>, String> {
     let var_order = heuristic_variable_order(loaded);
     let polys = ideal_ext_lex(&loaded.system, field, var_order)
         .map_err(|e| format!("equation -> polynomial over AlgebraicExtension<Q>: {e}"))?;
-    let polys = interreduce_polys(polys);
+    let polys = if interreduce {
+        interreduce_polys(polys)
+    } else {
+        polys
+    };
 
     Ok(factor_groups_from_polys(polys))
 }

@@ -288,7 +288,7 @@ fn worker_milp_cover(path: &Path) -> BaselineResult {
     };
     let field = AlgebraicExtension::new_complex(Q);
     let t_pre = Instant::now();
-    let pre = match preprocess(&loaded, &field) {
+    let pre = match preprocess(&loaded, &field, true) {
         Ok(p) => p,
         Err(e) => {
             return BaselineResult {

@@ -11,7 +11,6 @@
 \geometry{margin=1in}
 
 \newtheorem{claim}{Claim}
-\newtheorem*{proof*}{Proof}
 
 \title{Method statement}
 \author{Ilay Menahem}
@@ -139,7 +138,7 @@ Step~3 records the irreducible factors; the factor $x_4$ is shared by $p_3$ and 
 \[
     F = \{\, x_1 - 1,\; x_1 + 1,\; x_2 - x_1,\; x_2 + x_1 + 1,\; x_3 - x_1 x_2,\; x_4,\; x_1 + x_2 + x_3 + 1 \,\}.
 \]
-The monomial factor $x_4$ is excluded as a definer by (C5), so no $s_{x_4, x}$ variable is created; it still participates through $\zeta_{x_4}$.
+The factor $x_4$ is a single monomial, so it cannot define a variable: the equation $x_4 = 0$ pins down no particular variable to solve for. It can still be used by zeroing $x_4$.
 
 \paragraph{Selection.} Zero $Z = \{x_4\}$ and select the tuples
 \[
@@ -186,7 +185,7 @@ leaving $x_3$ free.
     \draw[->] (p4) -- (zz);
     \draw[->, gray] (zz) -- (v4);
     % dependency edge (triangular order)
-    \draw[->, thick] (v1) to[bend left=40] node[right, font=\scriptsize] {depends on} (v2);
+    \draw[->, thick] (v2) to[bend left=40] node[right, font=\scriptsize] {depends on} (v1);
     % free annotation
     \node[font=\scriptsize] at (8.3, 1) {free};
 \end{tikzpicture}
@@ -283,6 +282,6 @@ If the method finds tuples $(f_1, x_1), \ldots, (f_k, x_k)$ and variables to zer
 \[
     \#\text{variables} - \operatorname{rank}\bigl(J_p\bigr),
 \]
-where $J_p$ is the Jacobian of the system at $p$. A witness point $p$ can be obtained from the triangular set $\{f_1, \ldots, f_k\}$ (after substituting $v_j = 0$) by numerical homotopy or regular-chain real-root isolation; closed-form radical evaluation of the $x_i$ is not required.
+where $J_p$ is the Jacobian of the full system $p_1, \ldots, p_m$ at $p$. A witness point $p$ can be obtained from the triangular set $\{f_1, \ldots, f_k\}$ (after substituting $v_j = 0$), by numerical homotopy or regular-chain real-root isolation; closed-form radical evaluation of the $x_i$ is not required.
 
 \end{document}

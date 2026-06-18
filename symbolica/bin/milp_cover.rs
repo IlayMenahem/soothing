@@ -24,18 +24,22 @@ use polynomial_milp::{
 #[derive(Debug)]
 struct CliOptions {
     path: PathBuf,
+    interreduce: bool,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path: Option<PathBuf> = None;
+    let mut interreduce = true;
     for arg in args {
-        if arg.starts_with("--") {
-            return Err(format!("unknown option {arg:?}"));
+        match arg.as_str() {
+            "--no-interreduce" => interreduce = false,
+            _ if arg.starts_with("--") => return Err(format!("unknown option {arg:?}")),
+            _ => path = Some(PathBuf::from(arg)),
         }
-        path = Some(PathBuf::from(arg));
     }
     Ok(CliOptions {
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
+        interreduce,
     })
 }
 
@@ -69,9 +73,16 @@ fn main() {
 
     let field = AlgebraicExtension::new_complex(Q);
 
-    println!("\nPreprocessing (interreduce + factor)");
+    println!(
+        "\nPreprocessing ({}factor)",
+        if options.interreduce {
+            "interreduce + "
+        } else {
+            ""
+        }
+    );
     let t_pre = Instant::now();
-    let pre = match preprocess(&loaded, &field) {
+    let pre = match preprocess(&loaded, &field, options.interreduce) {
         Ok(pre) => pre,
         Err(e) => {
             eprintln!("{e}");
@@ -160,6 +171,13 @@ mod tests {
     fn parse_args_uses_system_txt_by_default() {
         let options = parse_args(std::iter::empty::<String>()).expect("parse args");
         assert!(options.path.ends_with("systems/system.txt"));
+        assert!(options.interreduce);
+    }
+
+    #[test]
+    fn parse_args_disables_interreduce() {
+        let options = parse_args(["--no-interreduce".to_string()]).expect("parse args");
+        assert!(!options.interreduce);
     }
 
     #[test]

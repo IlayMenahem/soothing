@@ -205,7 +205,7 @@ mod tests {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(source).expect("load");
         let field = AlgebraicExtension::new_complex(Q);
-        let pre = preprocess(&loaded, &field).expect("preprocess");
+        let pre = preprocess(&loaded, &field, true).expect("preprocess");
         let data = build_problem(pre, &loaded);
         (loaded, data)
     }
@@ -230,7 +230,7 @@ mod tests {
         let loaded = load_mathematica_system_from_str_with_var_names("{x + 1 == 0, y + 2 == 0}")
             .expect("load");
         let field = AlgebraicExtension::new_complex(Q);
-        let mut pre = preprocess(&loaded, &field).expect("preprocess");
+        let mut pre = preprocess(&loaded, &field, true).expect("preprocess");
         assert_eq!(pre.len(), 2);
         let shared = pre[0][0].clone();
         pre[1].push(shared);

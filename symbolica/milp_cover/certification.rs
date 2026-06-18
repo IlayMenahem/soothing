@@ -225,7 +225,7 @@ mod tests {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(source).expect("load");
         let field = AlgebraicExtension::new_complex(Q);
-        let pre = preprocess(&loaded, &field).expect("preprocess");
+        let pre = preprocess(&loaded, &field, true).expect("preprocess");
         let data = build_problem(pre, &loaded);
         let cover = solve_milp(&data).expect("feasible");
         (loaded, data, cover)
