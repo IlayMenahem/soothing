@@ -177,13 +177,14 @@ fn run_algo<O: MonomialOrder + Send + 'static>(
         println!("\nSymbolica GroebnerBasis::new ({label} over ℚ)");
         let sys = system.clone();
         let vo = var_order.clone();
-        let r = run_with_optional_timeout("builtin", timeout, move || -> Result<
-            GroebnerBasis<Q, u16, O>,
-            String,
-        > {
-            let ideal = ideal_in_order::<Q, O>(&sys, &Q, vo)?;
-            Ok(GroebnerBasis::new(&ideal, false))
-        });
+        let r = run_with_optional_timeout(
+            "builtin",
+            timeout,
+            move || -> Result<GroebnerBasis<Q, u16, O>, String> {
+                let ideal = ideal_in_order::<Q, O>(&sys, &Q, vo)?;
+                Ok(GroebnerBasis::new(&ideal, false))
+            },
+        );
         match r {
             Some(Ok(gb)) => report(&gb),
             Some(Err(e)) => eprintln!("  error: {e}"),
@@ -221,9 +222,15 @@ fn main() {
     let var_order = variable_order(&loaded.id_to_sym);
 
     match args.order {
-        Order::Lex => run_algo::<LexOrder>("lex", args.algo, &loaded.system, var_order, args.timeout),
-        Order::GrevLex => {
-            run_algo::<GrevLexOrder>("grevlex", args.algo, &loaded.system, var_order, args.timeout)
+        Order::Lex => {
+            run_algo::<LexOrder>("lex", args.algo, &loaded.system, var_order, args.timeout)
         }
+        Order::GrevLex => run_algo::<GrevLexOrder>(
+            "grevlex",
+            args.algo,
+            &loaded.system,
+            var_order,
+            args.timeout,
+        ),
     }
 }

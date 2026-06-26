@@ -10,6 +10,7 @@
 systems/
 
 temp.**
+/tmp
 *.prof
 *.lock
 .DS_Store

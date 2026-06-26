@@ -41,9 +41,8 @@ use symbolica::poly::LexOrder;
 
 use polynomial_milp::milp_cover::{build_problem, solve_milp};
 use polynomial_milp::{
-    groebner_basis_from_system_lex_q, groebner_f5_from_system_with,
-    groebner_gvw_from_system_with, load_mathematica_system_from_path_with_var_names, preprocess,
-    variable_order,
+    groebner_basis_from_system_lex_q, groebner_f5_from_system_with, groebner_gvw_from_system_with,
+    load_mathematica_system_from_path_with_var_names, preprocess, variable_order,
 };
 
 const LICENSE_KEY: &str = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
@@ -61,10 +60,18 @@ enum Mode {
         csv: Option<PathBuf>,
         only_baselines: Option<Vec<String>>,
     },
-    WorkerSymbolicaGb { path: PathBuf },
-    WorkerSymbolicaF5 { path: PathBuf },
-    WorkerSymbolicaGvw { path: PathBuf },
-    WorkerMilpCover { path: PathBuf },
+    WorkerSymbolicaGb {
+        path: PathBuf,
+    },
+    WorkerSymbolicaF5 {
+        path: PathBuf,
+    },
+    WorkerSymbolicaGvw {
+        path: PathBuf,
+    },
+    WorkerMilpCover {
+        path: PathBuf,
+    },
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Mode, String> {
@@ -562,11 +569,7 @@ fn cache_dir() -> PathBuf {
 
 fn cache_key(path: &Path, baseline: &str) -> Option<String> {
     let content = fs::read(path).ok()?;
-    Some(format!(
-        "{}-{}",
-        baseline,
-        blake3::hash(&content).to_hex()
-    ))
+    Some(format!("{}-{}", baseline, blake3::hash(&content).to_hex()))
 }
 
 fn cache_load(key: &str) -> Option<BaselineResult> {
@@ -679,8 +682,16 @@ fn invoke_dimension_probe(system_path: &Path, base_timeout: Duration) -> Option<
             let line = s.lines().rev().find(|l| l.trim_start().starts_with('{'))?;
             let v: JsonValue = serde_json::from_str(line).ok()?;
             Some(DimensionEntry {
-                source: v.get("source").and_then(|x| x.as_str()).unwrap_or("z3").to_string(),
-                status: v.get("status").and_then(|x| x.as_str()).unwrap_or("error").to_string(),
+                source: v
+                    .get("source")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("z3")
+                    .to_string(),
+                status: v
+                    .get("status")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("error")
+                    .to_string(),
                 found_dim: v.get("found_dim").and_then(|x| x.as_i64()),
                 rank: v.get("rank").and_then(|x| x.as_i64()),
                 elapsed_secs: v
@@ -734,15 +745,19 @@ fn process_file(
         .unwrap_or("?")
         .to_string();
 
-    let loaded = load_mathematica_system_from_path_with_var_names(path)
-        .map_err(|e| format!("load: {e}"))?;
+    let loaded =
+        load_mathematica_system_from_path_with_var_names(path).map_err(|e| format!("load: {e}"))?;
     let n_eqs = loaded.system.equations.len();
     let n_vars = loaded.var_names.len();
     drop(loaded);
 
     let mut results: Vec<BaselineResult> = Vec::with_capacity(specs.len());
     for spec in specs {
-        eprintln!("    [{}] {}", spec.label, path.file_name().unwrap().to_string_lossy());
+        eprintln!(
+            "    [{}] {}",
+            spec.label,
+            path.file_name().unwrap().to_string_lossy()
+        );
         // Cache only deterministic in-process Symbolica baselines.
         let cacheable = matches!(spec.invocation, Invocation::SelfWorker { .. });
         let cached = if cacheable && !no_cache {
@@ -761,11 +776,7 @@ fn process_file(
             }
             r
         };
-        eprintln!(
-            "       -> {} ({:.3}s)",
-            res.status,
-            res.elapsed_secs,
-        );
+        eprintln!("       -> {} ({:.3}s)", res.status, res.elapsed_secs,);
         results.push(res);
     }
 
@@ -843,17 +854,16 @@ fn write_dimension_csv(path: &Path, records: &[SystemRecord]) -> std::io::Result
         "system,n_vars,reference_source,reference_status,reference_dim,reference_rank,reference_secs,method,found_dim,codim_shortfall\n",
     );
     for rec in records {
-        let (ref_source, ref_status, ref_dim, ref_rank, ref_secs) =
-            match &rec.dimension_entry {
-                Some(d) => (
-                    d.source.clone(),
-                    d.status.clone(),
-                    d.found_dim,
-                    d.rank,
-                    d.elapsed_secs,
-                ),
-                None => ("none".into(), "skipped".into(), None, None, 0.0),
-            };
+        let (ref_source, ref_status, ref_dim, ref_rank, ref_secs) = match &rec.dimension_entry {
+            Some(d) => (
+                d.source.clone(),
+                d.status.clone(),
+                d.found_dim,
+                d.rank,
+                d.elapsed_secs,
+            ),
+            None => ("none".into(), "skipped".into(), None, None, 0.0),
+        };
         // For each baseline that *reports* a dimension, emit a row.
         for r in &rec.results {
             if r.status != "ok" {
@@ -915,7 +925,10 @@ fn write_markdown_summary(path: &Path, records: &[SystemRecord]) -> std::io::Res
     }
     out.push('\n');
     for rec in records {
-        out.push_str(&format!("| {} | {} | {} |", rec.name, rec.n_eqs, rec.n_vars));
+        out.push_str(&format!(
+            "| {} | {} | {} |",
+            rec.name, rec.n_eqs, rec.n_vars
+        ));
         for b in &baselines {
             let cell = rec
                 .results
@@ -990,9 +1003,15 @@ fn main() {
     };
 
     match mode {
-        Mode::WorkerSymbolicaGb { path } => run_worker("symbolica-gb-lex", || worker_symbolica_gb(&path)),
-        Mode::WorkerSymbolicaF5 { path } => run_worker("symbolica-f5-lex", || worker_symbolica_f5(&path)),
-        Mode::WorkerSymbolicaGvw { path } => run_worker("symbolica-gvw-lex", || worker_symbolica_gvw(&path)),
+        Mode::WorkerSymbolicaGb { path } => {
+            run_worker("symbolica-gb-lex", || worker_symbolica_gb(&path))
+        }
+        Mode::WorkerSymbolicaF5 { path } => {
+            run_worker("symbolica-f5-lex", || worker_symbolica_f5(&path))
+        }
+        Mode::WorkerSymbolicaGvw { path } => {
+            run_worker("symbolica-gvw-lex", || worker_symbolica_gvw(&path))
+        }
         Mode::WorkerMilpCover { path } => run_worker("milp-cover", || worker_milp_cover(&path)),
         Mode::Orchestrator {
             dir,
@@ -1034,7 +1053,9 @@ fn main() {
                 }
             }
 
-            let primary = csv.clone().unwrap_or_else(|| results_dir().join("bench_primary.csv"));
+            let primary = csv
+                .clone()
+                .unwrap_or_else(|| results_dir().join("bench_primary.csv"));
             let dimension = results_dir().join("bench_dimension.csv");
             let markdown = results_dir().join("bench_summary.md");
 
@@ -1088,9 +1109,10 @@ mod tests {
 
     #[test]
     fn parse_args_only_filters_baselines() {
-        let mode = parse_args(
-            ["--only".to_string(), "symbolica-gb-lex,milp-cover".to_string()],
-        )
+        let mode = parse_args([
+            "--only".to_string(),
+            "symbolica-gb-lex,milp-cover".to_string(),
+        ])
         .expect("parse");
         match mode {
             Mode::Orchestrator { only_baselines, .. } => {

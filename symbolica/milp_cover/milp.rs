@@ -73,12 +73,15 @@ fn sum_vars(vars: &[Variable]) -> Expression {
 }
 
 fn objective(vars: &MilpVariables) -> Expression {
-    let n = (vars.z.len() + vars.s.len()) as f64;
-    // eps*(|z|+|s|) < 1: secondary tiebreaker never overrides a 1-unit primary difference.
-    let eps = 1.0 / (n + 1.0);
-    let primary = sum_vars(&vars.y);
-    let secondary = sum_vars(&vars.z) + sum_vars(&vars.s);
-    primary - eps * secondary
+    // Primary: maximize free variables = |V| - |zeroed| - |defined|, i.e. the reported
+    // subvariety dimension. Coverage (C1) forces just enough z/s to stay feasible.
+    // Secondary (eps < 1 unit of dimension): among equal-dimension covers, prefer those
+    // that zero more polynomials, leaving a smaller residual triangular set to certify.
+    let m = vars.y.len() as f64;
+    let eps = 1.0 / (m + 1.0);
+    let primary = -(sum_vars(&vars.z) + sum_vars(&vars.s));
+    let secondary = sum_vars(&vars.y);
+    primary + eps * secondary
 }
 
 fn add_factor_zero_constraints<M: SolverModel>(

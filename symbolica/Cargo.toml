@@ -29,6 +29,10 @@ path = "bin/bench.rs"
 name = "sig_groebner"
 path = "bin/sig_groebner.rs"
 
+[[bin]]
+name = "idos"
+path = "bin/idos.rs"
+
 [dependencies]
 rayon = "1.10"
 regex = "1"

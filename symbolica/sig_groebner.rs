@@ -61,7 +61,11 @@ impl<O: MonomialOrder> Clone for Signature<O> {
 
 impl<O: MonomialOrder> std::fmt::Debug for Signature<O> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Signature(index={}, monomial={:?})", self.index, self.monomial)
+        write!(
+            f,
+            "Signature(index={}, monomial={:?})",
+            self.index, self.monomial
+        )
     }
 }
 
@@ -241,9 +245,7 @@ fn finalize<F: Field + Echelonize, O: MonomialOrder>(
 /// Generic over the coefficient field `F` (must support echelonization for
 /// the final interreduction) and the monomial order `O`. Maintains a basis
 /// of labeled polynomials and a set of known syzygy signatures.
-pub fn groebner_gvw<F, O>(
-    ideal: &[MultivariatePolynomial<F, u16, O>],
-) -> GroebnerBasis<F, u16, O>
+pub fn groebner_gvw<F, O>(ideal: &[MultivariatePolynomial<F, u16, O>]) -> GroebnerBasis<F, u16, O>
 where
     F: Field + Echelonize,
     O: MonomialOrder,
@@ -301,9 +303,7 @@ where
 /// basis with `f_i`, applies the F5 criterion: a pair signature `(i, m)`
 /// with `m` divisible by the leading monomial of any element whose
 /// signature has index `< i` is a principal syzygy and is dropped.
-pub fn groebner_f5<F, O>(
-    ideal: &[MultivariatePolynomial<F, u16, O>],
-) -> GroebnerBasis<F, u16, O>
+pub fn groebner_f5<F, O>(ideal: &[MultivariatePolynomial<F, u16, O>]) -> GroebnerBasis<F, u16, O>
 where
     F: Field + Echelonize,
     O: MonomialOrder,
