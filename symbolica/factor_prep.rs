@@ -342,7 +342,8 @@ mod tests {
     fn preprocess_drops_pure_constant_equation() {
         // equation is q == q + 1 → q - (q + 1) = -1, a nonzero constant.
         let loaded = load("{q == q + 1}");
-        let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
+        let pre =
+            preprocess(&loaded, &AlgebraicExtension::new_complex(Q), true).expect("preprocess");
         assert!(
             pre.is_empty(),
             "constant-only system should produce no factor groups, got {:?}",
@@ -353,7 +354,8 @@ mod tests {
     #[test]
     fn preprocess_factors_are_non_constant_and_non_zero() {
         let loaded = load("{(x + 1)^2 * (y + 2) == 0, (x^2 + 1) == 0}");
-        let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
+        let pre =
+            preprocess(&loaded, &AlgebraicExtension::new_complex(Q), true).expect("preprocess");
         assert!(!pre.is_empty());
         for group in &pre {
             assert!(!group.is_empty());
@@ -367,7 +369,8 @@ mod tests {
     #[test]
     fn preprocess_returns_one_group_per_nonzero_equation() {
         let loaded = load("{x + 1 == 0, y + 2 == 0, z + 3 == 0}");
-        let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
+        let pre =
+            preprocess(&loaded, &AlgebraicExtension::new_complex(Q), true).expect("preprocess");
         assert_eq!(pre.len(), 3);
         for group in &pre {
             assert_eq!(group.len(), 1);
