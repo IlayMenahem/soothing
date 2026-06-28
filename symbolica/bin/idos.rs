@@ -2,6 +2,7 @@
 //!
 //! Usage: `idos [path]` — default path: `systems/system.txt`.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
@@ -21,6 +22,69 @@ use polynomial_milp::{
 /// Number of distinct radical covers: one factor chosen per equation group.
 fn cover_count(groups: &[Vec<PolyExtLex>]) -> u128 {
     groups.iter().map(|g| g.len() as u128).product()
+}
+
+/// Number of factor *sets* that hit every equation's factor group.
+///
+/// Distinct from [`cover_count`] (which counts one-factor-per-group choice
+/// functions): a factor cover here is any subset `S` of the deduplicated factor
+/// set such that every equation contributes at least one of its factors to `S`.
+/// Factors are made monic and deduplicated across groups (mirroring
+/// `build_problem`), then the count is delegated to [`count_hitting_sets`].
+///
+/// Returns `None` when the distinct-factor count exceeds the 63-bit mask limit.
+fn factor_cover_count(groups: &[Vec<PolyExtLex>]) -> Option<u128> {
+    let mut factor_index: HashMap<PolyExtLex, usize> = HashMap::new();
+    let index_groups: Vec<Vec<usize>> = groups
+        .iter()
+        .map(|group| {
+            group
+                .iter()
+                .map(|f| {
+                    let next = factor_index.len();
+                    *factor_index.entry(f.clone().make_monic()).or_insert(next)
+                })
+                .collect()
+        })
+        .collect();
+    count_hitting_sets(&index_groups, factor_index.len())
+}
+
+/// Count subsets of `0..n_factors` that intersect every group, by
+/// inclusion–exclusion over the deduplicated groups:
+///
+/// ```text
+/// N = Σ_{T ⊆ groups} (−1)^|T| · 2^(n_factors − |⋃ T|)
+/// ```
+///
+/// Returns `None` when `n_factors` exceeds the 63-bit group-mask capacity.
+fn count_hitting_sets(index_groups: &[Vec<usize>], n_factors: usize) -> Option<u128> {
+    if n_factors >= 64 {
+        return None;
+    }
+    let masks: Vec<u64> = {
+        let mut masks: Vec<u64> = index_groups
+            .iter()
+            .map(|ids| ids.iter().fold(0u64, |mask, &i| mask | (1u64 << i)))
+            .collect();
+        masks.sort_unstable();
+        masks.dedup();
+        masks
+    };
+    // A group with no factors can never be hit ⇒ no cover exists.
+    if masks.contains(&0) {
+        return Some(0);
+    }
+
+    fn sweep(masks: &[u64], union: u64, sign: i128, n_factors: u32) -> i128 {
+        match masks.split_first() {
+            None => sign * (1i128 << (n_factors - union.count_ones())),
+            Some((&g, rest)) => {
+                sweep(rest, union, sign, n_factors) + sweep(rest, union | g, -sign, n_factors)
+            }
+        }
+    }
+    Some(sweep(&masks, 0, 1, n_factors as u32) as u128)
 }
 
 /// The `idx`-th radical cover, decoding `idx` as a mixed-radix index over the
@@ -192,6 +256,13 @@ fn main() {
         return;
     }
 
+    match factor_cover_count(&pre) {
+        Some(n) => println!("  factor covers (hitting sets, no variable zeroing): {n}"),
+        None => {
+            println!("  factor covers: skipped — too many distinct factors for the 63-bit counter")
+        }
+    }
+
     let total = cover_count(&pre);
     let tried = total.min(options.max_covers);
     println!(
@@ -234,5 +305,28 @@ fn main() {
     );
     for (idx, len) in consistent.iter().take(20) {
         println!("\tcover #{idx}: {len} basis element(s)");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::count_hitting_sets;
+
+    #[test]
+    fn hitting_sets_disjoint_groups() {
+        // Groups {0,1} and {2} are disjoint ⇒ (2²−1)·(2¹−1) = 3.
+        assert_eq!(count_hitting_sets(&[vec![0, 1], vec![2]], 3), Some(3));
+    }
+
+    #[test]
+    fn hitting_sets_shared_factor() {
+        // Groups {0,1} and {1,2} share factor 1; brute force over 8 subsets ⇒ 5.
+        assert_eq!(count_hitting_sets(&[vec![0, 1], vec![1, 2]], 3), Some(5));
+    }
+
+    #[test]
+    fn hitting_sets_empty_group_is_zero() {
+        // A group with no factors can never be hit ⇒ no cover exists.
+        assert_eq!(count_hitting_sets(&[vec![0], vec![]], 1), Some(0));
     }
 }
