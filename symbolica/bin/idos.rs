@@ -1,4 +1,9 @@
-//! A Gröbner basis of a minimal factor cover of a polynomial system.
+//! A CDCL-style search over the minimal factor covers of a polynomial system.
+//!
+//! Implements Algorithm 1 of the method statement: the minimal factor covers
+//! are tried cheapest-first by Bézout bound; a cover that contains a learned
+//! unsatisfiable core is skipped; an inconsistent cover is shrunk to a minimal
+//! unsatisfiable core that is learned to prune later covers.
 //!
 //! Usage: `idos [path]` — default path: `systems/system.txt`.
 
@@ -8,7 +13,6 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rayon::prelude::*;
 use symbolica::LicenseManager;
 use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
@@ -100,6 +104,29 @@ fn minimal_covers(index_groups: &[Vec<usize>], n_factors: usize) -> Option<Vec<u
     Some(covers)
 }
 
+/// Total degree of a polynomial: the largest monomial exponent sum.
+fn total_degree(p: &PolyExtLex) -> u64 {
+    p.exponents_iter()
+        .map(|term| term.iter().map(|&e| e as u64).sum::<u64>())
+        .max()
+        .unwrap_or(0)
+}
+
+/// Single-bit masks for every set bit of `mask`, least significant first.
+fn set_bits(mask: u64) -> impl Iterator<Item = u64> {
+    (0..64).map(|i| 1u64 << i).filter(move |b| mask & b != 0)
+}
+
+/// Bézout bound of a cover: the product of the degrees of its factors. Used as
+/// the cost heuristic that orders covers from easiest to hardest to check. The
+/// product saturates rather than overflowing, which only matters for covers far
+/// beyond what is solvable anyway.
+fn bezout_bound(degrees: &[u64], mask: u64) -> u128 {
+    set_bits(mask).fold(1u128, |acc, b| {
+        acc.saturating_mul(degrees[b.trailing_zeros() as usize] as u128)
+    })
+}
+
 /// Decode a cover bitmask back into its factors.
 fn decode_cover(factors: &[PolyExtLex], mask: u64) -> Vec<PolyExtLex> {
     (0..factors.len())
@@ -112,23 +139,6 @@ fn decode_cover(factors: &[PolyExtLex], mask: u64) -> Vec<PolyExtLex> {
 /// that the cover's ideal is the whole ring, i.e. the cover is inconsistent.
 fn is_unit_ideal(system: &[PolyExtLex]) -> bool {
     system.iter().any(|p| !p.is_zero() && p.is_constant())
-}
-
-/// Cover indices to evaluate: the full range when it fits the budget, otherwise
-/// `budget` pseudo-random samples (splitmix64) drawn from `0..total`.
-fn cover_indices(total: u128, budget: u128, seed: u64) -> Box<dyn Iterator<Item = u128>> {
-    if total <= budget {
-        return Box::new(0..total);
-    }
-    let mut state = seed;
-    Box::new((0..budget).map(move |_| {
-        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^= z >> 31;
-        (z as u128) % total
-    }))
 }
 
 /// Outcome of computing the Gröbner basis of a single cover.
@@ -156,20 +166,37 @@ fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
     }
 }
 
+/// Shrink an inconsistent cover to a minimal unsatisfiable core by deletion:
+/// drop each factor whose removal leaves the ideal equal to the whole ring. A
+/// removal that turns the cover satisfiable keeps the factor; a removal that
+/// times out also keeps it, conservatively, since the larger set is still known
+/// inconsistent. The result is a subset that is unsatisfiable but loses that
+/// property if any factor is dropped.
+fn minimal_unsat_core(factors: &[PolyExtLex], mask: u64, timeout: Duration) -> u64 {
+    set_bits(mask).fold(mask, |core, bit| {
+        let reduced = core & !bit;
+        if reduced == 0 {
+            return core;
+        }
+        match evaluate_cover(decode_cover(factors, reduced), timeout) {
+            Outcome::Inconsistent => reduced,
+            _ => core,
+        }
+    })
+}
+
 #[derive(Debug)]
 struct CliOptions {
     path: PathBuf,
     interreduce: bool,
-    max_covers: u128,
-    seed: u64,
+    max_covers: usize,
     timeout_ms: u64,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path: Option<PathBuf> = None;
     let mut interreduce = true;
-    let mut max_covers: u128 = 2_000;
-    let mut seed: u64 = 0x1234_5678;
+    let mut max_covers: usize = 2_000;
     let mut timeout_ms: u64 = 5_000;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -184,11 +211,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     .parse()
                     .map_err(|e| format!("invalid --max-covers: {e}"))?;
             }
-            "--seed" => {
-                seed = next_value("--seed")?
-                    .parse()
-                    .map_err(|e| format!("invalid --seed: {e}"))?;
-            }
             "--timeout-ms" => {
                 timeout_ms = next_value("--timeout-ms")?
                     .parse()
@@ -202,7 +224,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
         interreduce,
         max_covers,
-        seed,
         timeout_ms,
     })
 }
@@ -219,7 +240,7 @@ fn main() {
         }
     };
 
-    println!("polynomial-milp — minimal factor covers\n");
+    println!("polynomial-milp — CDCL over minimal factor covers\n");
     println!("Loading {}", options.path.display());
 
     let loaded = match load_mathematica_system_from_path_with_var_names(&options.path) {
@@ -264,6 +285,7 @@ fn main() {
     }
 
     let (factors, index_groups) = build_factor_index(&pre);
+    let degrees: Vec<u64> = factors.iter().map(total_degree).collect();
     let covers = match minimal_covers(&index_groups, factors.len()) {
         Some(covers) => covers,
         None => {
@@ -280,51 +302,57 @@ fn main() {
         return;
     }
 
-    let total = covers.len() as u128;
-    let tried = total.min(options.max_covers);
+    // Try covers cheapest-first by Bézout bound (ties broken by mask).
+    let mut order: Vec<usize> = (0..covers.len()).collect();
+    order.sort_by_key(|&i| (bezout_bound(&degrees, covers[i]), covers[i]));
+
+    let tried = covers.len().min(options.max_covers);
     println!(
-        "\ntrying {tried} of {total} minimal cover(s){} on {} threads, {}ms/cover timeout",
-        if total > options.max_covers {
-            " (random sample)"
-        } else {
-            ""
-        },
-        rayon::current_num_threads(),
+        "\nCDCL over {tried} of {} minimal cover(s) in Bézout order, {}ms/cover timeout",
+        covers.len(),
         options.timeout_ms,
     );
 
     let timeout = Duration::from_millis(options.timeout_ms);
     let t_gb = Instant::now();
-    let outcomes: Vec<(usize, Outcome)> = cover_indices(total, options.max_covers, options.seed)
-        .collect::<Vec<_>>()
-        .into_par_iter()
-        .map(|idx| {
-            let cover = decode_cover(&factors, covers[idx as usize]);
-            (idx as usize, evaluate_cover(cover, timeout))
-        })
-        .collect();
-
-    let consistent: Vec<(usize, usize)> = outcomes
-        .iter()
-        .filter_map(|(idx, o)| match o {
-            Outcome::Consistent(len) => Some((*idx, *len)),
-            _ => None,
-        })
-        .collect();
-    let timeouts = outcomes
-        .iter()
-        .filter(|(_, o)| matches!(o, Outcome::Timeout))
-        .count();
+    let mut cores: Vec<u64> = Vec::new();
+    let mut solutions: Vec<(usize, usize)> = Vec::new();
+    let mut inconsistent = 0usize;
+    let mut timeouts = 0usize;
+    let mut pruned = 0usize;
+    for &idx in order.iter().take(tried) {
+        let mask = covers[idx];
+        // Skip the cover if any learned core is a subset of it (not an
+        // equality membership test, despite `manual_contains`).
+        #[allow(clippy::manual_contains)]
+        let subsumed = cores.iter().any(|&core| core & mask == core);
+        if subsumed {
+            pruned += 1;
+            continue;
+        }
+        match evaluate_cover(decode_cover(&factors, mask), timeout) {
+            Outcome::Consistent(len) => solutions.push((idx, len)),
+            Outcome::Inconsistent => {
+                cores.push(minimal_unsat_core(&factors, mask, timeout));
+                inconsistent += 1;
+            }
+            Outcome::Timeout => timeouts += 1,
+        }
+    }
 
     println!(
-        "  {} consistent, {} inconsistent, {} timed out, elapsed {:?}",
-        consistent.len(),
-        outcomes.len() - consistent.len() - timeouts,
+        "  {} satisfiable, {} unsatisfiable, {} core-pruned, {} timed out, elapsed {:?}",
+        solutions.len(),
+        inconsistent,
+        pruned,
         timeouts,
         t_gb.elapsed()
     );
-    for (idx, len) in consistent.iter().take(20) {
+    for (idx, len) in solutions.iter().take(20) {
         println!("\tcover #{idx}: {len} basis element(s)");
+    }
+    if !cores.is_empty() {
+        println!("  learned {} minimal unsatisfiable core(s)", cores.len());
     }
 }
 

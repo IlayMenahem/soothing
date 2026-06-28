@@ -285,8 +285,8 @@ where $J_p$ is the Jacobian of the full system $p_1, \ldots, p_m$ at $p$. A witn
 
 \section{CDCL for system of polynomial equations}
 
-Let us say we have a set of factored polynomials $p_1, \ldots, p_m$ over a field $k$, and we want to validate whether there exists a solution to the system $p_1 = \cdots = p_m = 0$ (or any other property that can be inferred from the minimal factor covers).
-We describe a CDCL-style algorithm that can be used to explore the space of possible minimal factor covers of the polynomials.
+Let us say we have a set of factored polynomials $p_1, \ldots, p_m$ over a field $k$, and we want to validate whether there exists a solution to the system $p_1 = \cdots = p_m = 0$ (or any other property that can be inferred from the minimal hitting sets).
+We describe a CDCL-style algorithm that can be used to explore the space of possible minimal hitting sets of the polynomials.
 
 \begin{algorithm}
 \caption{CDCL for Polynomial Systems}
@@ -297,26 +297,34 @@ We describe a CDCL-style algorithm that can be used to explore the space of poss
     \State Preprocess the polynomials
     \State Factor the polynomials into irreducible factors
     \State Initialize $C = \emptyset$ an unsatisfiable cores set
+    \State $S = \emptyset$
 
-    \For{each minimal factor cover $F$ of the polynomials}
-        \If{The minimal factor cover $F$ contains an unsatisfiable core in $C$}
-            \State \textbf{continue} to the next minimal factor cover
+    \For{each minimal hitting set $F$ of the polynomials}
+        \If{The minimal hitting set $F$ contains an unsatisfiable core in $C$}
+            \State \textbf{continue} to the next minimal hitting set
         \EndIf
 
-        \State Check if the minimal factor cover $F$ is satisfiable
-        \If{The minimal factor cover $F$ is satisfiable}
-            \State \textbf{return} the solution corresponding to the minimal factor cover $F$
+        \State Check if the minimal hitting set $F$ is satisfiable
+        \If{The minimal hitting set $F$ is satisfiable}
+            \State Add the solution to the solutions set $S$
         \Else
-            \State Extract a minimal unsatisfiable core $U$ from the minimal factor cover $F$
+            \State Extract a minimal unsatisfiable core $U$ from the minimal hitting set $F$
             \State Add $U$ to the unsatisfiable cores set $C$
         \EndIf
     \EndFor
 
+    \Return the solutions set $S$ and the unsatisfiable cores set $C$
+
 \end{algorithmic}
 \end{algorithm}
 
-A \emph{minimal factor cover} is a set $F$ of factors that hits every polynomial: for each $p_j = \prod_i f_{j,i}$ at least one of its factors $f_{j,i}$ lies in $F$. Committing to $F$ imposes the subsystem $\{f = 0 : f \in F\}$, whose variety $V(F) = \bigcap_{f \in F} V(f)$ lies inside $V(p_1, \ldots, p_m)$ (Claim~1); minimality means no proper subset of $F$ hits every polynomial.
+A \emph{minimal hitting set} is a set $F$ of factors that hits every polynomial: for each $p_j = \prod_i f_{j,i}$ at least one of its factors $f_{j,i}$ lies in $F$. Committing to $F$ imposes the subsystem $\{f = 0 : f \in F\}$, whose variety $V(F) = \bigcap_{f \in F} V(f)$ lies inside $V(p_1, \ldots, p_m)$ (Claim~1); minimality means no proper subset of $F$ hits every polynomial.
 
-The order of iteration over the minimal factor covers is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the B\'ezout bound $\prod_{f \in F} \deg f$: it bounds the number of isolated solutions and, for a regular cover, the solving degree of the Gr\"obner computation that decides satisfiability, whose Macaulay matrix grows with that degree. Triangular covers (Section~3) attain the cheap extreme, where the check degenerates to back-substitution. Iterating covers by increasing B\'ezout bound therefore tries the easy covers first.
+The order of iteration over the minimal hitting sets is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the B\'ezout bound $\prod_{f \in F} \deg f$: it bounds the number of isolated solutions and, for a regular cover, the solving degree of the Gr\"obner computation that decides satisfiability, whose Macaulay matrix grows with that degree. Iterating covers by increasing B\'ezout bound therefore tries the easy covers first.
+
+\subsection{Allowing zeroing of variables}
+
+If we zero variables, we can further factorize the factors.
+When selecting variables to zero, factorizing the factors and select factors, if the
 
 \end{document}
