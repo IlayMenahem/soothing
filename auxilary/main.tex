@@ -1,8 +1,7 @@
 \documentclass[12pt]{article}
 
-\usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{amsthm}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{algorithm, algorithmic}
 \usepackage{hyperref}
 \usepackage{geometry}
 \usepackage{tikz}
@@ -283,5 +282,41 @@ If the method finds tuples $(f_1, x_1), \ldots, (f_k, x_k)$ and variables to zer
     \#\text{variables} - \operatorname{rank}\bigl(J_p\bigr),
 \]
 where $J_p$ is the Jacobian of the full system $p_1, \ldots, p_m$ at $p$. A witness point $p$ can be obtained from the triangular set $\{f_1, \ldots, f_k\}$ (after substituting $v_j = 0$), by numerical homotopy or regular-chain real-root isolation; closed-form radical evaluation of the $x_i$ is not required.
+
+\section{CDCL for system of polynomial equations}
+
+Let us say we have a set of factored polynomials $p_1, \ldots, p_m$ over a field $k$, and we want to validate whether there exists a solution to the system $p_1 = \cdots = p_m = 0$ (or any other property that can be inferred from the minimal factor covers).
+We describe a CDCL-style algorithm that can be used to explore the space of possible minimal factor covers of the polynomials.
+
+\begin{algorithm}
+\caption{CDCL for Polynomial Systems}
+\label{alg:cdcl}
+\begin{algorithmic}[1]
+    \Require A set of polynomials $p_1, \ldots, p_m$ over a field $k$.
+
+    \State Preprocess the polynomials
+    \State Factor the polynomials into irreducible factors
+    \State Initialize $C = \emptyset$ an unsatisfiable cores set
+
+    \For{each minimal factor cover $F$ of the polynomials}
+        \If{The minimal factor cover $F$ contains an unsatisfiable core in $C$}
+            \State \textbf{continue} to the next minimal factor cover
+        \EndIf
+
+        \State Check if the minimal factor cover $F$ is satisfiable
+        \If{The minimal factor cover $F$ is satisfiable}
+            \State \textbf{return} the solution corresponding to the minimal factor cover $F$
+        \Else
+            \State Extract a minimal unsatisfiable core $U$ from the minimal factor cover $F$
+            \State Add $U$ to the unsatisfiable cores set $C$
+        \EndIf
+    \EndFor
+
+\end{algorithmic}
+\end{algorithm}
+
+A \emph{minimal factor cover} is a set $F$ of factors that hits every polynomial: for each $p_j = \prod_i f_{j,i}$ at least one of its factors $f_{j,i}$ lies in $F$. Committing to $F$ imposes the subsystem $\{f = 0 : f \in F\}$, whose variety $V(F) = \bigcap_{f \in F} V(f)$ lies inside $V(p_1, \ldots, p_m)$ (Claim~1); minimality means no proper subset of $F$ hits every polynomial.
+
+The order of iteration over the minimal factor covers is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the B\'ezout bound $\prod_{f \in F} \deg f$: it bounds the number of isolated solutions and, for a regular cover, the solving degree of the Gr\"obner computation that decides satisfiability, whose Macaulay matrix grows with that degree. Triangular covers (Section~3) attain the cheap extreme, where the check degenerates to back-substitution. Iterating covers by increasing B\'ezout bound therefore tries the easy covers first.
 
 \end{document}

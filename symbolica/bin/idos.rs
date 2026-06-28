@@ -1,4 +1,4 @@
-//! A groebner basis of a radical cover of a polynomial system.
+//! A Gröbner basis of a minimal factor cover of a polynomial system.
 //!
 //! Usage: `idos [path]` — default path: `systems/system.txt`.
 
@@ -19,84 +19,92 @@ use polynomial_milp::{
     load_mathematica_system_from_path_with_var_names, preprocess,
 };
 
-/// Number of distinct radical covers: one factor chosen per equation group.
-fn cover_count(groups: &[Vec<PolyExtLex>]) -> u128 {
-    groups.iter().map(|g| g.len() as u128).product()
-}
-
-/// Number of factor *sets* that hit every equation's factor group.
-///
-/// Distinct from [`cover_count`] (which counts one-factor-per-group choice
-/// functions): a factor cover here is any subset `S` of the deduplicated factor
-/// set such that every equation contributes at least one of its factors to `S`.
-/// Factors are made monic and deduplicated across groups (mirroring
-/// `build_problem`), then the count is delegated to [`count_hitting_sets`].
-///
-/// Returns `None` when the distinct-factor count exceeds the 63-bit mask limit.
-fn factor_cover_count(groups: &[Vec<PolyExtLex>]) -> Option<u128> {
+/// Deduplicated factor universe (made monic) together with each equation's
+/// factor group expressed as indices into that universe. Mirrors the dedup of
+/// `build_problem`, so a factor shared by several equations gets one index.
+fn build_factor_index(groups: &[Vec<PolyExtLex>]) -> (Vec<PolyExtLex>, Vec<Vec<usize>>) {
     let mut factor_index: HashMap<PolyExtLex, usize> = HashMap::new();
-    let index_groups: Vec<Vec<usize>> = groups
+    let mut factors: Vec<PolyExtLex> = Vec::new();
+    let index_groups = groups
         .iter()
         .map(|group| {
             group
                 .iter()
                 .map(|f| {
-                    let next = factor_index.len();
-                    *factor_index.entry(f.clone().make_monic()).or_insert(next)
+                    let monic = f.clone().make_monic();
+                    *factor_index.entry(monic.clone()).or_insert_with(|| {
+                        factors.push(monic);
+                        factors.len() - 1
+                    })
                 })
                 .collect()
         })
         .collect();
-    count_hitting_sets(&index_groups, factor_index.len())
+    (factors, index_groups)
 }
 
-/// Count subsets of `0..n_factors` that intersect every group, by
-/// inclusion–exclusion over the deduplicated groups:
+/// Each factor group as a bitmask over the factor universe, deduplicated.
+fn group_masks(index_groups: &[Vec<usize>]) -> Vec<u64> {
+    let mut masks: Vec<u64> = index_groups
+        .iter()
+        .map(|ids| ids.iter().fold(0u64, |mask, &i| mask | (1u64 << i)))
+        .collect();
+    masks.sort_unstable();
+    masks.dedup();
+    masks
+}
+
+/// Keep only the inclusion-minimal masks (an antichain), discarding any mask
+/// that is a superset of another; duplicates collapse since a mask is a
+/// (non-strict) superset of its equal.
+fn keep_minimal(mut masks: Vec<u64>) -> Vec<u64> {
+    masks.sort_by_key(|m| m.count_ones());
+    masks.into_iter().fold(Vec::new(), |mut minimal, cand| {
+        if minimal.iter().all(|&m| m & cand != m) {
+            minimal.push(cand);
+        }
+        minimal
+    })
+}
+
+/// Minimal factor covers as bitmasks over the factor universe: the sets of
+/// factors that hit every polynomial and from which no proper subset still hits
+/// every polynomial (the minimal transversals of the group hypergraph). Computed
+/// by Berge multiplication --- fold the groups in, extending each partial
+/// transversal that misses a group by every factor of that group, then prune to
+/// the minimal elements. An empty group yields no cover.
 ///
-/// ```text
-/// N = Σ_{T ⊆ groups} (−1)^|T| · 2^(n_factors − |⋃ T|)
-/// ```
-///
-/// Returns `None` when `n_factors` exceeds the 63-bit group-mask capacity.
-fn count_hitting_sets(index_groups: &[Vec<usize>], n_factors: usize) -> Option<u128> {
+/// Returns `None` when the distinct-factor count exceeds the 63-bit mask limit.
+fn minimal_covers(index_groups: &[Vec<usize>], n_factors: usize) -> Option<Vec<u64>> {
     if n_factors >= 64 {
         return None;
     }
-    let masks: Vec<u64> = {
-        let mut masks: Vec<u64> = index_groups
-            .iter()
-            .map(|ids| ids.iter().fold(0u64, |mask, &i| mask | (1u64 << i)))
-            .collect();
-        masks.sort_unstable();
-        masks.dedup();
-        masks
-    };
-    // A group with no factors can never be hit ⇒ no cover exists.
-    if masks.contains(&0) {
-        return Some(0);
-    }
-
-    fn sweep(masks: &[u64], union: u64, sign: i128, n_factors: u32) -> i128 {
-        match masks.split_first() {
-            None => sign * (1i128 << (n_factors - union.count_ones())),
-            Some((&g, rest)) => {
-                sweep(rest, union, sign, n_factors) + sweep(rest, union | g, -sign, n_factors)
-            }
-        }
-    }
-    Some(sweep(&masks, 0, 1, n_factors as u32) as u128)
+    let covers = group_masks(index_groups)
+        .into_iter()
+        .fold(vec![0u64], |transversals, group| {
+            let expanded = transversals
+                .into_iter()
+                .flat_map(|t| {
+                    if t & group != 0 {
+                        vec![t]
+                    } else {
+                        (0..n_factors)
+                            .filter(|&v| group & (1u64 << v) != 0)
+                            .map(|v| t | (1u64 << v))
+                            .collect()
+                    }
+                })
+                .collect();
+            keep_minimal(expanded)
+        });
+    Some(covers)
 }
 
-/// The `idx`-th radical cover, decoding `idx` as a mixed-radix index over the
-/// factor groups (radix per digit = number of factors in that group).
-fn cover_at(groups: &[Vec<PolyExtLex>], idx: u128) -> Vec<PolyExtLex> {
-    groups
-        .iter()
-        .scan(idx, |rem, factors| {
-            let k = (*rem % factors.len() as u128) as usize;
-            *rem /= factors.len() as u128;
-            Some(factors[k].clone())
-        })
+/// Decode a cover bitmask back into its factors.
+fn decode_cover(factors: &[PolyExtLex], mask: u64) -> Vec<PolyExtLex> {
+    (0..factors.len())
+        .filter(|&i| mask & (1u64 << i) != 0)
+        .map(|i| factors[i].clone())
         .collect()
 }
 
@@ -123,7 +131,7 @@ fn cover_indices(total: u128, budget: u128, seed: u64) -> Box<dyn Iterator<Item 
     }))
 }
 
-/// Outcome of computing the Gröbner basis of a single radical cover.
+/// Outcome of computing the Gröbner basis of a single cover.
 enum Outcome {
     /// Non-unit reduced basis with this many elements: the cover is consistent.
     Consistent(usize),
@@ -136,8 +144,7 @@ enum Outcome {
 /// Compute the cover's Gröbner basis on a worker thread, abandoning it if it
 /// outlives `timeout`. Cancellation is cooperative-free, so a timed-out thread
 /// keeps running until it finishes on its own.
-fn evaluate_cover(groups: &[Vec<PolyExtLex>], idx: u128, timeout: Duration) -> Outcome {
-    let cover = cover_at(groups, idx);
+fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let _ = tx.send(GroebnerBasis::new(&cover, false).system);
@@ -212,7 +219,7 @@ fn main() {
         }
     };
 
-    println!("polynomial-milp — MILP radical cover (good_lp / HiGHS)\n");
+    println!("polynomial-milp — minimal factor covers\n");
     println!("Loading {}", options.path.display());
 
     let loaded = match load_mathematica_system_from_path_with_var_names(&options.path) {
@@ -256,17 +263,27 @@ fn main() {
         return;
     }
 
-    match factor_cover_count(&pre) {
-        Some(n) => println!("  factor covers (hitting sets, no variable zeroing): {n}"),
+    let (factors, index_groups) = build_factor_index(&pre);
+    let covers = match minimal_covers(&index_groups, factors.len()) {
+        Some(covers) => covers,
         None => {
-            println!("  factor covers: skipped — too many distinct factors for the 63-bit counter")
+            eprintln!("too many distinct factors (>= 64) for the bitmask enumerator");
+            std::process::exit(1);
         }
+    };
+    println!(
+        "  {} minimal factor cover(s) (hitting sets, no variable zeroing)",
+        covers.len()
+    );
+    if covers.is_empty() {
+        println!("No factor cover exists — some equation has no factors.");
+        return;
     }
 
-    let total = cover_count(&pre);
+    let total = covers.len() as u128;
     let tried = total.min(options.max_covers);
     println!(
-        "\n{total} radical cover(s) total; trying {tried}{} on {} threads, {}ms/cover timeout",
+        "\ntrying {tried} of {total} minimal cover(s){} on {} threads, {}ms/cover timeout",
         if total > options.max_covers {
             " (random sample)"
         } else {
@@ -278,13 +295,16 @@ fn main() {
 
     let timeout = Duration::from_millis(options.timeout_ms);
     let t_gb = Instant::now();
-    let outcomes: Vec<(u128, Outcome)> = cover_indices(total, options.max_covers, options.seed)
+    let outcomes: Vec<(usize, Outcome)> = cover_indices(total, options.max_covers, options.seed)
         .collect::<Vec<_>>()
         .into_par_iter()
-        .map(|idx| (idx, evaluate_cover(&pre, idx, timeout)))
+        .map(|idx| {
+            let cover = decode_cover(&factors, covers[idx as usize]);
+            (idx as usize, evaluate_cover(cover, timeout))
+        })
         .collect();
 
-    let consistent: Vec<(u128, usize)> = outcomes
+    let consistent: Vec<(usize, usize)> = outcomes
         .iter()
         .filter_map(|(idx, o)| match o {
             Outcome::Consistent(len) => Some((*idx, *len)),
@@ -310,23 +330,46 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::count_hitting_sets;
+    use super::{keep_minimal, minimal_covers};
 
-    #[test]
-    fn hitting_sets_disjoint_groups() {
-        // Groups {0,1} and {2} are disjoint ⇒ (2²−1)·(2¹−1) = 3.
-        assert_eq!(count_hitting_sets(&[vec![0, 1], vec![2]], 3), Some(3));
+    /// Collect a cover list into a sorted vec of sorted factor-index vectors.
+    fn as_sets(masks: Vec<u64>) -> Vec<Vec<usize>> {
+        let mut sets: Vec<Vec<usize>> = masks
+            .into_iter()
+            .map(|m| (0..64).filter(|&i| m & (1u64 << i) != 0).collect())
+            .collect();
+        sets.sort();
+        sets
     }
 
     #[test]
-    fn hitting_sets_shared_factor() {
-        // Groups {0,1} and {1,2} share factor 1; brute force over 8 subsets ⇒ 5.
-        assert_eq!(count_hitting_sets(&[vec![0, 1], vec![1, 2]], 3), Some(5));
+    fn minimal_covers_disjoint_groups() {
+        // Groups {0,1} and {2}: every cover must take 2 and one of {0,1}.
+        let covers = minimal_covers(&[vec![0, 1], vec![2]], 3).unwrap();
+        assert_eq!(as_sets(covers), vec![vec![0, 2], vec![1, 2]]);
     }
 
     #[test]
-    fn hitting_sets_empty_group_is_zero() {
+    fn minimal_covers_shared_factor() {
+        // Groups {0,1} and {1,2} share factor 1; minimal transversals are
+        // {1} (hits both) and {0,2}; {0,1} is dropped as a superset of {1}.
+        let covers = minimal_covers(&[vec![0, 1], vec![1, 2]], 3).unwrap();
+        assert_eq!(as_sets(covers), vec![vec![0, 2], vec![1]]);
+    }
+
+    #[test]
+    fn minimal_covers_empty_group_has_none() {
         // A group with no factors can never be hit ⇒ no cover exists.
-        assert_eq!(count_hitting_sets(&[vec![0], vec![]], 1), Some(0));
+        assert_eq!(
+            minimal_covers(&[vec![0], vec![]], 1).unwrap(),
+            Vec::<u64>::new()
+        );
+    }
+
+    #[test]
+    fn keep_minimal_drops_supersets_and_dups() {
+        // {0} subsumes {0,1}; the duplicate {2} collapses.
+        let kept = keep_minimal(vec![0b001, 0b011, 0b100, 0b100]);
+        assert_eq!(kept, vec![0b001, 0b100]);
     }
 }
