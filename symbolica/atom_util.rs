@@ -1,13 +1,11 @@
 //! Symbolica helpers: parse in the crate namespace, substitute, collect variables.
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
 
 use symbolica::atom::{Atom, AtomCore, DefaultNamespace, Symbol};
 use symbolica::id::Replacement;
 use symbolica::parser::ParseSettings;
 
-use crate::var_id::VarId;
 
 fn crate_namespace() -> &'static str {
     env!("CARGO_CRATE_NAME")
@@ -38,10 +36,3 @@ pub fn substitute_symbol(expr: &Atom, x: Symbol, rhs: Atom) -> Atom {
         .expand()
 }
 
-/// Variables from `expr` that appear in `sym_to_vid`.
-pub(crate) fn vars_in_atom(expr: &Atom, sym_to_vid: &HashMap<Symbol, VarId>) -> HashSet<VarId> {
-    expr.get_all_symbols(false)
-        .into_iter()
-        .filter_map(|s| sym_to_vid.get(&s).copied())
-        .collect()
-}

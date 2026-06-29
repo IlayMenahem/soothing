@@ -16,7 +16,7 @@ use symbolica::poly::groebner::GroebnerBasis;
 use symbolica::poly::polynomial::MultivariatePolynomial;
 use symbolica::poly::{GrevLexOrder, LexOrder, MonomialOrder, PolyVariable};
 
-use polynomial_milp::{
+use polynomial_cdcl::{
     PolynomialSystem, default_systems_dir_from_manifest, groebner_f5_from_system_with,
     groebner_gvw_from_system_with, ideal_in_order,
     load_mathematica_system_from_path_with_var_names, variable_order,

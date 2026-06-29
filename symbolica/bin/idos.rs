@@ -18,7 +18,7 @@ use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
 use symbolica::poly::groebner::GroebnerBasis;
 
-use polynomial_milp::{
+use polynomial_cdcl::{
     PolyExtLex, default_systems_dir_from_manifest,
     load_mathematica_system_from_path_with_var_names, preprocess,
 };
@@ -240,7 +240,7 @@ fn main() {
         }
     };
 
-    println!("polynomial-milp — CDCL over minimal factor covers\n");
+    println!("polynomial-cdcl — CDCL over minimal factor covers\n");
     println!("Loading {}", options.path.display());
 
     let loaded = match load_mathematica_system_from_path_with_var_names(&options.path) {

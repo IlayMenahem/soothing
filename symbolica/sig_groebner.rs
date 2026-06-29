@@ -436,7 +436,7 @@ pub fn groebner_f5_from_system(
 mod tests {
     use super::*;
     use crate::mathematica::load_mathematica_system_from_str_with_var_names;
-    use crate::{groebner_basis_from_system_lex_q, variable_order};
+    use crate::variable_order;
     use std::sync::Once;
     use symbolica::LicenseManager;
     use symbolica::poly::GrevLexOrder;
@@ -461,8 +461,9 @@ mod tests {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(src).expect("load");
         let var_order = variable_order(&loaded.id_to_sym);
-        let gb_ref = groebner_basis_from_system_lex_q(&loaded.system, var_order.clone(), false)
-            .expect("symbolica gb");
+        let ref_polys = ideal_in_order::<Q, LexOrder>(&loaded.system, &Q, var_order.clone())
+            .expect("ideal");
+        let gb_ref = GroebnerBasis::new(&ref_polys, false);
         let gb_f5 = groebner_f5_from_system(&loaded.system, var_order.clone()).expect("f5");
         let gb_gvw = groebner_gvw_from_system(&loaded.system, var_order).expect("gvw");
         (
