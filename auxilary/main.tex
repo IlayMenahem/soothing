@@ -130,11 +130,17 @@ We describe a CDCL-style algorithm that can be used to explore the space of poss
 
 A \emph{minimal hitting set} is a set $F$ of factors that hits every polynomial: for each $p_j = \prod_i f_{j,i}$ at least one of its factors $f_{j,i}$ lies in $F$. Committing to $F$ imposes the subsystem $\{f = 0 : f \in F\}$, whose variety $V(F) = \bigcap_{f \in F} V(f)$ lies inside $V(p_1, \ldots, p_m)$ (Claim~1); minimality means no proper subset of $F$ hits every polynomial.
 
-The order of iteration over the minimal hitting sets is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the B\'ezout bound $\prod_{f \in F} \deg f$: it bounds the number of isolated solutions and, for a regular cover, the solving degree of the Gr\"obner computation that decides satisfiability, whose Macaulay matrix grows with that degree. Iterating covers by increasing B\'ezout bound therefore tries the easy covers first.
+\textbf{Order of iteration over the minimal hitting sets}: the order is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the B\'ezout bound $\prod_{f \in F} \deg f$: it bounds the number of isolated solutions and, for a regular cover, the solving degree of the Gr\"obner computation that decides satisfiability, whose Macaulay matrix grows with that degree. Iterating covers by increasing B\'ezout bound therefore tries the easy covers first.
+
+\subsection{Finding the unsatisfiable cores}
+\textbf{unsatisfiable core} is a subset $U \subseteq F$ of factors with no common zero, $V(U) = \bigcap_{f \in U} V(f) = \emptyset$; equivalently $\langle U \rangle = k[x_1, \ldots, x_n]$ is the unit ideal. We detect this from the reduced Gr\"obner basis of $U$, which equals $\{1\}$ exactly when $1 \in \langle U \rangle$.
+
+Such a core is worth learning because the property is monotone under inclusion: if $V(U) = \emptyset$ then every hitting set $F' \supseteq U$ has $V(F') \subseteq V(U) = \emptyset$ and is therefore also unsatisfiable. Recording $U$ lets the algorithm skip every later hitting set that contains it, the conflict-driven step of Algorithm~\ref{alg:cdcl}.
+
+Given an unsatisfiable $F$, we extract a minimal core by deletion: consider its factors in turn, remove one, and recompute the Gr\"obner basis; keep the smaller set when it remains the unit ideal, otherwise restore the factor. After one pass over the $|F|$ factors every remaining factor is necessary --- dropping any one restores a solution --- so $U$ is a \emph{minimal} (inclusion-irreducible) unsatisfiable core. Minimality here is irreducibility, not minimum cardinality; a smallest core is NP-hard to find and unnecessary for soundness of the pruning.
 
 \subsection{Allowing zeroing of variables}
 
-If we zero variables, we can further factorize the factors.
-When selecting variables to zero, factorizing the factors and select factors, if the hitting
+When selecting variables to zero, and a minimal hitting set
 
 \end{document}

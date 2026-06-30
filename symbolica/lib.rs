@@ -2,13 +2,16 @@
 
 pub mod atom_util;
 pub mod factor_prep;
+pub mod m4gb;
 pub mod mathematica;
+pub(crate) mod monom;
 pub mod sig_groebner;
 pub mod system;
 pub mod var_id;
 
 pub use atom_util::{parse_expression, substitute_symbol};
 pub use factor_prep::{PolyExtLex, ideal_ext_lex, interreduce_polys, preprocess, variable_order};
+pub use m4gb::{groebner_m4gb, groebner_m4gb_from_system, groebner_m4gb_from_system_with};
 pub use mathematica::{
     LoadedMathematicaSystem, default_systems_dir_from_manifest,
     load_mathematica_system_from_path_with_var_names,

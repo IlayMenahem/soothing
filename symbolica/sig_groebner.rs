@@ -22,6 +22,7 @@ use symbolica::poly::groebner::{Echelonize, GroebnerBasis};
 use symbolica::poly::polynomial::MultivariatePolynomial;
 use symbolica::poly::{MonomialOrder, PolyVariable};
 
+use crate::monom::{monom_divides, monom_lcm, monom_quot};
 use crate::system::PolynomialSystem;
 
 /// Position-over-term (POT) signature `(index, monomial)` carrying the
@@ -90,18 +91,6 @@ impl<O: MonomialOrder> PartialOrd for Signature<O> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
-}
-
-fn monom_divides(divisor: &[u16], dividend: &[u16]) -> bool {
-    divisor.iter().zip(dividend).all(|(x, y)| x <= y)
-}
-
-fn monom_quot(dividend: &[u16], divisor: &[u16]) -> Vec<u16> {
-    dividend.iter().zip(divisor).map(|(x, y)| x - y).collect()
-}
-
-fn monom_lcm(a: &[u16], b: &[u16]) -> Vec<u16> {
-    a.iter().zip(b).map(|(x, y)| *x.max(y)).collect()
 }
 
 struct LabeledPoly<F: Field, O: MonomialOrder> {
@@ -461,8 +450,8 @@ mod tests {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(src).expect("load");
         let var_order = variable_order(&loaded.id_to_sym);
-        let ref_polys = ideal_in_order::<Q, LexOrder>(&loaded.system, &Q, var_order.clone())
-            .expect("ideal");
+        let ref_polys =
+            ideal_in_order::<Q, LexOrder>(&loaded.system, &Q, var_order.clone()).expect("ideal");
         let gb_ref = GroebnerBasis::new(&ref_polys, false);
         let gb_f5 = groebner_f5_from_system(&loaded.system, var_order.clone()).expect("f5");
         let gb_gvw = groebner_gvw_from_system(&loaded.system, var_order).expect("gvw");
@@ -489,19 +478,6 @@ mod tests {
         let a: Signature<GrevLexOrder> = Signature::new(0, vec![2, 0]);
         let b: Signature<GrevLexOrder> = Signature::new(0, vec![0, 1]);
         assert!(a > b);
-    }
-
-    #[test]
-    fn monom_divides_basic() {
-        assert!(monom_divides(&[1, 0], &[2, 1]));
-        assert!(!monom_divides(&[1, 2], &[2, 1]));
-        assert!(monom_divides(&[0, 0], &[5, 7]));
-    }
-
-    #[test]
-    fn monom_lcm_and_quot() {
-        assert_eq!(monom_lcm(&[1, 2, 0], &[0, 3, 4]), vec![1, 3, 4]);
-        assert_eq!(monom_quot(&[3, 2, 4], &[1, 0, 4]), vec![2, 2, 0]);
     }
 
     #[test]
