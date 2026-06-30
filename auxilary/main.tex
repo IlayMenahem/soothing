@@ -143,6 +143,8 @@ Such a core is worth learning because the property is monotone under inclusion: 
 
 Given an unsatisfiable $F$, we extract a minimal core by deletion: consider its factors in turn, remove one, and recompute the Gr\"obner basis; keep the smaller set when it remains the unit ideal, otherwise restore the factor. After one pass over the $|F|$ factors every remaining factor is necessary --- dropping any one restores a solution --- so $U$ is a \emph{minimal} (inclusion-irreducible) unsatisfiable core. Minimality here is irreducibility, not minimum cardinality; a smallest core is NP-hard to find and unnecessary for soundness of the pruning.
 
+If we were to select an hitting set $F$ that is contained in a previously found satisfiable hitting set $F'$, then $V(F) \supseteq V(F') \neq \emptyset$ and $F$ is also satisfiable. This is the dual of the unsatisfiable core property, and can be used to prune the search space in a similar way.
+
 \subsection{Using structure hints}
 
 In some problems such as in physics, we prefer solutions which have certain structure.

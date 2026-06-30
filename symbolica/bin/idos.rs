@@ -2,8 +2,10 @@
 //!
 //! Implements Algorithm 1 of the method statement: the minimal factor covers
 //! are tried cheapest-first by Bézout bound; a cover that contains a learned
-//! unsatisfiable core is skipped; an inconsistent cover is shrunk to a minimal
-//! unsatisfiable core that is learned to prune later covers.
+//! unsatisfiable core is skipped; a cover contained in a learned satisfiable
+//! cover is also skipped by the dual monotonicity property; an inconsistent
+//! cover is shrunk to a minimal unsatisfiable core that is learned to prune later
+//! covers.
 //!
 //! Usage: `idos [path]` — default path: `systems/system.txt`.
 
@@ -219,10 +221,11 @@ fn usable_sparse_variables(
     candidates
         .iter()
         .filter_map(|(name, sym)| {
+            let variable = PolyVariable::from(*sym);
             template
                 .variables
                 .iter()
-                .position(|var| *var == PolyVariable::from(*sym))
+                .position(|var| *var == variable)
                 .map(|position| (name.clone(), position))
         })
         .collect()
@@ -370,6 +373,11 @@ fn minimal_unsat_core(
 fn core_subsumes(core: Core, item: WorkItem) -> bool {
     core.cover_mask & item.cover_mask == core.cover_mask
         && core.zero_mask & item.zero_mask == core.zero_mask
+}
+
+fn satisfiable_cover_contains(solution: WorkItem, item: WorkItem) -> bool {
+    solution.cover_mask & item.cover_mask == item.cover_mask
+        && solution.zero_mask & item.zero_mask == item.zero_mask
 }
 
 fn sort_work_items(items: &mut [WorkItem], degrees: &[u64]) {
@@ -563,33 +571,62 @@ fn main() {
     let timeout = Duration::from_millis(options.timeout_ms);
     let t_gb = Instant::now();
     let mut cores: Vec<Core> = Vec::new();
+    let mut satisfiable_covers: Vec<(usize, WorkItem)> = Vec::new();
     let mut solutions: Vec<(usize, usize)> = Vec::new();
     let mut inconsistent = 0usize;
     let mut timeouts = 0usize;
-    let mut pruned = 0usize;
+    let mut core_pruned = 0usize;
+    let mut satisfiable_inferred = 0usize;
     for (idx, &item) in covers.iter().take(tried).enumerate() {
         // Skip the cover if any learned core is a subset of it (not an
         // equality membership test, despite `manual_contains`).
         #[allow(clippy::manual_contains)]
         let subsumed = cores.iter().any(|&core| core_subsumes(core, item));
         if subsumed {
-            pruned += 1;
+            core_pruned += 1;
             continue;
+        }
+
+        // If F is contained in a previously satisfiable F', then
+        // V(F) ⊇ V(F') != ∅, so F is also satisfiable. This is the dual of the
+        // unsatisfiable-core superset rule above.
+        #[allow(clippy::manual_contains)]
+        let contained_in_satisfiable = satisfiable_covers
+            .iter()
+            .find(|&&(_, solution)| satisfiable_cover_contains(solution, item));
+        let inferred_from = contained_in_satisfiable.map(|&(solution_idx, _)| solution_idx);
+        if inferred_from.is_some() {
+            satisfiable_inferred += 1;
         }
         let t_cover = Instant::now();
         match evaluate_cover(decode_work_item(&factors, &sparse_variables, item), timeout) {
             Outcome::Consistent(len) => {
-                println!(
-                    "  cover #{idx}: satisfiable ({len} basis element(s), elapsed {:?})",
-                    t_cover.elapsed()
-                );
+                if let Some(solution_idx) = inferred_from {
+                    println!(
+                        "  cover #{idx}: satisfiable-inferred from cover #{solution_idx}, basis computed ({len} element(s), elapsed {:?})",
+                        t_cover.elapsed()
+                    );
+                } else {
+                    println!(
+                        "  cover #{idx}: satisfiable ({len} basis element(s), elapsed {:?})",
+                        t_cover.elapsed()
+                    );
+                }
+                satisfiable_covers.push((idx, item));
                 solutions.push((idx, len));
             }
             Outcome::Inconsistent => {
-                println!(
-                    "  cover #{idx}: unsatisfiable (elapsed {:?})",
-                    t_cover.elapsed()
-                );
+                if let Some(solution_idx) = inferred_from {
+                    println!(
+                        "  cover #{idx}: unsatisfiable despite containment in satisfiable cover #{solution_idx} (elapsed {:?})",
+                        t_cover.elapsed()
+                    );
+                } else {
+                    println!(
+                        "  cover #{idx}: unsatisfiable (elapsed {:?})",
+                        t_cover.elapsed()
+                    );
+                }
                 cores.push(minimal_unsat_core(
                     &factors,
                     &sparse_variables,
@@ -599,20 +636,28 @@ fn main() {
                 inconsistent += 1;
             }
             Outcome::Timeout => {
-                println!(
-                    "  cover #{idx}: timed out (elapsed {:?})",
-                    t_cover.elapsed()
-                );
+                if let Some(solution_idx) = inferred_from {
+                    println!(
+                        "  cover #{idx}: satisfiable-inferred from cover #{solution_idx}, basis timed out (elapsed {:?})",
+                        t_cover.elapsed()
+                    );
+                } else {
+                    println!(
+                        "  cover #{idx}: timed out (elapsed {:?})",
+                        t_cover.elapsed()
+                    );
+                }
                 timeouts += 1;
             }
         }
     }
 
     println!(
-        "  {} satisfiable, {} unsatisfiable, {} core-pruned, {} timed out, elapsed {:?}",
+        "  {} satisfiable, {} unsatisfiable, {} core-pruned, {} satisfiable-inferred, {} timed out, elapsed {:?}",
         solutions.len(),
         inconsistent,
-        pruned,
+        core_pruned,
+        satisfiable_inferred,
         timeouts,
         t_gb.elapsed()
     );
@@ -641,7 +686,8 @@ mod tests {
 
     use super::{
         Core, WorkItem, core_subsumes, expand_with_sparse_subsets, keep_minimal, minimal_covers,
-        minimal_unsat_core, parse_args, sort_work_items, substitute_zeroes,
+        minimal_unsat_core, parse_args, satisfiable_cover_contains, sort_work_items,
+        substitute_zeroes,
     };
 
     static LICENSE: Once = Once::new();
@@ -866,6 +912,45 @@ mod tests {
             WorkItem {
                 cover_mask: 0b101,
                 zero_mask: 0b001
+            }
+        ));
+    }
+
+    #[test]
+    fn satisfiable_cover_contains_factor_and_zero_subsets() {
+        let solution = WorkItem {
+            cover_mask: 0b101,
+            zero_mask: 0b011,
+        };
+
+        assert!(satisfiable_cover_contains(
+            solution,
+            WorkItem {
+                cover_mask: 0b001,
+                zero_mask: 0b001
+            }
+        ));
+    }
+
+    #[test]
+    fn satisfiable_cover_contains_requires_item_to_be_subset() {
+        let solution = WorkItem {
+            cover_mask: 0b001,
+            zero_mask: 0b001,
+        };
+
+        assert!(!satisfiable_cover_contains(
+            solution,
+            WorkItem {
+                cover_mask: 0b101,
+                zero_mask: 0b001
+            }
+        ));
+        assert!(!satisfiable_cover_contains(
+            solution,
+            WorkItem {
+                cover_mask: 0b001,
+                zero_mask: 0b011
             }
         ));
     }
