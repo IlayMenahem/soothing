@@ -132,6 +132,10 @@ A \emph{minimal hitting set} is a set $F$ of factors that hits every polynomial:
 
 \textbf{Order of iteration over the minimal hitting sets}: the order is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the B\'ezout bound $\prod_{f \in F} \deg f$: it bounds the number of isolated solutions and, for a regular cover, the solving degree of the Gr\"obner computation that decides satisfiability, whose Macaulay matrix grows with that degree. Iterating covers by increasing B\'ezout bound therefore tries the easy covers first.
 
+\subsection{Checking if a set of polynomials is satisfiable}
+
+To check if a set of polynomials $F$ is satisfiable, we compute its reduced Gr\"obner basis $G$ with respect to a degrevlex order, using a signiture based algorithm such as F5, M4GB, or GVW.
+
 \subsection{Finding the unsatisfiable cores}
 \textbf{unsatisfiable core} is a subset $U \subseteq F$ of factors with no common zero, $V(U) = \bigcap_{f \in U} V(f) = \emptyset$; equivalently $\langle U \rangle = k[x_1, \ldots, x_n]$ is the unit ideal. We detect this from the reduced Gr\"obner basis of $U$, which equals $\{1\}$ exactly when $1 \in \langle U \rangle$.
 
@@ -139,8 +143,17 @@ Such a core is worth learning because the property is monotone under inclusion: 
 
 Given an unsatisfiable $F$, we extract a minimal core by deletion: consider its factors in turn, remove one, and recompute the Gr\"obner basis; keep the smaller set when it remains the unit ideal, otherwise restore the factor. After one pass over the $|F|$ factors every remaining factor is necessary --- dropping any one restores a solution --- so $U$ is a \emph{minimal} (inclusion-irreducible) unsatisfiable core. Minimality here is irreducibility, not minimum cardinality; a smallest core is NP-hard to find and unnecessary for soundness of the pruning.
 
-\subsection{Allowing zeroing of variables}
+\subsection{Using structure hints}
 
-When selecting variables to zero, and a minimal hitting set
+In some problems such as in physics, we prefer solutions which have certain structure.
+certain structures can be encoded as additional polynomial constraints, and can enable faster computation of the Gr\"obner basis.
+
+\begin{itemize}
+    \item Sparsity constrains can be encoded as the equation $x_i = 0$ for some variables $x_i$
+    \item Affine constraints can be encoded as $a_1 x_1 + \cdots + a_n x_n = b$ for some constants $a_i, b$
+\end{itemize}
+
+When allowing for structure hints, the algorithm can be modified to consider minimal hitting sets for the original polynomials with an addition of any subset of the structure polynomials.
+
 
 \end{document}

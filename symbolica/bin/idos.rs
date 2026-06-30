@@ -7,6 +7,7 @@
 //!
 //! Usage: `idos [path]` — default path: `systems/system.txt`.
 
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -14,12 +15,16 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use symbolica::LicenseManager;
+use symbolica::atom::Symbol;
 use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
 use symbolica::poly::groebner::GroebnerBasis;
+use symbolica::poly::polynomial::MultivariatePolynomial;
+use symbolica::poly::{GrevLexOrder, MonomialOrder, PolyVariable};
 
+use polynomial_cdcl::factor_prep::ExtQ;
 use polynomial_cdcl::{
-    PolyExtLex, default_systems_dir_from_manifest,
+    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest,
     load_mathematica_system_from_path_with_var_names, preprocess,
 };
 
@@ -135,9 +140,139 @@ fn decode_cover(factors: &[PolyExtLex], mask: u64) -> Vec<PolyExtLex> {
         .collect()
 }
 
-/// A reduced lex Gröbner basis equal to `{1}` (a non-zero constant) certifies
-/// that the cover's ideal is the whole ring, i.e. the cover is inconsistent.
-fn is_unit_ideal(system: &[PolyExtLex]) -> bool {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct WorkItem {
+    cover_mask: u64,
+    zero_mask: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Core {
+    cover_mask: u64,
+    zero_mask: u64,
+}
+
+fn expand_with_sparse_subsets(covers: &[u64], sparse_count: usize) -> Vec<WorkItem> {
+    let sparse_mask = if sparse_count == 0 {
+        0
+    } else {
+        (1u64 << sparse_count) - 1
+    };
+    covers
+        .iter()
+        .flat_map(|&cover_mask| {
+            submasks(sparse_mask).map(move |zero_mask| WorkItem {
+                cover_mask,
+                zero_mask,
+            })
+        })
+        .collect()
+}
+
+/// Every submask of `mask`, including the empty mask and `mask` itself. Used to
+/// extend each cover by every subset of the sparsity factors. For `mask == 0`
+/// this yields the single empty mask, so a run without `--sparse` leaves the
+/// cover list unchanged.
+fn submasks(mask: u64) -> impl Iterator<Item = u64> {
+    let mut next = Some(mask);
+    std::iter::from_fn(move || {
+        let cur = next?;
+        next = (cur != 0).then(|| (cur - 1) & mask);
+        Some(cur)
+    })
+}
+
+/// Resolve the requested `--sparse` candidate variable names to their symbols.
+/// An empty list means "all variables" (bare `--sparse`); a non-empty list is
+/// resolved against the loader's names, with an unknown name an error.
+fn resolve_candidates(
+    loaded: &LoadedMathematicaSystem,
+    names: &[String],
+) -> Result<Vec<(String, Symbol)>, String> {
+    if names.is_empty() {
+        return Ok(loaded
+            .var_names
+            .iter()
+            .cloned()
+            .zip(loaded.id_to_sym.iter().copied())
+            .collect());
+    }
+    names
+        .iter()
+        .map(|name| {
+            loaded
+                .var_names
+                .iter()
+                .position(|n| n == name)
+                .map(|i| (name.clone(), loaded.id_to_sym[i]))
+                .ok_or_else(|| format!("unknown variable {name:?} for --sparse"))
+        })
+        .collect()
+}
+
+/// Resolve sparse candidates to variable positions in `template`'s variable map.
+/// A variable absent from the map imposes no substitution and is skipped.
+fn usable_sparse_variables(
+    template: &PolyExtLex,
+    candidates: &[(String, Symbol)],
+) -> Vec<(String, usize)> {
+    candidates
+        .iter()
+        .filter_map(|(name, sym)| {
+            template
+                .variables
+                .iter()
+                .position(|var| *var == PolyVariable::from(*sym))
+                .map(|position| (name.clone(), position))
+        })
+        .collect()
+}
+
+fn zero_positions<'a>(
+    sparse_variables: &'a [(String, usize)],
+    zero_mask: u64,
+) -> impl Iterator<Item = usize> + 'a {
+    sparse_variables
+        .iter()
+        .enumerate()
+        .filter(move |(i, _)| zero_mask & (1u64 << i) != 0)
+        .map(|(_, (_, position))| *position)
+}
+
+fn substitute_zeroes(poly: &PolyExtLex, zero_positions: &[usize]) -> PolyExtLex {
+    if zero_positions.is_empty() || poly.is_zero() {
+        return poly.clone();
+    }
+    let mut out = poly.zero_with_capacity(poly.nterms());
+    for i in 0..poly.nterms() {
+        let exponents = poly.exponents(i);
+        if zero_positions
+            .iter()
+            .all(|&position| exponents[position] == 0)
+        {
+            out.append_monomial_back(poly.coefficients[i].clone(), exponents);
+        }
+    }
+    out
+}
+
+fn decode_work_item(
+    factors: &[PolyExtLex],
+    sparse_variables: &[(String, usize)],
+    item: WorkItem,
+) -> Vec<PolyExtLex> {
+    let zero_positions: Vec<_> = zero_positions(sparse_variables, item.zero_mask).collect();
+    decode_cover(factors, item.cover_mask)
+        .into_iter()
+        .map(|factor| substitute_zeroes(&factor, &zero_positions))
+        .filter(|factor| !factor.is_zero())
+        .collect()
+}
+
+/// A reduced degrevlex Gröbner basis equal to `{1}` (a non-zero constant)
+/// certifies that the cover's ideal is the whole ring, i.e. the cover is
+/// inconsistent.
+fn is_unit_ideal<O: MonomialOrder>(system: &[MultivariatePolynomial<ExtQ, u16, O>]) -> bool {
     system.iter().any(|p| !p.is_zero() && p.is_constant())
 }
 
@@ -152,12 +287,18 @@ enum Outcome {
 }
 
 /// Compute the cover's Gröbner basis on a worker thread, abandoning it if it
-/// outlives `timeout`. Cancellation is cooperative-free, so a timed-out thread
-/// keeps running until it finishes on its own.
+/// outlives `timeout`. The cover is reordered to degrevlex before the
+/// computation, which is typically far cheaper than lex for deciding
+/// satisfiability (Section 3.1). Cancellation is cooperative-free, so a
+/// timed-out thread keeps running until it finishes on its own.
 fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
+    if cover.is_empty() {
+        return Outcome::Consistent(0);
+    }
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let _ = tx.send(GroebnerBasis::new(&cover, false).system);
+        let grevlex: Vec<_> = cover.iter().map(|p| p.reorder::<GrevLexOrder>()).collect();
+        let _ = tx.send(GroebnerBasis::new(&grevlex, false).system);
     });
     match rx.recv_timeout(timeout) {
         Ok(system) if is_unit_ideal(&system) => Outcome::Inconsistent,
@@ -166,22 +307,79 @@ fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
     }
 }
 
-/// Shrink an inconsistent cover to a minimal unsatisfiable core by deletion:
-/// drop each factor whose removal leaves the ideal equal to the whole ring. A
-/// removal that turns the cover satisfiable keeps the factor; a removal that
-/// times out also keeps it, conservatively, since the larger set is still known
-/// inconsistent. The result is a subset that is unsatisfiable but loses that
-/// property if any factor is dropped.
-fn minimal_unsat_core(factors: &[PolyExtLex], mask: u64, timeout: Duration) -> u64 {
-    set_bits(mask).fold(mask, |core, bit| {
-        let reduced = core & !bit;
-        if reduced == 0 {
-            return core;
+/// Shrink an inconsistent work item to a minimal unsatisfiable core by deletion:
+/// drop each factor or zero substitution whose removal leaves the ideal equal to
+/// the whole ring. A removal that turns the item satisfiable keeps the bit; a
+/// removal that times out also keeps it, conservatively, since the larger item is
+/// still known inconsistent. The result is deletion-minimal over both masks.
+fn minimal_unsat_core(
+    factors: &[PolyExtLex],
+    sparse_variables: &[(String, usize)],
+    item: WorkItem,
+    timeout: Duration,
+) -> Core {
+    let mut core = item;
+    loop {
+        let mut changed = false;
+
+        for bit in set_bits(core.cover_mask).collect::<Vec<_>>() {
+            let reduced = WorkItem {
+                cover_mask: core.cover_mask & !bit,
+                zero_mask: core.zero_mask,
+            };
+            if matches!(
+                evaluate_cover(
+                    decode_work_item(factors, sparse_variables, reduced),
+                    timeout
+                ),
+                Outcome::Inconsistent
+            ) {
+                core = reduced;
+                changed = true;
+            }
         }
-        match evaluate_cover(decode_cover(factors, reduced), timeout) {
-            Outcome::Inconsistent => reduced,
-            _ => core,
+
+        for bit in set_bits(core.zero_mask).collect::<Vec<_>>() {
+            let reduced = WorkItem {
+                cover_mask: core.cover_mask,
+                zero_mask: core.zero_mask & !bit,
+            };
+            if matches!(
+                evaluate_cover(
+                    decode_work_item(factors, sparse_variables, reduced),
+                    timeout
+                ),
+                Outcome::Inconsistent
+            ) {
+                core = reduced;
+                changed = true;
+            }
         }
+
+        if !changed {
+            break;
+        }
+    }
+
+    Core {
+        cover_mask: core.cover_mask,
+        zero_mask: core.zero_mask,
+    }
+}
+
+fn core_subsumes(core: Core, item: WorkItem) -> bool {
+    core.cover_mask & item.cover_mask == core.cover_mask
+        && core.zero_mask & item.zero_mask == core.zero_mask
+}
+
+fn sort_work_items(items: &mut [WorkItem], degrees: &[u64]) {
+    items.sort_by_key(|item| {
+        (
+            bezout_bound(degrees, item.cover_mask),
+            item.cover_mask,
+            Reverse(item.zero_mask.count_ones()),
+            item.zero_mask,
+        )
     })
 }
 
@@ -191,6 +389,8 @@ struct CliOptions {
     interreduce: bool,
     max_covers: usize,
     timeout_ms: u64,
+    sparse: bool,
+    sparse_names: Vec<String>,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
@@ -198,23 +398,31 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut interreduce = true;
     let mut max_covers: usize = 2_000;
     let mut timeout_ms: u64 = 5_000;
-    let mut args = args.into_iter();
+    let mut sparse = false;
+    let mut sparse_names = Vec::new();
+    let mut args = args.into_iter().peekable();
     while let Some(arg) = args.next() {
-        let mut next_value = |label: &str| {
-            args.next()
-                .ok_or_else(|| format!("{label} requires a value"))
-        };
         match arg.as_str() {
             "--no-interreduce" => interreduce = false,
             "--max-covers" => {
-                max_covers = next_value("--max-covers")?
+                max_covers = args
+                    .next()
+                    .ok_or_else(|| "--max-covers requires a value".to_string())?
                     .parse()
                     .map_err(|e| format!("invalid --max-covers: {e}"))?;
             }
             "--timeout-ms" => {
-                timeout_ms = next_value("--timeout-ms")?
+                timeout_ms = args
+                    .next()
+                    .ok_or_else(|| "--timeout-ms requires a value".to_string())?
                     .parse()
                     .map_err(|e| format!("invalid --timeout-ms: {e}"))?;
+            }
+            "--sparse" => {
+                sparse = true;
+                if args.peek().is_some_and(|next| !next.starts_with("--")) {
+                    sparse_names.push(args.next().expect("peeked sparse argument"));
+                }
             }
             _ if arg.starts_with("--") => return Err(format!("unknown option {arg:?}")),
             _ => path = Some(PathBuf::from(arg)),
@@ -225,6 +433,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         interreduce,
         max_covers,
         timeout_ms,
+        sparse,
+        sparse_names,
     })
 }
 
@@ -285,8 +495,7 @@ fn main() {
     }
 
     let (factors, index_groups) = build_factor_index(&pre);
-    let degrees: Vec<u64> = factors.iter().map(total_degree).collect();
-    let covers = match minimal_covers(&index_groups, factors.len()) {
+    let base_covers = match minimal_covers(&index_groups, factors.len()) {
         Some(covers) => covers,
         None => {
             eprintln!("too many distinct factors (>= 64) for the bitmask enumerator");
@@ -295,16 +504,54 @@ fn main() {
     };
     println!(
         "  {} minimal factor cover(s) (hitting sets, no variable zeroing)",
-        covers.len()
+        base_covers.len()
     );
-    if covers.is_empty() {
+    if base_covers.is_empty() {
         println!("No factor cover exists — some equation has no factors.");
         return;
     }
 
-    // Try covers cheapest-first by Bézout bound (ties broken by mask).
-    let mut order: Vec<usize> = (0..covers.len()).collect();
-    order.sort_by_key(|&i| (bezout_bound(&degrees, covers[i]), covers[i]));
+    let sparse_variables = if options.sparse {
+        let candidates = match resolve_candidates(&loaded, &options.sparse_names) {
+            Ok(candidates) => candidates,
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        };
+        let sparse_variables = usable_sparse_variables(&pre[0][0], &candidates);
+        if sparse_variables.len() >= 64 {
+            eprintln!("too many usable sparse variables (>= 64) for the bitmask enumerator");
+            std::process::exit(1);
+        }
+        if options.sparse_names.is_empty() {
+            println!(
+                "  sparsity enabled for all variables: {} usable substitution(s)",
+                sparse_variables.len()
+            );
+        } else {
+            println!(
+                "  sparsity enabled for {} named variable(s): {} usable substitution(s)",
+                options.sparse_names.len(),
+                sparse_variables.len()
+            );
+        }
+        sparse_variables
+    } else {
+        println!("  sparsity disabled");
+        Vec::new()
+    };
+
+    let mut covers = expand_with_sparse_subsets(&base_covers, sparse_variables.len());
+    let degrees: Vec<u64> = factors.iter().map(total_degree).collect();
+    if options.sparse {
+        println!(
+            "  {} cover variant(s) after optional sparsity subsets",
+            covers.len()
+        );
+    }
+
+    sort_work_items(&mut covers, &degrees);
 
     let tried = covers.len().min(options.max_covers);
     println!(
@@ -315,28 +562,49 @@ fn main() {
 
     let timeout = Duration::from_millis(options.timeout_ms);
     let t_gb = Instant::now();
-    let mut cores: Vec<u64> = Vec::new();
+    let mut cores: Vec<Core> = Vec::new();
     let mut solutions: Vec<(usize, usize)> = Vec::new();
     let mut inconsistent = 0usize;
     let mut timeouts = 0usize;
     let mut pruned = 0usize;
-    for &idx in order.iter().take(tried) {
-        let mask = covers[idx];
+    for (idx, &item) in covers.iter().take(tried).enumerate() {
         // Skip the cover if any learned core is a subset of it (not an
         // equality membership test, despite `manual_contains`).
         #[allow(clippy::manual_contains)]
-        let subsumed = cores.iter().any(|&core| core & mask == core);
+        let subsumed = cores.iter().any(|&core| core_subsumes(core, item));
         if subsumed {
             pruned += 1;
             continue;
         }
-        match evaluate_cover(decode_cover(&factors, mask), timeout) {
-            Outcome::Consistent(len) => solutions.push((idx, len)),
+        let t_cover = Instant::now();
+        match evaluate_cover(decode_work_item(&factors, &sparse_variables, item), timeout) {
+            Outcome::Consistent(len) => {
+                println!(
+                    "  cover #{idx}: satisfiable ({len} basis element(s), elapsed {:?})",
+                    t_cover.elapsed()
+                );
+                solutions.push((idx, len));
+            }
             Outcome::Inconsistent => {
-                cores.push(minimal_unsat_core(&factors, mask, timeout));
+                println!(
+                    "  cover #{idx}: unsatisfiable (elapsed {:?})",
+                    t_cover.elapsed()
+                );
+                cores.push(minimal_unsat_core(
+                    &factors,
+                    &sparse_variables,
+                    item,
+                    timeout,
+                ));
                 inconsistent += 1;
             }
-            Outcome::Timeout => timeouts += 1,
+            Outcome::Timeout => {
+                println!(
+                    "  cover #{idx}: timed out (elapsed {:?})",
+                    t_cover.elapsed()
+                );
+                timeouts += 1;
+            }
         }
     }
 
@@ -358,7 +626,51 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{keep_minimal, minimal_covers};
+    use std::path::PathBuf;
+    use std::sync::Once;
+    use std::time::Duration;
+
+    use polynomial_cdcl::{
+        PolyExtLex, ideal_ext_lex, load_mathematica_system_from_str_with_var_names,
+        parse_expression, variable_order,
+    };
+    use symbolica::LicenseManager;
+    use symbolica::atom::AtomCore;
+    use symbolica::domains::algebraic_number::AlgebraicExtension;
+    use symbolica::domains::rational::Q;
+
+    use super::{
+        Core, WorkItem, core_subsumes, expand_with_sparse_subsets, keep_minimal, minimal_covers,
+        minimal_unsat_core, parse_args, sort_work_items, substitute_zeroes,
+    };
+
+    static LICENSE: Once = Once::new();
+
+    fn activate_license() {
+        LICENSE.call_once(|| {
+            let _ = LicenseManager::set_license_key(
+                "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21",
+            );
+        });
+    }
+
+    fn test_poly(source: &str) -> PolyExtLex {
+        activate_license();
+        let loaded = load_mathematica_system_from_str_with_var_names(&format!("{{{source} == 0}}"))
+            .expect("load");
+        let field = AlgebraicExtension::new_complex(Q);
+        let order = variable_order(&loaded.id_to_sym);
+        ideal_ext_lex(&loaded.system, &field, order)
+            .expect("polynomial")
+            .remove(0)
+    }
+
+    fn poly_like(template: &PolyExtLex, source: &str) -> PolyExtLex {
+        parse_expression(source.to_string())
+            .expect("parse")
+            .try_to_polynomial::<_, u16>(&template.ring, Some(template.variables.clone()))
+            .expect("polynomial")
+    }
 
     /// Collect a cover list into a sorted vec of sorted factor-index vectors.
     fn as_sets(masks: Vec<u64>) -> Vec<Vec<usize>> {
@@ -399,5 +711,224 @@ mod tests {
         // {0} subsumes {0,1}; the duplicate {2} collapses.
         let kept = keep_minimal(vec![0b001, 0b011, 0b100, 0b100]);
         assert_eq!(kept, vec![0b001, 0b100]);
+    }
+
+    #[test]
+    fn parse_args_sparse_all_variables() {
+        let options = parse_args(["--sparse"].into_iter().map(String::from)).unwrap();
+        assert!(options.sparse);
+        assert!(options.sparse_names.is_empty());
+    }
+
+    #[test]
+    fn parse_args_sparse_named_variables() {
+        let options = parse_args(
+            ["system.txt", "--sparse", "x", "--sparse", "y"]
+                .into_iter()
+                .map(String::from),
+        )
+        .unwrap();
+        assert!(options.sparse);
+        assert_eq!(options.path, PathBuf::from("system.txt"));
+        assert_eq!(options.sparse_names, vec!["x", "y"]);
+    }
+
+    #[test]
+    fn parse_args_existing_options_still_work() {
+        let options = parse_args(
+            [
+                "--no-interreduce",
+                "--max-covers",
+                "17",
+                "--timeout-ms",
+                "250",
+            ]
+            .into_iter()
+            .map(String::from),
+        )
+        .unwrap();
+        assert!(!options.interreduce);
+        assert_eq!(options.max_covers, 17);
+        assert_eq!(options.timeout_ms, 250);
+        assert!(!options.sparse);
+    }
+
+    #[test]
+    fn parse_args_unknown_flag_fails() {
+        assert!(parse_args(["--missing"].into_iter().map(String::from)).is_err());
+    }
+
+    #[test]
+    fn sparse_expansion_no_mask_keeps_base_covers() {
+        assert_eq!(
+            expand_with_sparse_subsets(&[0b001, 0b010], 0),
+            vec![
+                WorkItem {
+                    cover_mask: 0b001,
+                    zero_mask: 0
+                },
+                WorkItem {
+                    cover_mask: 0b010,
+                    zero_mask: 0
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn sparse_expansion_preserves_zero_subsets() {
+        let expanded = expand_with_sparse_subsets(&[0b001], 2);
+        assert_eq!(
+            expanded,
+            vec![
+                WorkItem {
+                    cover_mask: 0b001,
+                    zero_mask: 0b011
+                },
+                WorkItem {
+                    cover_mask: 0b001,
+                    zero_mask: 0b010
+                },
+                WorkItem {
+                    cover_mask: 0b001,
+                    zero_mask: 0b001
+                },
+                WorkItem {
+                    cover_mask: 0b001,
+                    zero_mask: 0
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn work_item_order_checks_more_zeroes_first_for_same_cover() {
+        let degrees = vec![2, 3];
+        let mut items = expand_with_sparse_subsets(&[0b001], 2);
+
+        sort_work_items(&mut items, &degrees);
+
+        assert_eq!(
+            items,
+            vec![
+                WorkItem {
+                    cover_mask: 0b001,
+                    zero_mask: 0b011
+                },
+                WorkItem {
+                    cover_mask: 0b001,
+                    zero_mask: 0b001
+                },
+                WorkItem {
+                    cover_mask: 0b001,
+                    zero_mask: 0b010
+                },
+                WorkItem {
+                    cover_mask: 0b001,
+                    zero_mask: 0
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn core_subsumes_zero_supersets() {
+        let core = Core {
+            cover_mask: 0b001,
+            zero_mask: 0b001,
+        };
+
+        assert!(core_subsumes(
+            core,
+            WorkItem {
+                cover_mask: 0b101,
+                zero_mask: 0b011
+            }
+        ));
+    }
+
+    #[test]
+    fn core_subsumes_requires_cover_and_zero_bits() {
+        let core = Core {
+            cover_mask: 0b101,
+            zero_mask: 0b011,
+        };
+
+        assert!(!core_subsumes(
+            core,
+            WorkItem {
+                cover_mask: 0b001,
+                zero_mask: 0b011
+            }
+        ));
+        assert!(!core_subsumes(
+            core,
+            WorkItem {
+                cover_mask: 0b101,
+                zero_mask: 0b001
+            }
+        ));
+    }
+
+    #[test]
+    fn minimal_unsat_core_retains_required_zero_substitution() {
+        let factor = test_poly("x + 1");
+        let factors = vec![factor];
+        let sparse_variables = vec![("x".to_string(), 0)];
+
+        let core = minimal_unsat_core(
+            &factors,
+            &sparse_variables,
+            WorkItem {
+                cover_mask: 0b1,
+                zero_mask: 0b1,
+            },
+            Duration::from_secs(5),
+        );
+
+        assert_eq!(
+            core,
+            Core {
+                cover_mask: 0b1,
+                zero_mask: 0b1
+            }
+        );
+    }
+
+    #[test]
+    fn minimal_unsat_core_drops_unneeded_zero_substitution() {
+        let template = test_poly("x + y + 1");
+        let factors = vec![poly_like(&template, "x + 1")];
+        let sparse_variables = vec![("x".to_string(), 0), ("y".to_string(), 1)];
+
+        let core = minimal_unsat_core(
+            &factors,
+            &sparse_variables,
+            WorkItem {
+                cover_mask: 0b1,
+                zero_mask: 0b11,
+            },
+            Duration::from_secs(5),
+        );
+
+        assert_eq!(
+            core,
+            Core {
+                cover_mask: 0b1,
+                zero_mask: 0b01
+            }
+        );
+    }
+
+    #[test]
+    fn substitute_zeroes_drops_terms_containing_zeroed_variables() {
+        let poly = test_poly("x*y + z");
+
+        let substituted = substitute_zeroes(&poly, &[0]);
+
+        assert_eq!(substituted, poly_like(&poly, "z"));
+        assert!(substitute_zeroes(&test_poly("x*y"), &[0]).is_zero());
+        let unaffected = poly_like(&poly, "z + 1");
+        assert_eq!(substitute_zeroes(&unaffected, &[0]), unaffected);
     }
 }
