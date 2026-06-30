@@ -148,9 +148,10 @@ fn initial_basis<F: Field, O: MonomialOrder>(
     (labeled, nvars)
 }
 
-/// Try to eliminate the leading term of `p` using one basis element `g`
-/// such that the cofactor monomial `u = lm(p) / lm(g)` produces a signature
-/// `u · sig(g)` strictly less than `sig`.
+/// The polynomial to subtract from `p` to eliminate its leading term, using one
+/// basis element `g` whose cofactor monomial `u = lm(p) / lm(g)` produces a
+/// signature `u · sig(g)` strictly less than `sig`. `None` when no
+/// signature-safe reducer applies.
 fn sig_top_reduce_once<F: Field, O: MonomialOrder>(
     p: &MultivariatePolynomial<F, u16, O>,
     sig: &Signature<O>,
@@ -169,8 +170,7 @@ fn sig_top_reduce_once<F: Field, O: MonomialOrder>(
         let new_sig = g.signature.shifted(&u);
         (new_sig.cmp(sig) == Ordering::Less).then(|| {
             let ratio = p.ring.div(p.max_coeff(), g.poly.max_coeff());
-            let to_sub = g.poly.clone().mul_exp(&u).mul_coeff(ratio);
-            p.clone() - to_sub
+            g.poly.clone().mul_exp(&u).mul_coeff(ratio)
         })
     })
 }
@@ -180,8 +180,8 @@ fn sig_top_reduce<F: Field, O: MonomialOrder>(
     sig: &Signature<O>,
     basis: &[LabeledPoly<F, O>],
 ) -> MultivariatePolynomial<F, u16, O> {
-    while let Some(next) = sig_top_reduce_once(&p, sig, basis) {
-        p = next;
+    while let Some(to_sub) = sig_top_reduce_once(&p, sig, basis) {
+        p = p - to_sub;
         if p.is_zero() {
             return p;
         }
@@ -229,6 +229,47 @@ fn finalize<F: Field + Echelonize, O: MonomialOrder>(
     .reduce_basis()
 }
 
+/// Rewrite criterion: skip a pair whose signature exactly matches that of an
+/// existing basis element (a duplicate signature carries no new information).
+///
+/// This is intentionally *exact*, not divisibility-based. The stronger
+/// divisibility ("rewritable") criterion of GVW/F5 is only sound alongside full
+/// regular reduction with a latest-rewriter discipline; with the plain
+/// signature-safe top reduction used here it over-prunes and drops J-pairs that
+/// are still needed, yielding a non-Gröbner basis.
+fn is_rewritten<F: Field, O: MonomialOrder>(
+    sig: &Signature<O>,
+    basis: &[LabeledPoly<F, O>],
+) -> bool {
+    basis.iter().any(|g| g.signature == *sig)
+}
+
+/// Top-reduce `poly` (carrying signature `sig`) against `basis`. If it reduces
+/// to zero, returns its signature (a syzygy). Otherwise spawns the J-pairs
+/// against every basis element onto `queue` and appends the reduced polynomial
+/// to `basis`.
+fn reduce_and_extend<F: Field, O: MonomialOrder>(
+    sig: Signature<O>,
+    poly: MultivariatePolynomial<F, u16, O>,
+    basis: &mut Vec<LabeledPoly<F, O>>,
+    queue: &mut BinaryHeap<Pair<F, O>>,
+) -> Option<Signature<O>> {
+    let reduced = sig_top_reduce(poly, &sig, basis);
+    if reduced.is_zero() {
+        return Some(sig);
+    }
+    for g in basis.iter() {
+        if let Some(p) = jpair(&sig, &reduced, g) {
+            queue.push(p);
+        }
+    }
+    basis.push(LabeledPoly {
+        signature: sig,
+        poly: reduced,
+    });
+    None
+}
+
 /// Gao–Volny–Wang signature-based Gröbner basis algorithm.
 ///
 /// Generic over the coefficient field `F` (must support echelonization for
@@ -258,29 +299,15 @@ where
         .collect();
 
     while let Some(Pair { sig, poly }) = queue.pop() {
-        if syzygy_sigs
+        let is_syzygy = syzygy_sigs
             .iter()
-            .any(|h| h.index == sig.index && monom_divides(&h.monomial, &sig.monomial))
-        {
+            .any(|h| h.index == sig.index && monom_divides(&h.monomial, &sig.monomial));
+        if is_syzygy || is_rewritten(&sig, &basis) {
             continue;
         }
-        if basis.iter().any(|g| g.signature == sig) {
-            continue;
+        if let Some(syz) = reduce_and_extend(sig, poly, &mut basis, &mut queue) {
+            syzygy_sigs.push(syz);
         }
-        let reduced = sig_top_reduce(poly, &sig, &basis);
-        if reduced.is_zero() {
-            syzygy_sigs.push(sig);
-            continue;
-        }
-        for g in &basis {
-            if let Some(p) = jpair(&sig, &reduced, g) {
-                queue.push(p);
-            }
-        }
-        basis.push(LabeledPoly {
-            signature: sig,
-            poly: reduced,
-        });
     }
 
     finalize(basis)
@@ -322,25 +349,11 @@ where
         });
 
         while let Some(Pair { sig, poly }) = queue.pop() {
-            if sig.index == cutoff && lower_lms.iter().any(|lm| monom_divides(lm, &sig.monomial)) {
+            let is_principal_syzygy = lower_lms.iter().any(|lm| monom_divides(lm, &sig.monomial));
+            if is_principal_syzygy || is_rewritten(&sig, &basis) {
                 continue;
             }
-            if basis.iter().any(|g| g.signature == sig) {
-                continue;
-            }
-            let reduced = sig_top_reduce(poly, &sig, &basis);
-            if reduced.is_zero() {
-                continue;
-            }
-            for g in &basis {
-                if let Some(p) = jpair(&sig, &reduced, g) {
-                    queue.push(p);
-                }
-            }
-            basis.push(LabeledPoly {
-                signature: sig,
-                poly: reduced,
-            });
+            reduce_and_extend(sig, poly, &mut basis, &mut queue);
         }
     }
 
@@ -431,6 +444,9 @@ mod tests {
     use symbolica::poly::GrevLexOrder;
     use symbolica::poly::groebner::GroebnerBasis;
 
+    type QPolys = Vec<MultivariatePolynomial<Q, u16, LexOrder>>;
+    type QGb = GroebnerBasis<Q, u16, LexOrder>;
+
     static LICENSE: Once = Once::new();
     fn activate_license() {
         LICENSE.call_once(|| {
@@ -446,20 +462,26 @@ mod tests {
         v
     }
 
-    fn run_all_three(src: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    fn run_both(src: &str) -> (QGb, QGb, QPolys) {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(src).expect("load");
         let var_order = variable_order(&loaded.id_to_sym);
-        let ref_polys =
+        let gens =
             ideal_in_order::<Q, LexOrder>(&loaded.system, &Q, var_order.clone()).expect("ideal");
-        let gb_ref = GroebnerBasis::new(&ref_polys, false);
-        let gb_f5 = groebner_f5_from_system(&loaded.system, var_order.clone()).expect("f5");
-        let gb_gvw = groebner_gvw_from_system(&loaded.system, var_order).expect("gvw");
-        (
-            basis_strings(&gb_ref),
-            basis_strings(&gb_f5),
-            basis_strings(&gb_gvw),
-        )
+        let f5 = groebner_f5_from_system(&loaded.system, var_order.clone()).expect("f5");
+        let gvw = groebner_gvw_from_system(&loaded.system, var_order).expect("gvw");
+        (f5, gvw, gens)
+    }
+
+    /// Self-contained correctness check: `basis` is a Gröbner basis of the ideal
+    /// generated by `gens`. It must be a Gröbner basis and generate the same
+    /// ideal — every generator reduces to zero modulo it (the reverse inclusion
+    /// holds by construction, since signature algorithms only emit ideal members).
+    fn is_gb_of(
+        basis: &[MultivariatePolynomial<Q, u16, LexOrder>],
+        gens: &[MultivariatePolynomial<Q, u16, LexOrder>],
+    ) -> bool {
+        GroebnerBasis::is_groebner_basis(basis) && gens.iter().all(|g| g.reduce(basis).is_zero())
     }
 
     #[test]
@@ -489,34 +511,34 @@ mod tests {
     }
 
     #[test]
-    fn gvw_matches_symbolica_on_linear_system() {
-        let (refb, _, gvw) = run_all_three("{x + y - 1 == 0, x - y == 0}");
-        assert_eq!(gvw, refb);
+    fn gvw_on_linear_system_is_a_groebner_basis() {
+        let (_, gvw, gens) = run_both("{x + y - 1 == 0, x - y == 0}");
+        assert!(is_gb_of(&gvw.system, &gens));
     }
 
     #[test]
-    fn f5_matches_symbolica_on_linear_system() {
-        let (refb, f5, _) = run_all_three("{x + y - 1 == 0, x - y == 0}");
-        assert_eq!(f5, refb);
+    fn f5_on_linear_system_is_a_groebner_basis() {
+        let (f5, _, gens) = run_both("{x + y - 1 == 0, x - y == 0}");
+        assert!(is_gb_of(&f5.system, &gens));
     }
 
     #[test]
-    fn gvw_matches_symbolica_on_quadratic_system() {
-        let (refb, _, gvw) = run_all_three("{x^2 + y^2 - 1 == 0, x + y == 0}");
-        assert_eq!(gvw, refb);
+    fn gvw_on_quadratic_system_is_a_groebner_basis() {
+        let (_, gvw, gens) = run_both("{x^2 + y^2 - 1 == 0, x + y == 0}");
+        assert!(is_gb_of(&gvw.system, &gens));
     }
 
     #[test]
-    fn f5_matches_symbolica_on_quadratic_system() {
-        let (refb, f5, _) = run_all_three("{x^2 + y^2 - 1 == 0, x + y == 0}");
-        assert_eq!(f5, refb);
+    fn f5_on_quadratic_system_is_a_groebner_basis() {
+        let (f5, _, gens) = run_both("{x^2 + y^2 - 1 == 0, x + y == 0}");
+        assert!(is_gb_of(&f5.system, &gens));
     }
 
     #[test]
     fn f5_and_gvw_agree_on_3var_system() {
         let src = "{x^2 + y + z - 1 == 0, x + y^2 + z - 1 == 0, x + y + z^2 - 1 == 0}";
-        let (_, f5, gvw) = run_all_three(src);
-        assert_eq!(f5, gvw);
+        let (f5, gvw, _) = run_both(src);
+        assert_eq!(basis_strings(&f5), basis_strings(&gvw));
     }
 
     fn computed_gb(src: &str) -> Vec<MultivariatePolynomial<Q, u16, LexOrder>> {
@@ -551,10 +573,9 @@ mod tests {
     fn katsura3_f5_and_gvw_agree_and_form_a_gb() {
         let src =
             "{2*x + 2*y + 2*z - 1 == 0, x^2 + 2*y^2 + 2*z^2 - x == 0, 2*x*y + 2*y*z - y == 0}";
-        let (_, f5, gvw) = run_all_three(src);
-        assert_eq!(f5, gvw);
-        let basis = computed_gb(src);
-        assert!(GroebnerBasis::is_groebner_basis(&basis));
+        let (f5, gvw, gens) = run_both(src);
+        assert_eq!(basis_strings(&f5), basis_strings(&gvw));
+        assert!(is_gb_of(&gvw.system, &gens));
     }
 
     #[test]

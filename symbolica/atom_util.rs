@@ -6,7 +6,6 @@ use symbolica::atom::{Atom, AtomCore, DefaultNamespace, Symbol};
 use symbolica::id::Replacement;
 use symbolica::parser::ParseSettings;
 
-
 fn crate_namespace() -> &'static str {
     env!("CARGO_CRATE_NAME")
 }
@@ -35,4 +34,3 @@ pub fn substitute_symbol(expr: &Atom, x: Symbol, rhs: Atom) -> Atom {
     expr.replace_multiple(&[Replacement::new(pat, rhs)])
         .expand()
 }
-
