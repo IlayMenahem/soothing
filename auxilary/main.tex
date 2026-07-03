@@ -42,7 +42,7 @@ We also have a set of constraints that we don't need to satisfy but can help the
     \State Initialize $C = \emptyset$ an unsatisfiable cores set
     \State Initialize $S = \emptyset$ a solutions set
 
-    \For{each minimal hitting set $HS$ of the sets of constraints $C_1, \ldots, C_m$ and a subset of the structure hints $F \subseteq H$}
+    \For{each minimal hitting set $HS$ of the sets of constraints $C_1, \ldots, C_m$, and a subset of the structure hints $F \subseteq H$}
         \If{$HS \cup F$ contains an unsatisfiable core in $C$}
             \State \textbf{continue}
         \EndIf
@@ -85,8 +85,8 @@ The order of iteration over the minimal hitting sets and the structure hints sho
 
 To specify a specialization of the CDCL framework to a particular problem, we need to define the following:
 \begin{itemize}
-    \item Structure hints for the problem
     \item The preprocessing of the input to an hitting set problem
+    \item Structure hints for the problem
     \item An order of iteration over the hitting sets and structure hints
     \item A checker for satisfiability of a hitting set
 \end{itemize}
@@ -113,18 +113,12 @@ Given a set of multivariate polynomials $p_1, \ldots, p_m$, we perform the follo
 \end{algorithm}
 
 \subsection*{Minimal hitting sets of the factors}
-A \emph{minimal hitting set} is a set $HS$ of factors such that $HS$ contains at least one factor from each polynomial's set of irreducible factors. the minimality means that no proper subset of $HS$ has this property.
-
 \textbf{Order of iteration over the minimal hitting sets}: the order is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the B\'ezout bound $\prod_{f \in F} \deg f$: it bounds the number of isolated solutions and, for a regular cover, the solving degree of the Gr\"obner computation that decides satisfiability, whose Macaulay matrix grows with that degree. Iterating covers by increasing B\'ezout bound therefore tries the easy covers first.
 
 \subsection*{Finding the unsatisfiable cores}
 To check if a set of polynomials $F$ is satisfiable, we compute its reduced Gr\"obner basis $G$ with respect to a degrevlex order, using a signiture based algorithm such as F5, M4GB, or GVW.
 
-\textbf{unsatisfiable core} is a subset $U \subseteq F$ of factors with no common zero, $V(U) = \bigcap_{f \in U} V(f) = \emptyset$; equivalently $\langle U \rangle = k[x_1, \ldots, x_n]$ is the unit ideal. We detect this from the reduced Gr\"obner basis of $U$, which equals $\{1\}$ exactly when $1 \in \langle U \rangle$.
-
-Such a core is useable because the property is monotone under inclusion: if $V(U) = \emptyset$ then every hitting set $F' \supseteq U$ has $V(F') \subseteq V(U) = \emptyset$ and is therefore also unsatisfiable.
-
-Given an unsatisfiable $F$, we extract a minimal core by deletion: consider its factors in turn, remove one, and recompute the Gr\"obner basis; keep the smaller set when it remains the unit ideal, otherwise restore the factor. After one pass over the $|F|$ factors every remaining factor is necessary --- dropping any one restores a solution --- so $U$ is a \emph{minimal} (inclusion-irreducible) unsatisfiable core. Minimality here is irreducibility, not minimum cardinality; a smallest core is NP-hard to find and unnecessary for soundness of the pruning.
+\textbf{unsatisfiable core} is a subset $U \subseteq F$ of factors with no common zero. We detect this from the reduced Gr\"obner basis of $U$, which equals $\{1\}$ exactly when $1 \in \langle U \rangle$.
 
 If we were to select an hitting set $F$ that is contained in a previously found satisfiable hitting set $F'$, then $V(F) \supseteq V(F') \neq \emptyset$ and $F$ is also satisfiable. This is the dual of the unsatisfiable core property, and can be used to prune the search space in a similar way.
 
@@ -137,8 +131,6 @@ certain structures can be encoded as additional polynomial constraints, and can 
     \item Sparsity constrains can be encoded as the equation $x_i = 0$ for some variables $x_i$
     \item Affine constraints can be encoded as $a_1 x_1 + \cdots + a_n x_n = b$ for some constants $a_i, b$
 \end{itemize}
-
-When allowing for structure hints, the algorithm can be modified to consider minimal hitting sets for the original polynomials with an addition of any subset of the structure polynomials.
 
 \subsection*{From Groebner basis to a solution set}
 
