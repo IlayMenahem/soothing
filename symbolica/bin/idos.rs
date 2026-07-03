@@ -29,6 +29,8 @@ use polynomial_cdcl::{
     groebner_gvw, groebner_m4gb, load_mathematica_system_from_path_with_var_names, preprocess,
 };
 
+type PolyExtGrevLex = MultivariatePolynomial<ExtQ, u16, GrevLexOrder>;
+
 /// Deduplicated factor universe (made monic) together with each equation's
 /// factor group expressed as indices into that universe. Mirrors the dedup of
 /// `build_problem`, so a factor shared by several equations gets one index.
@@ -280,8 +282,8 @@ fn is_unit_ideal<O: MonomialOrder>(system: &[MultivariatePolynomial<ExtQ, u16, O
 
 /// Outcome of computing the Gröbner basis of a single cover.
 enum Outcome {
-    /// Non-unit reduced basis with this many elements: the cover is consistent.
-    Consistent(usize),
+    /// Non-unit reduced basis: the cover is consistent.
+    Consistent(Vec<PolyExtGrevLex>),
     /// Reduced basis is `{1}`: the cover's ideal is the whole ring.
     Inconsistent,
     /// Computation exceeded the per-cover time budget.
@@ -324,7 +326,7 @@ impl GbBackend {
 /// timed-out thread keeps running until it finishes on its own.
 fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBackend) -> Outcome {
     if cover.is_empty() {
-        return Outcome::Consistent(0);
+        return Outcome::Consistent(Vec::new());
     }
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
@@ -341,7 +343,7 @@ fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBackend)
     });
     match rx.recv_timeout(timeout) {
         Ok(system) if is_unit_ideal(&system) => Outcome::Inconsistent,
-        Ok(system) => Outcome::Consistent(system.len()),
+        Ok(system) => Outcome::Consistent(system),
         Err(_) => Outcome::Timeout,
     }
 }
@@ -624,6 +626,7 @@ fn main() {
     let mut cores: Vec<Core> = Vec::new();
     let mut satisfiable_covers: Vec<(usize, WorkItem)> = Vec::new();
     let mut solutions: Vec<(usize, usize)> = Vec::new();
+    let mut smallest_basis: Option<(usize, Vec<PolyExtGrevLex>)> = None;
     let mut inconsistent = 0usize;
     let mut timeouts = 0usize;
     let mut core_pruned = 0usize;
@@ -655,7 +658,8 @@ fn main() {
             timeout,
             options.gb_backend,
         ) {
-            Outcome::Consistent(len) => {
+            Outcome::Consistent(basis) => {
+                let len = basis.len();
                 if let Some(solution_idx) = inferred_from {
                     println!(
                         "  cover #{idx}: satisfiable-inferred from cover #{solution_idx}, basis computed ({len} element(s), elapsed {:?})",
@@ -669,6 +673,12 @@ fn main() {
                 }
                 satisfiable_covers.push((idx, item));
                 solutions.push((idx, len));
+                if smallest_basis
+                    .as_ref()
+                    .map_or(true, |(_, best)| len < best.len())
+                {
+                    smallest_basis = Some((idx, basis));
+                }
             }
             Outcome::Inconsistent => {
                 if let Some(solution_idx) = inferred_from {
@@ -719,6 +729,19 @@ fn main() {
     );
     for (idx, len) in solutions.iter().take(20) {
         println!("\tcover #{idx}: {len} basis element(s)");
+    }
+    if let Some((idx, basis)) = smallest_basis {
+        println!(
+            "  smallest Groebner basis found: cover #{idx}, {} element(s)",
+            basis.len()
+        );
+        if basis.is_empty() {
+            println!("\t<empty basis>");
+        } else {
+            for (i, polynomial) in basis.iter().enumerate() {
+                println!("\tg{i} = {polynomial}");
+            }
+        }
     }
     if !cores.is_empty() {
         println!("  learned {} minimal unsatisfiable core(s)", cores.len());
