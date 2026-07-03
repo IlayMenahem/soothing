@@ -1,7 +1,7 @@
 //! Run F5 and GVW on a Mathematica-style polynomial system.
 //!
 //! Usage:
-//!   `sig_groebner [path] [--algo f5|gvw|both] [--order lex|grevlex] [--timeout-secs N]`
+//!   `sig_groebner [path] [--algo m4gb|f5|gvw|both] [--order lex|grevlex] [--timeout-secs N]`
 //!
 //! The default path is `<repo>/systems/system_s.txt`. Lex is the default
 //! monomial order; pass `--order grevlex` to compute a degrevlex basis.
@@ -18,7 +18,7 @@ use symbolica::poly::{GrevLexOrder, LexOrder, MonomialOrder, PolyVariable};
 
 use polynomial_cdcl::{
     PolynomialSystem, default_systems_dir_from_manifest, groebner_f5_from_system_with,
-    groebner_gvw_from_system_with, ideal_in_order,
+    groebner_gvw_from_system_with, groebner_m4gb_from_system_with, ideal_in_order,
     load_mathematica_system_from_path_with_var_names, variable_order,
 };
 
@@ -26,6 +26,7 @@ const LICENSE_KEY: &str = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd2
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Algo {
+    M4gb,
     F5,
     Gvw,
     Both,
@@ -64,6 +65,7 @@ fn parse_args(it: impl IntoIterator<Item = String>) -> Result<Args, String> {
         match arg.as_str() {
             "--algo" => {
                 algo = match it.next().as_deref() {
+                    Some("m4gb") => Algo::M4gb,
                     Some("f5") => Algo::F5,
                     Some("gvw") => Algo::Gvw,
                     Some("both") => Algo::Both,
@@ -147,6 +149,19 @@ fn run_algo<O: MonomialOrder + Send + 'static>(
 ) where
     MultivariatePolynomial<Q, u16, O>: std::fmt::Display,
 {
+    if matches!(algo, Algo::M4gb | Algo::Both) {
+        println!("\nM4GB ({label} over ℚ)");
+        let sys = system.clone();
+        let vo = var_order.clone();
+        let r = run_with_optional_timeout("M4GB", timeout, move || {
+            groebner_m4gb_from_system_with::<Q, O>(&sys, &Q, vo)
+        });
+        match r {
+            Some(Ok(gb)) => report(&gb),
+            Some(Err(e)) => eprintln!("  error: {e}"),
+            None => {}
+        }
+    }
     if matches!(algo, Algo::F5 | Algo::Both) {
         println!("\nF5 ({label} over ℚ)");
         let sys = system.clone();

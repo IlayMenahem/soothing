@@ -20,14 +20,13 @@ use symbolica::LicenseManager;
 use symbolica::atom::Symbol;
 use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
-use symbolica::poly::groebner::GroebnerBasis;
 use symbolica::poly::polynomial::MultivariatePolynomial;
 use symbolica::poly::{GrevLexOrder, MonomialOrder, PolyVariable};
 
 use polynomial_cdcl::factor_prep::ExtQ;
 use polynomial_cdcl::{
-    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest,
-    load_mathematica_system_from_path_with_var_names, preprocess,
+    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest, groebner_f5,
+    groebner_gvw, groebner_m4gb, load_mathematica_system_from_path_with_var_names, preprocess,
 };
 
 /// Deduplicated factor universe (made monic) together with each equation's
@@ -289,19 +288,56 @@ enum Outcome {
     Timeout,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GbBackend {
+    M4gb,
+    F5,
+    Gvw,
+    Symbolica,
+}
+
+impl GbBackend {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "m4gb" => Some(Self::M4gb),
+            "f5" => Some(Self::F5),
+            "gvw" => Some(Self::Gvw),
+            "symbolica" => Some(Self::Symbolica),
+            _ => None,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::M4gb => "m4gb",
+            Self::F5 => "f5",
+            Self::Gvw => "gvw",
+            Self::Symbolica => "symbolica",
+        }
+    }
+}
+
 /// Compute the cover's Gröbner basis on a worker thread, abandoning it if it
 /// outlives `timeout`. The cover is reordered to degrevlex before the
 /// computation, which is typically far cheaper than lex for deciding
 /// satisfiability (Section 3.1). Cancellation is cooperative-free, so a
 /// timed-out thread keeps running until it finishes on its own.
-fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
+fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBackend) -> Outcome {
     if cover.is_empty() {
         return Outcome::Consistent(0);
     }
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let grevlex: Vec<_> = cover.iter().map(|p| p.reorder::<GrevLexOrder>()).collect();
-        let _ = tx.send(GroebnerBasis::new(&grevlex, false).system);
+        let system = match backend {
+            GbBackend::M4gb => groebner_m4gb(&grevlex).system,
+            GbBackend::F5 => groebner_f5(&grevlex).system,
+            GbBackend::Gvw => groebner_gvw(&grevlex).system,
+            GbBackend::Symbolica => {
+                symbolica::poly::groebner::GroebnerBasis::new(&grevlex, false).system
+            }
+        };
+        let _ = tx.send(system);
     });
     match rx.recv_timeout(timeout) {
         Ok(system) if is_unit_ideal(&system) => Outcome::Inconsistent,
@@ -320,6 +356,7 @@ fn minimal_unsat_core(
     sparse_variables: &[(String, usize)],
     item: WorkItem,
     timeout: Duration,
+    backend: GbBackend,
 ) -> Core {
     let mut core = item;
     loop {
@@ -333,7 +370,8 @@ fn minimal_unsat_core(
             if matches!(
                 evaluate_cover(
                     decode_work_item(factors, sparse_variables, reduced),
-                    timeout
+                    timeout,
+                    backend,
                 ),
                 Outcome::Inconsistent
             ) {
@@ -350,7 +388,8 @@ fn minimal_unsat_core(
             if matches!(
                 evaluate_cover(
                     decode_work_item(factors, sparse_variables, reduced),
-                    timeout
+                    timeout,
+                    backend,
                 ),
                 Outcome::Inconsistent
             ) {
@@ -397,6 +436,7 @@ struct CliOptions {
     interreduce: bool,
     max_covers: usize,
     timeout_ms: u64,
+    gb_backend: GbBackend,
     sparse: bool,
     sparse_names: Vec<String>,
 }
@@ -406,6 +446,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut interreduce = true;
     let mut max_covers: usize = 2_000;
     let mut timeout_ms: u64 = 5_000;
+    let mut gb_backend = GbBackend::M4gb;
     let mut sparse = false;
     let mut sparse_names = Vec::new();
     let mut args = args.into_iter().peekable();
@@ -426,6 +467,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     .parse()
                     .map_err(|e| format!("invalid --timeout-ms: {e}"))?;
             }
+            "--gb" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--gb requires one of: m4gb, f5, gvw, symbolica".to_string())?;
+                gb_backend = GbBackend::parse(&value).ok_or_else(|| {
+                    format!("invalid --gb {value:?}: expected m4gb, f5, gvw, or symbolica")
+                })?;
+            }
             "--sparse" => {
                 sparse = true;
                 if args.peek().is_some_and(|next| !next.starts_with("--")) {
@@ -441,6 +490,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         interreduce,
         max_covers,
         timeout_ms,
+        gb_backend,
         sparse,
         sparse_names,
     })
@@ -563,9 +613,10 @@ fn main() {
 
     let tried = covers.len().min(options.max_covers);
     println!(
-        "\nCDCL over {tried} of {} minimal cover(s) in Bézout order, {}ms/cover timeout",
+        "\nCDCL over {tried} of {} minimal cover(s) in Bézout order, {}ms/cover timeout, {} Groebner backend",
         covers.len(),
         options.timeout_ms,
+        options.gb_backend.label(),
     );
 
     let timeout = Duration::from_millis(options.timeout_ms);
@@ -599,7 +650,11 @@ fn main() {
             satisfiable_inferred += 1;
         }
         let t_cover = Instant::now();
-        match evaluate_cover(decode_work_item(&factors, &sparse_variables, item), timeout) {
+        match evaluate_cover(
+            decode_work_item(&factors, &sparse_variables, item),
+            timeout,
+            options.gb_backend,
+        ) {
             Outcome::Consistent(len) => {
                 if let Some(solution_idx) = inferred_from {
                     println!(
@@ -632,6 +687,7 @@ fn main() {
                     &sparse_variables,
                     item,
                     timeout,
+                    options.gb_backend,
                 ));
                 inconsistent += 1;
             }
@@ -685,9 +741,9 @@ mod tests {
     use symbolica::domains::rational::Q;
 
     use super::{
-        Core, WorkItem, core_subsumes, expand_with_sparse_subsets, keep_minimal, minimal_covers,
-        minimal_unsat_core, parse_args, satisfiable_cover_contains, sort_work_items,
-        substitute_zeroes,
+        Core, GbBackend, WorkItem, core_subsumes, expand_with_sparse_subsets, keep_minimal,
+        minimal_covers, minimal_unsat_core, parse_args, satisfiable_cover_contains,
+        sort_work_items, substitute_zeroes,
     };
 
     static LICENSE: Once = Once::new();
@@ -796,7 +852,19 @@ mod tests {
         assert!(!options.interreduce);
         assert_eq!(options.max_covers, 17);
         assert_eq!(options.timeout_ms, 250);
+        assert_eq!(options.gb_backend, GbBackend::M4gb);
         assert!(!options.sparse);
+    }
+
+    #[test]
+    fn parse_args_groebner_backend() {
+        let options = parse_args(["--gb", "gvw"].into_iter().map(String::from)).unwrap();
+        assert_eq!(options.gb_backend, GbBackend::Gvw);
+    }
+
+    #[test]
+    fn parse_args_invalid_groebner_backend_fails() {
+        assert!(parse_args(["--gb", "buchberger"].into_iter().map(String::from)).is_err());
     }
 
     #[test]
@@ -969,6 +1037,7 @@ mod tests {
                 zero_mask: 0b1,
             },
             Duration::from_secs(5),
+            GbBackend::M4gb,
         );
 
         assert_eq!(
@@ -994,6 +1063,7 @@ mod tests {
                 zero_mask: 0b11,
             },
             Duration::from_secs(5),
+            GbBackend::M4gb,
         );
 
         assert_eq!(
