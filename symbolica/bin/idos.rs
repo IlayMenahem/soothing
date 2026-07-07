@@ -279,6 +279,31 @@ fn decode_work_item(
     substituted.chain(zero_generators).collect()
 }
 
+/// Krull dimension of the solution locus from a reduced degrevlex Gröbner
+/// basis, via the initial ideal: a variable set is independent iff its
+/// complement hits every leading-monomial support, so the dimension is
+/// `nvars` minus the size of a minimum transversal of the support hypergraph
+/// (reusing `minimal_covers`). `None` when `nvars` exceeds the 63-bit mask
+/// limit or the ideal is the whole ring.
+fn solution_dimension(basis: &[PolyExtGrevLex], nvars: usize) -> Option<usize> {
+    let supports: Vec<Vec<usize>> = basis
+        .iter()
+        .filter(|p| !p.is_zero())
+        .map(|p| {
+            p.max_exp()
+                .iter()
+                .enumerate()
+                .filter(|&(_, &e)| e > 0)
+                .map(|(i, _)| i)
+                .collect()
+        })
+        .collect();
+    minimal_covers(&supports, nvars)?
+        .into_iter()
+        .map(|transversal| nvars - transversal.count_ones() as usize)
+        .max()
+}
+
 /// A reduced degrevlex Gröbner basis equal to `{1}` (a non-zero constant)
 /// certifies that the cover's ideal is the whole ring, i.e. the cover is
 /// inconsistent.
@@ -613,8 +638,8 @@ fn main() {
     let t_gb = Instant::now();
     let mut cores: Vec<Core> = Vec::new();
     let mut satisfiable_covers: Vec<(usize, WorkItem)> = Vec::new();
-    let mut solutions: Vec<(usize, usize)> = Vec::new();
-    let mut smallest_basis: Option<(usize, WorkItem, Vec<PolyExtGrevLex>)> = None;
+    let mut solutions: Vec<(usize, usize, Option<usize>)> = Vec::new();
+    let mut largest_dimension: Option<(usize, WorkItem, usize, Vec<PolyExtGrevLex>)> = None;
     let mut inconsistent = 0usize;
     let mut timeouts = 0usize;
     let mut core_pruned = 0usize;
@@ -651,24 +676,31 @@ fn main() {
         ) {
             Outcome::Consistent(basis) => {
                 let len = basis.len();
+                let dimension = solution_dimension(&basis, factors[0].nvars());
+                let dimension_label = dimension.map_or_else(|| "?".to_string(), |d| d.to_string());
                 if let Some(solution_idx) = inferred_from {
                     println!(
-                        "  cover #{idx}: satisfiable-inferred from cover #{solution_idx}, basis computed ({len} element(s), elapsed {:?})",
+                        "  cover #{idx}: satisfiable-inferred from cover #{solution_idx}, basis computed ({len} element(s), dimension {dimension_label}, elapsed {:?})",
                         t_cover.elapsed()
                     );
                 } else {
                     println!(
-                        "  cover #{idx}: satisfiable ({len} basis element(s), elapsed {:?})",
+                        "  cover #{idx}: satisfiable ({len} basis element(s), dimension {dimension_label}, elapsed {:?})",
                         t_cover.elapsed()
                     );
                 }
                 satisfiable_covers.push((idx, item));
-                solutions.push((idx, len));
-                if smallest_basis
-                    .as_ref()
-                    .map_or(true, |(_, _, best)| len < best.len())
-                {
-                    smallest_basis = Some((idx, item, basis));
+                solutions.push((idx, len, dimension));
+                if let Some(dimension) = dimension {
+                    let improves =
+                        largest_dimension
+                            .as_ref()
+                            .is_none_or(|&(_, _, best_dim, ref best)| {
+                                dimension > best_dim || (dimension == best_dim && len < best.len())
+                            });
+                    if improves {
+                        largest_dimension = Some((idx, item, dimension, basis));
+                    }
                 }
             }
             Outcome::Inconsistent => {
@@ -718,12 +750,13 @@ fn main() {
         timeouts,
         t_gb.elapsed()
     );
-    for (idx, len) in solutions.iter().take(20) {
-        println!("\tcover #{idx}: {len} basis element(s)");
+    for (idx, len, dimension) in solutions.iter().take(20) {
+        let dimension_label = dimension.map_or_else(|| "?".to_string(), |d| d.to_string());
+        println!("\tcover #{idx}: {len} basis element(s), dimension {dimension_label}");
     }
-    if let Some((idx, item, basis)) = smallest_basis {
+    if let Some((idx, item, dimension, basis)) = largest_dimension {
         println!(
-            "  smallest Groebner basis found: cover #{idx}, {} element(s)",
+            "  largest solution dimension found: cover #{idx}, dimension {dimension} ({} basis element(s))",
             basis.len()
         );
         let zeroed_variables: Vec<_> = sparse_variables
@@ -778,11 +811,12 @@ mod tests {
     use symbolica::atom::AtomCore;
     use symbolica::domains::algebraic_number::AlgebraicExtension;
     use symbolica::domains::rational::Q;
+    use symbolica::poly::GrevLexOrder;
 
     use super::{
-        Core, GbBackend, WorkItem, core_subsumes, decode_work_item, keep_minimal,
+        Core, GbBackend, PolyExtGrevLex, WorkItem, core_subsumes, decode_work_item, keep_minimal,
         masks_with_popcount, minimal_covers, minimal_unsat_core, ordered_work_items, parse_args,
-        satisfiable_cover_contains, substitute_zeroes,
+        satisfiable_cover_contains, solution_dimension, substitute_zeroes,
     };
 
     static LICENSE: Once = Once::new();
@@ -813,6 +847,13 @@ mod tests {
             .expect("polynomial")
     }
 
+    fn grevlex_basis(template: &PolyExtLex, sources: &[&str]) -> Vec<PolyExtGrevLex> {
+        sources
+            .iter()
+            .map(|source| poly_like(template, source).reorder::<GrevLexOrder>())
+            .collect()
+    }
+
     /// Collect a cover list into a sorted vec of sorted factor-index vectors.
     fn as_sets(masks: Vec<u64>) -> Vec<Vec<usize>> {
         let mut sets: Vec<Vec<usize>> = masks
@@ -821,6 +862,32 @@ mod tests {
             .collect();
         sets.sort();
         sets
+    }
+
+    #[test]
+    fn solution_dimension_counts_independent_variables() {
+        let template = test_poly("x + y + z");
+        assert_eq!(
+            solution_dimension(&grevlex_basis(&template, &["x"]), 3),
+            Some(2)
+        );
+        assert_eq!(
+            solution_dimension(&grevlex_basis(&template, &["x*y"]), 3),
+            Some(2)
+        );
+        assert_eq!(
+            solution_dimension(&grevlex_basis(&template, &["x*y", "z"]), 3),
+            Some(1)
+        );
+        assert_eq!(
+            solution_dimension(&grevlex_basis(&template, &["x", "y", "z"]), 3),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn solution_dimension_of_empty_basis_is_ambient() {
+        assert_eq!(solution_dimension(&[], 3), Some(3));
     }
 
     #[test]
