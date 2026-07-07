@@ -1,7 +1,8 @@
 //! A CDCL-style search over the minimal factor covers of a polynomial system.
 //!
 //! Implements Algorithm 1 of the method statement: the minimal factor covers
-//! are tried cheapest-first by Bézout bound; a cover that contains a learned
+//! are tried easiest-first — more zeroed variables first, then fewer factors;
+//! a cover that contains a learned
 //! unsatisfiable core is skipped; a cover contained in a learned satisfiable
 //! cover is also skipped by the dual monotonicity property; an inconsistent
 //! cover is shrunk to a minimal unsatisfiable core that is learned to prune later
@@ -9,7 +10,6 @@
 //!
 //! Usage: `idos [path]` — default path: `systems/system.txt`.
 
-use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use symbolica::LicenseManager;
 use symbolica::atom::Symbol;
+use symbolica::domains::Ring;
 use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
 use symbolica::poly::polynomial::MultivariatePolynomial;
@@ -112,27 +113,9 @@ fn minimal_covers(index_groups: &[Vec<usize>], n_factors: usize) -> Option<Vec<u
     Some(covers)
 }
 
-/// Total degree of a polynomial: the largest monomial exponent sum.
-fn total_degree(p: &PolyExtLex) -> u64 {
-    p.exponents_iter()
-        .map(|term| term.iter().map(|&e| e as u64).sum::<u64>())
-        .max()
-        .unwrap_or(0)
-}
-
 /// Single-bit masks for every set bit of `mask`, least significant first.
 fn set_bits(mask: u64) -> impl Iterator<Item = u64> {
     (0..64).map(|i| 1u64 << i).filter(move |b| mask & b != 0)
-}
-
-/// Bézout bound of a cover: the product of the degrees of its factors. Used as
-/// the cost heuristic that orders covers from easiest to hardest to check. The
-/// product saturates rather than overflowing, which only matters for covers far
-/// beyond what is solvable anyway.
-fn bezout_bound(degrees: &[u64], mask: u64) -> u128 {
-    set_bits(mask).fold(1u128, |acc, b| {
-        acc.saturating_mul(degrees[b.trailing_zeros() as usize] as u128)
-    })
 }
 
 /// Decode a cover bitmask back into its factors.
@@ -155,33 +138,39 @@ struct Core {
     zero_mask: u64,
 }
 
-fn expand_with_sparse_subsets(covers: &[u64], sparse_count: usize) -> Vec<WorkItem> {
-    let sparse_mask = if sparse_count == 0 {
-        0
-    } else {
-        (1u64 << sparse_count) - 1
-    };
-    covers
-        .iter()
-        .flat_map(|&cover_mask| {
-            submasks(sparse_mask).map(move |zero_mask| WorkItem {
+/// Masks over the `n` low bits with exactly `k` set bits, ascending (Gosper's
+/// hack). `k == 0` yields the single empty mask; `k > n` yields nothing.
+fn masks_with_popcount(n: usize, k: usize) -> impl Iterator<Item = u64> {
+    let limit = 1u64 << n;
+    let mut next = (k <= n).then(|| (1u64 << k) - 1);
+    std::iter::from_fn(move || {
+        let cur = next?;
+        next = (cur != 0)
+            .then(|| {
+                let c = cur & cur.wrapping_neg();
+                let r = cur + c;
+                (((r ^ cur) >> 2) / c) | r
+            })
+            .filter(|&m| m < limit);
+        Some(cur)
+    })
+}
+
+/// Work items streamed lazily in difficulty order: items with more zeroed
+/// variables first (sparser is easier), then covers with fewer factors first
+/// (more factors is harder); ties broken by cover mask then zero mask. Never
+/// materializes the 2^sparse_count expansion. For `sparse_count == 0` this
+/// yields each cover once with an empty zero mask.
+fn ordered_work_items(base_covers: &[u64], sparse_count: usize) -> impl Iterator<Item = WorkItem> {
+    let mut covers = base_covers.to_vec();
+    covers.sort_unstable_by_key(|&m| (m.count_ones(), m));
+    (0..=sparse_count).rev().flat_map(move |k| {
+        covers.clone().into_iter().flat_map(move |cover_mask| {
+            masks_with_popcount(sparse_count, k).map(move |zero_mask| WorkItem {
                 cover_mask,
                 zero_mask,
             })
         })
-        .collect()
-}
-
-/// Every submask of `mask`, including the empty mask and `mask` itself. Used to
-/// extend each cover by every subset of the sparsity factors. For `mask == 0`
-/// this yields the single empty mask, so a run without `--sparse` leaves the
-/// cover list unchanged.
-fn submasks(mask: u64) -> impl Iterator<Item = u64> {
-    let mut next = Some(mask);
-    std::iter::from_fn(move || {
-        let cur = next?;
-        next = (cur != 0).then(|| (cur - 1) & mask);
-        Some(cur)
     })
 }
 
@@ -260,17 +249,34 @@ fn substitute_zeroes(poly: &PolyExtLex, zero_positions: &[usize]) -> PolyExtLex 
     out
 }
 
+/// The polynomial `x_position` in the same ring and variable map as `template`.
+fn variable_generator(template: &PolyExtLex, position: usize) -> PolyExtLex {
+    let mut exponents = vec![0u16; template.nvars()];
+    exponents[position] = 1;
+    let mut out = template.zero_with_capacity(1);
+    out.append_monomial_back(template.ring.one(), &exponents);
+    out
+}
+
+/// Generators of the work item's ideal: the cover's factors with the zeroed
+/// variables substituted away, plus one generator per zeroed variable — the
+/// constraints `x = 0` belong to the ideal, so the basis must account for
+/// them (otherwise zeroing everything yields an empty basis that looks like
+/// the whole ring rather than the origin).
 fn decode_work_item(
     factors: &[PolyExtLex],
     sparse_variables: &[(String, usize)],
     item: WorkItem,
 ) -> Vec<PolyExtLex> {
     let zero_positions: Vec<_> = zero_positions(sparse_variables, item.zero_mask).collect();
-    decode_cover(factors, item.cover_mask)
+    let substituted = decode_cover(factors, item.cover_mask)
         .into_iter()
         .map(|factor| substitute_zeroes(&factor, &zero_positions))
-        .filter(|factor| !factor.is_zero())
-        .collect()
+        .filter(|factor| !factor.is_zero());
+    let zero_generators = zero_positions
+        .iter()
+        .map(|&position| variable_generator(&factors[0], position));
+    substituted.chain(zero_generators).collect()
 }
 
 /// A reduced degrevlex Gröbner basis equal to `{1}` (a non-zero constant)
@@ -421,17 +427,6 @@ fn satisfiable_cover_contains(solution: WorkItem, item: WorkItem) -> bool {
         && solution.zero_mask & item.zero_mask == item.zero_mask
 }
 
-fn sort_work_items(items: &mut [WorkItem], degrees: &[u64]) {
-    items.sort_by_key(|item| {
-        (
-            bezout_bound(degrees, item.cover_mask),
-            item.cover_mask,
-            Reverse(item.zero_mask.count_ones()),
-            item.zero_mask,
-        )
-    })
-}
-
 #[derive(Debug)]
 struct CliOptions {
     path: PathBuf,
@@ -462,12 +457,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     .parse()
                     .map_err(|e| format!("invalid --max-covers: {e}"))?;
             }
-            "--timeout-ms" => {
+            "--timeout" => {
                 timeout_ms = args
                     .next()
-                    .ok_or_else(|| "--timeout-ms requires a value".to_string())?
+                    .ok_or_else(|| "--timeout requires a value".to_string())?
                     .parse()
-                    .map_err(|e| format!("invalid --timeout-ms: {e}"))?;
+                    .map_err(|e| format!("invalid --timeout: {e}"))?;
             }
             "--gb" => {
                 let value = args
@@ -602,21 +597,14 @@ fn main() {
         Vec::new()
     };
 
-    let mut covers = expand_with_sparse_subsets(&base_covers, sparse_variables.len());
-    let degrees: Vec<u64> = factors.iter().map(total_degree).collect();
+    let total_items = (base_covers.len() as u128) << sparse_variables.len();
     if options.sparse {
-        println!(
-            "  {} cover variant(s) after optional sparsity subsets",
-            covers.len()
-        );
+        println!("  {total_items} cover variant(s) after optional sparsity subsets");
     }
 
-    sort_work_items(&mut covers, &degrees);
-
-    let tried = covers.len().min(options.max_covers);
+    let tried = total_items.min(options.max_covers as u128);
     println!(
-        "\nCDCL over {tried} of {} minimal cover(s) in Bézout order, {}ms/cover timeout, {} Groebner backend",
-        covers.len(),
+        "\nCDCL over {tried} of {total_items} minimal cover(s), sparsest-first then fewest-factors order, {}ms/cover timeout, {} Groebner backend",
         options.timeout_ms,
         options.gb_backend.label(),
     );
@@ -626,12 +614,15 @@ fn main() {
     let mut cores: Vec<Core> = Vec::new();
     let mut satisfiable_covers: Vec<(usize, WorkItem)> = Vec::new();
     let mut solutions: Vec<(usize, usize)> = Vec::new();
-    let mut smallest_basis: Option<(usize, Vec<PolyExtGrevLex>)> = None;
+    let mut smallest_basis: Option<(usize, WorkItem, Vec<PolyExtGrevLex>)> = None;
     let mut inconsistent = 0usize;
     let mut timeouts = 0usize;
     let mut core_pruned = 0usize;
     let mut satisfiable_inferred = 0usize;
-    for (idx, &item) in covers.iter().take(tried).enumerate() {
+    for (idx, item) in ordered_work_items(&base_covers, sparse_variables.len())
+        .take(options.max_covers)
+        .enumerate()
+    {
         // Skip the cover if any learned core is a subset of it (not an
         // equality membership test, despite `manual_contains`).
         #[allow(clippy::manual_contains)]
@@ -675,9 +666,9 @@ fn main() {
                 solutions.push((idx, len));
                 if smallest_basis
                     .as_ref()
-                    .map_or(true, |(_, best)| len < best.len())
+                    .map_or(true, |(_, _, best)| len < best.len())
                 {
-                    smallest_basis = Some((idx, basis));
+                    smallest_basis = Some((idx, item, basis));
                 }
             }
             Outcome::Inconsistent => {
@@ -730,11 +721,36 @@ fn main() {
     for (idx, len) in solutions.iter().take(20) {
         println!("\tcover #{idx}: {len} basis element(s)");
     }
-    if let Some((idx, basis)) = smallest_basis {
+    if let Some((idx, item, basis)) = smallest_basis {
         println!(
             "  smallest Groebner basis found: cover #{idx}, {} element(s)",
             basis.len()
         );
+        let zeroed_variables: Vec<_> = sparse_variables
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (name, _))| {
+                (item.zero_mask & (1u64 << i) != 0).then_some(name.as_str())
+            })
+            .collect();
+        let variables_not_zeroed: Vec<_> = loaded
+            .var_names
+            .iter()
+            .filter_map(|name| {
+                zeroed_variables
+                    .iter()
+                    .all(|&zeroed| zeroed != name.as_str())
+                    .then_some(name.as_str())
+            })
+            .collect();
+        if variables_not_zeroed.is_empty() {
+            println!("\tvariables not zeroed: <none>");
+        } else {
+            println!(
+                "\tvariables not zeroed: {}",
+                variables_not_zeroed.join(", ")
+            );
+        }
         if basis.is_empty() {
             println!("\t<empty basis>");
         } else {
@@ -764,9 +780,9 @@ mod tests {
     use symbolica::domains::rational::Q;
 
     use super::{
-        Core, GbBackend, WorkItem, core_subsumes, expand_with_sparse_subsets, keep_minimal,
-        minimal_covers, minimal_unsat_core, parse_args, satisfiable_cover_contains,
-        sort_work_items, substitute_zeroes,
+        Core, GbBackend, WorkItem, core_subsumes, decode_work_item, keep_minimal,
+        masks_with_popcount, minimal_covers, minimal_unsat_core, ordered_work_items, parse_args,
+        satisfiable_cover_contains, substitute_zeroes,
     };
 
     static LICENSE: Once = Once::new();
@@ -861,15 +877,9 @@ mod tests {
     #[test]
     fn parse_args_existing_options_still_work() {
         let options = parse_args(
-            [
-                "--no-interreduce",
-                "--max-covers",
-                "17",
-                "--timeout-ms",
-                "250",
-            ]
-            .into_iter()
-            .map(String::from),
+            ["--no-interreduce", "--max-covers", "17", "--timeout", "250"]
+                .into_iter()
+                .map(String::from),
         )
         .unwrap();
         assert!(!options.interreduce);
@@ -896,9 +906,19 @@ mod tests {
     }
 
     #[test]
+    fn masks_with_popcount_enumerates_combinations() {
+        assert_eq!(
+            masks_with_popcount(3, 2).collect::<Vec<_>>(),
+            vec![0b011, 0b101, 0b110]
+        );
+        assert_eq!(masks_with_popcount(2, 0).collect::<Vec<_>>(), vec![0]);
+        assert_eq!(masks_with_popcount(2, 3).count(), 0);
+    }
+
+    #[test]
     fn sparse_expansion_no_mask_keeps_base_covers() {
         assert_eq!(
-            expand_with_sparse_subsets(&[0b001, 0b010], 0),
+            ordered_work_items(&[0b001, 0b010], 0).collect::<Vec<_>>(),
             vec![
                 WorkItem {
                     cover_mask: 0b001,
@@ -913,10 +933,9 @@ mod tests {
     }
 
     #[test]
-    fn sparse_expansion_preserves_zero_subsets() {
-        let expanded = expand_with_sparse_subsets(&[0b001], 2);
+    fn work_item_order_checks_more_zeroes_first_for_same_cover() {
         assert_eq!(
-            expanded,
+            ordered_work_items(&[0b001], 2).collect::<Vec<_>>(),
             vec![
                 WorkItem {
                     cover_mask: 0b001,
@@ -924,11 +943,11 @@ mod tests {
                 },
                 WorkItem {
                     cover_mask: 0b001,
-                    zero_mask: 0b010
+                    zero_mask: 0b001
                 },
                 WorkItem {
                     cover_mask: 0b001,
-                    zero_mask: 0b001
+                    zero_mask: 0b010
                 },
                 WorkItem {
                     cover_mask: 0b001,
@@ -939,29 +958,24 @@ mod tests {
     }
 
     #[test]
-    fn work_item_order_checks_more_zeroes_first_for_same_cover() {
-        let degrees = vec![2, 3];
-        let mut items = expand_with_sparse_subsets(&[0b001], 2);
-
-        sort_work_items(&mut items, &degrees);
-
+    fn work_item_order_checks_sparsest_first_then_fewest_factors() {
         assert_eq!(
-            items,
+            ordered_work_items(&[0b011, 0b100], 1).collect::<Vec<_>>(),
             vec![
                 WorkItem {
-                    cover_mask: 0b001,
-                    zero_mask: 0b011
+                    cover_mask: 0b100,
+                    zero_mask: 0b1
                 },
                 WorkItem {
-                    cover_mask: 0b001,
-                    zero_mask: 0b001
+                    cover_mask: 0b011,
+                    zero_mask: 0b1
                 },
                 WorkItem {
-                    cover_mask: 0b001,
-                    zero_mask: 0b010
+                    cover_mask: 0b100,
+                    zero_mask: 0
                 },
                 WorkItem {
-                    cover_mask: 0b001,
+                    cover_mask: 0b011,
                     zero_mask: 0
                 }
             ]
@@ -1108,5 +1122,19 @@ mod tests {
         assert!(substitute_zeroes(&test_poly("x*y"), &[0]).is_zero());
         let unaffected = poly_like(&poly, "z + 1");
         assert_eq!(substitute_zeroes(&unaffected, &[0]), unaffected);
+    }
+
+    #[test]
+    fn decode_work_item_keeps_zeroed_variables_as_generators() {
+        let template = test_poly("x*y");
+        let sparse_variables = vec![("x".to_string(), 0), ("y".to_string(), 1)];
+        let item = WorkItem {
+            cover_mask: 0b1,
+            zero_mask: 0b11,
+        };
+        let decoded = decode_work_item(&[template.clone()], &sparse_variables, item);
+        let expected = [poly_like(&template, "x"), poly_like(&template, "y")];
+        assert_eq!(decoded.len(), 2);
+        assert!(expected.iter().all(|e| decoded.contains(e)));
     }
 }
