@@ -4,8 +4,9 @@
 \usepackage{algorithm, algpseudocode}
 \usepackage{hyperref}
 \usepackage{geometry}
+\usepackage{graphicx}
 \usepackage{tikz}
-\usetikzlibrary{positioning, arrows.meta}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, calc}
 
 \geometry{margin=1in}
 
@@ -39,10 +40,10 @@ We also have a set of constraints that we don't need to satisfy but can help the
 
     \State Preprocess the general input to a set of sets of constraints $C_1, \ldots, C_m$
 
-    \State Initialize $C = \emptyset$ an unsatisfiable cores set
-    \State Initialize $S = \emptyset$ a solutions set
+    \State Initialize $C \gets \emptyset$ an unsatisfiable cores set
+    \State Initialize $S \gets \emptyset$ a solutions set
 
-    \For{each minimal hitting set $HS$ of the sets of constraints $C_1, \ldots, C_m$, and a subset of the structure hints $F \subseteq H$}
+    \For{each minimal hitting set $HS$ of $C_1, \ldots, C_m$, and a subset of the structure hints $F \subseteq H$}
         \If{$HS \cup F$ contains an unsatisfiable core in $C$}
             \State \textbf{continue}
         \EndIf
@@ -96,6 +97,15 @@ To specify a specialization of the CDCL framework to a particular problem, we ne
 Let us say we have a set of polynomials $p_1, \ldots, p_m$ over a field $k$, and we want to validate whether there exists a solution to the system $p_1 = \cdots = p_m = 0$.
 We describe a CDCL-style algorithm that can be used to explore the space of possible minimal hitting sets of the polynomials.
 
+% \begin{figure}[htbp]
+% \centering
+% \resizebox{\textwidth}{!}{\input{./figs/cdcl_flowchart.tex}}
+% \caption{The CDCL pipeline specialized to a system of polynomial equations.}
+% \label{fig:cdcl flowchart}
+% \end{figure}
+
+\includegraphics[width=\textwidth]{./figs/cdcl_flowchart.png}
+
 \subsection*{Preprocessing the polynomials}
 
 Given a set of multivariate polynomials $p_1, \ldots, p_m$, we perform the following preprocessing steps to simplify the system and prepare it for the CDCL algorithm:
@@ -113,7 +123,7 @@ Given a set of multivariate polynomials $p_1, \ldots, p_m$, we perform the follo
 \end{algorithm}
 
 \subsection*{Minimal hitting sets of the factors}
-\textbf{Order of iteration over the minimal hitting sets}: the order is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the B\'ezout bound $\prod_{f \in F} \deg f$: it bounds the number of isolated solutions and, for a regular cover, the solving degree of the Gr\"obner computation that decides satisfiability, whose Macaulay matrix grows with that degree. Iterating covers by increasing B\'ezout bound therefore tries the easy covers first.
+\textbf{Order of iteration over the minimal hitting sets}: the order is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the rule more factors $\Rightarrow$ more complex to check, and more hints $\Rightarrow$ easier to check.
 
 \subsection*{Finding the unsatisfiable cores}
 To check if a set of polynomials $F$ is satisfiable, we compute its reduced Gr\"obner basis $G$ with respect to a degrevlex order, using a signiture based algorithm such as F5, M4GB, or GVW.
