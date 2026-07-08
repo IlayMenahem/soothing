@@ -1,11 +1,14 @@
 //! Shared Symbolica helpers and system loading.
 
 pub mod atom_util;
+pub mod cover;
 pub mod factor_prep;
+pub mod gb_search;
 pub mod m4gb;
 pub mod mathematica;
 pub(crate) mod monom;
 pub mod sig_groebner;
+pub mod sparse;
 pub mod system;
 pub mod var_id;
 
