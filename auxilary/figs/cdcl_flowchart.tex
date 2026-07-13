@@ -1,0 +1,121 @@
+\begin{tikzpicture}[
+    font=\small,
+    every node/.style={align=center},
+    blue box/.style={draw=blue!70!cyan, line width=1pt, rounded corners=6pt,
+        fill=blue!50!cyan!4, inner sep=7pt},
+    blue subbox/.style={draw=blue!60!cyan, line width=.6pt, rounded corners=3pt,
+        fill=blue!50!cyan!10, inner sep=4pt, font=\footnotesize},
+    loop box/.style={draw=orange!85!black, line width=1pt, rounded corners=6pt,
+        fill=yellow!40!orange!12, inner sep=7pt},
+    decision/.style={draw=green!55!black, line width=1pt, diamond, aspect=1.8,
+        fill=green!60!teal!8, inner sep=1pt},
+    green box/.style={draw=green!55!black, line width=1pt, rounded corners=6pt,
+        fill=green!60!teal!4, inner sep=7pt},
+    green subbox/.style={draw=green!55!black, line width=.6pt, rounded corners=3pt,
+        fill=white, inner sep=4pt, font=\footnotesize},
+    red box/.style={draw=red!70, line width=1pt, rounded corners=6pt,
+        fill=red!4, inner sep=7pt},
+    red subbox/.style={draw=red!70, line width=.6pt, rounded corners=3pt,
+        fill=white, inner sep=4pt, font=\footnotesize},
+    hint box/.style={draw=violet, dashed, line width=1pt, rounded corners=6pt,
+        fill=violet!4, inner sep=7pt},
+    hint subbox/.style={draw=violet!70, solid, line width=.6pt, rounded corners=3pt,
+        fill=violet!8, inner sep=4pt, font=\footnotesize},
+    return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
+        fill=violet!6, inner sep=7pt},
+    arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
+]
+
+% ---- top row: input -> preprocessing -> factor groups ----
+\node[blue box] (input) {%
+    \textcolor{blue}{\bfseries Input}\\[3pt]
+    \textbf{Input:} polynomials $p_1,\ldots,p_m$};
+
+\node[blue box, right=12mm of input] (prep) {%
+    \textcolor{blue}{\bfseries Preprocessing}\\[4pt]
+    \tikz{\node[blue subbox] {Interreduce polynomials};}
+    \textcolor{blue}{$\boldsymbol{\rightarrow}$}
+    \tikz{\node[blue subbox] {Factor polynomials};}};
+
+\node[blue box, right=12mm of prep] (factors) {%
+    \textcolor{blue}{\bfseries Output of preprocessing}
+    \textcolor{blue}{\footnotesize\bfseries (irreducible factors)}\\[2pt]
+    $C_1 = \{\, f_{1,1},\ldots,f_{1,k_1} \,\}$\\
+    $\vdots$\\
+    $C_m = \{\, f_{m,1},\ldots,f_{m,k_m} \,\}$};
+
+% ---- initialization ----
+\node[blue box, below=9mm of factors] (init) {%
+    \textcolor{blue}{\bfseries Initialization}\\[3pt]
+    Learned unsat cores $C \leftarrow$ empty set\\
+    Solutions $S \leftarrow$ empty set};
+
+% ---- main loop ----
+\node[loop box] (mainloop) at ($(init.south)+(-40mm,-16mm)$) {%
+    \textcolor{orange!75!black}{\bfseries Main loop}\\[3pt]
+    Iterate over minimal hitting sets $HS$ and optional structure hints
+    $F \subseteq H$};
+
+% ---- optional structure hints ----
+\node[hint box] (hints) at ($(mainloop.west)+(-40mm,-30mm)$) {%
+    \textcolor{violet}{\bfseries Optional structure hints $H$}\\[4pt]
+    \tikz{\node[hint subbox, minimum width=34mm] {$x_i = 0$};}\\[3pt]
+    \tikz{\node[hint subbox, minimum width=34mm]
+        {$a_1 x_1 + \cdots + a_n x_n = b$};}\\[2pt]
+    $\vdots$};
+
+% ---- decision + prune ----
+\node[decision, below=10mm of mainloop] (learned) {%
+    Does $HS \cup F$\\ contain a learned\\ unsat core?};
+
+\node[green box, right=16mm of learned] (prune) {Prune / skip};
+
+% ---- solve ----
+\node[blue box, below=9mm of learned] (solve) {%
+    \textcolor{blue}{\bfseries Solve the system $HS \cup F$}};
+
+% ---- unsat / sat branches ----
+\node[red box] (unsat) at ($(solve.south)+(-48mm,-18mm)$) {%
+    \textcolor{red}{\bfseries Unsatisfiable}\\[3pt]
+    \tikz{\node[red subbox] {Extract minimal unsat core $U$ \\ and learn it: $C \leftarrow C \cup \{U\}$};}};
+
+\node[green box] (sat) at ($(solve.south)+(48mm,-18mm)$) {%
+    \textcolor{green!45!black}{\bfseries Satisfiable}\\[3pt]
+    \tikz{\node[green subbox] {Add solution to $S$};}};
+
+% ---- return ----
+\node[return box] (return) at
+    ($($(unsat.south)!0.5!(sat.south)$)+(0,-14mm)$)
+    {\textcolor{violet}{\bfseries Return $S$ and $C$}};
+
+% ---- arrows: top pipeline ----
+\draw[arr] (input) -- (prep);
+\draw[arr] (prep) -- (factors);
+\draw[arr] (factors) -- (init);
+\draw[arr] (init.south) -- (init.south |- mainloop.north);
+
+% ---- structure hints into the main loop ----
+\draw[arr, violet, line width=1.2pt, rounded corners=5pt]
+    (hints.east) -- ++(6mm,0) |- (mainloop.west);
+
+% ---- main loop body ----
+\draw[arr] (mainloop.south) -- (learned.north);
+\draw[arr] (learned.east) -- node[above] {Yes} (prune.west);
+\draw[arr] (learned.south) -- node[right] {No} (solve.north);
+\draw[arr, rounded corners=5pt] (solve.south) |- (unsat.east);
+\draw[arr, rounded corners=5pt] (solve.south) |- (sat.west);
+
+% ---- bottom rail into return ----
+\coordinate (raill) at ($(unsat.south)+(0,-6mm)$);
+\coordinate (railr) at (raill -| sat.south);
+\draw[line width=1pt] (unsat.south) -- (raill) -- (railr) -- (sat.south);
+\draw[arr] (return.north |- raill) -- (return.north);
+
+% ---- feedback edges back to the main loop ----
+\coordinate (fbcol) at ($(sat.east)+(14mm,0)$);
+\draw[arr, rounded corners=5pt]
+    (prune.east) -- (prune.east -| fbcol) |- (mainloop.east);
+\draw[arr, rounded corners=5pt]
+    (railr) -- (railr -| fbcol) |- (mainloop.east);
+
+\end{tikzpicture}
