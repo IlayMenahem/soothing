@@ -21,43 +21,72 @@
 
 \section*{Introduction}
 
-A Gr\"obner basis is the standard tool for analyzing a system of polynomial equations $p_1 = \cdots = p_m = 0$, but computing one can be infeasible for large systems. In this document we therefore look for a weaker object: a Gr\"obner basis for a structured subvariety of $V(p_1, \ldots, p_m)$. Such a subvariety is obtained by adding optional structure hints, such as equations of the form $x_i = 0$, and by choosing one irreducible factor from each preprocessed polynomial.
+A Gr\"obner basis is the standard tool for analyzing a system of polynomial equations $p_1 = \cdots = p_m = 0$, but computing one can be infeasible for large systems.
+In this document we therefore look for a weaker object: a Gr\"obner basis for a structured subvariety of $V(p_1, \ldots, p_m)$. Such a subvariety is obtained by adding optional structure hints, such as equations of the form $x_i = 0$, and by choosing one irreducible factor from each preprocessed polynomial.
 
-The choice of factors is treated as a hitting-set problem. After factoring the polynomials, each polynomial gives a set of possible factors, and a minimal hitting set selects enough factors to cover all polynomials. Each selected hitting set, possibly together with structure hints, is checked by a Gr\"obner basis computation. When the check is unsatisfiable, a minimal unsatisfiable core is extracted and used to prune later choices, giving a CDCL-style search over candidate subsystems.
-
-This approach is sound but incomplete: every solution of a selected subsystem is a solution of the original system, but solutions outside the chosen subvariety are not recovered. The theoretical question is how much dimension is lost. We argue that the loss comes from the added structure constraints, while factor selection can be made without further dimension loss when the factors are chosen jointly to realize a maximal-dimension intersection. Section~2 presents the general CDCL framework, Section~3 specializes it to polynomial systems, and the final claims state the corresponding subvariety and dimension properties.
-
-\section*{The CDCL general framework}
-
-In the general CDCL framework, we have a set of sets of constraints $C_1, \ldots, C_m$, and want to satisfy at least one constraint from each set.
-We also have a set of constraints that we don't need to satisfy but can help the constraint checker to find a solution faster, or to state there is no solution. We call these constraints \emph{structure hints}.
+\section*{The outer branching algorithm}
 
 \begin{algorithm}
-\caption{CDCL framework}
-\label{alg:cdcl framework}
+\caption{Outer branching}
+\label{alg:Outer branching}
 \begin{algorithmic}[1]
-    \Require A general input, and a set of structure hints $H$.
+    \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$ set of structure hints $H$.
 
-    \State Preprocess the general input to a set of sets of constraints $C_1, \ldots, C_m$
+    \State Interreduce the polynomials
 
     \State Initialize $C \gets \emptyset$ an unsatisfiable cores set
+    \State Initialize $C_H \gets \emptyset$ an unsatisfiable structure-hint cores set
     \State Initialize $S \gets \emptyset$ a solutions set
 
-    \For{each minimal hitting set $HS$ of $C_1, \ldots, C_m$, and a subset of the structure hints $F \subseteq H$}
-        \If{$HS \cup F$ contains an unsatisfiable core in $C$}
+    \For{Each subset of the structure hints $F \subseteq H$}
+        \If{$F$ contains an unsatisfiable structure-hint core from $C_H$}
             \State \textbf{continue}
         \EndIf
 
-        \State Check if the minimal hitting set $HS \cup F$ is satisfiable
-        \If{$HS \cup F$ is satisfiable}
-            \State Add the solution to $S$
-        \Else
-            \State Extract a minimal unsatisfiable core $U$ from $HS \cup F$
-            \State $C \gets C \cup \{U\}$
+        \State $P_F \gets P \cup F$
+        \State Interreduce the polynomials in $P_F$
+        \State Factor the polynomials in $P_F$ into irreducible factors $C_1, \ldots, C_m$
+
+        \For{Each minimal hitting set $HS$ of $C_1, \ldots, C_m$}
+            \If{$HS \cup F$ contains an unsatisfiable core from $C$}
+                \State \textbf{continue}
+            \EndIf
+
+            \State Check if the minimal hitting set $HS \cup F$ is satisfiable
+            \If{$HS \cup F$ is satisfiable}
+                \State Add the solution to $S$
+            \Else
+                \State Extract a minimal unsatisfiable core $U$ from $HS \cup F$
+                \State $C \gets C \cup \{U\}$
+            \EndIf
+        \EndFor
+
+        \If{No minimal hitting set was satisfiable}
+            \State $U_H \gets \Call{ExtractUnsatisfiableHintCore}{P, F}$
+            \State $C_H \gets C_H \cup \{U_H\}$
+            \State \textbf{continue}
         \EndIf
     \EndFor
 
-    \Return $S$ and $C$
+    \Return $S$, $C$, and $C_H$
+
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{Extracting a minimal unsatisfiable structure-hint core}
+\label{alg:extracting a minimal unsatisfiable structure-hint core}
+\begin{algorithmic}[1]
+    \Require A polynomial system $P$ and a set of structure hints $F$ such that $P \cup F$ is unsatisfiable.
+
+    \State $U_H \gets F$
+    \For{each hint $h \in F$}
+        \If{$P \cup (U_H \setminus \{h\})$ is unsatisfiable}
+            \State $U_H \gets U_H \setminus \{h\}$
+        \EndIf
+    \EndFor
+
+    \Return $U_H$
 
 \end{algorithmic}
 \end{algorithm}
@@ -84,43 +113,12 @@ We also have a set of constraints that we don't need to satisfy but can help the
 
 The order of iteration over the minimal hitting sets and the structure hints should heuristically prioritize the easier to check sets first.
 
-To specify a specialization of the CDCL framework to a particular problem, we need to define the following:
-\begin{itemize}
-    \item The preprocessing of the input to an hitting set problem
-    \item Structure hints for the problem
-    \item An order of iteration over the hitting sets and structure hints
-    \item A checker for satisfiability of a hitting set
-\end{itemize}
-
-\section*{CDCL for system of polynomial equations}
-
-Let us say we have a set of polynomials $p_1, \ldots, p_m$ over a field $k$, and we want to validate whether there exists a solution to the system $p_1 = \cdots = p_m = 0$.
-We describe a CDCL-style algorithm that can be used to explore the space of possible minimal hitting sets of the polynomials.
-
 \begin{figure}[H]
 \centering
 \resizebox{\textwidth}{!}{\input{./figs/cdcl_flowchart.tex}}
 \caption{The CDCL pipeline specialized to a system of polynomial equations.}
 \label{fig:cdcl flowchart}
 \end{figure}
-
-
-
-\subsection*{Preprocessing the polynomials}
-
-Given a set of multivariate polynomials $p_1, \ldots, p_m$, we perform the following preprocessing steps to simplify the system and prepare it for the CDCL algorithm:
-\begin{algorithm}
-\caption{Preprocessing the polynomials}
-\label{alg:preprocessing}
-\begin{algorithmic}[1]
-    \Require A set of polynomials $p_1, \ldots, p_m$ over a field $k$.
-
-    \State Interreduce the polynomials
-    \State Factor the polynomials
-
-    \Return $\{\{f_{1,1}, \ldots, f_{1,k_1}\}, \ldots, \{f_{m,1}, \ldots, f_{m,k_m}\}\}$ the sets of irreducible factors of each polynomial
-\end{algorithmic}
-\end{algorithm}
 
 \subsection*{Minimal hitting sets of the factors}
 \textbf{Order of iteration over the minimal hitting sets}: the order is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the rule more factors $\Rightarrow$ more complex to check, and more hints $\Rightarrow$ easier to check.
@@ -137,30 +135,11 @@ If we were to select an hitting set $F$ that is contained in a previously found 
 In some problems such as in physics, we prefer solutions which have certain structure.
 certain structures can be encoded as additional polynomial constraints, and can enable faster computation of the Gr\"obner basis.
 
+Structure hints also admit an additional form of unsatisfiability pruning.  For a chosen hint set $F \subseteq H$, we first check whether $P \cup F$ has a solution before branching over factors.  If it does not, we remove hints one at a time while the remaining system stays unsatisfiable, obtaining a minimal subset $U_H \subseteq F$ such that $P \cup U_H$ has no solution.  Every hint set $F' \supseteq U_H$ is then unsatisfiable as well, so all such sets can be skipped.
+
 \begin{itemize}
     \item Sparsity constrains can be encoded as the equation $x_i = 0$ for some variables $x_i$
     \item Affine constraints can be encoded as $a_1 x_1 + \cdots + a_n x_n = b$ for some constants $a_i, b$
 \end{itemize}
-
-\section*{Theoretical analysis}
-
-\begin{claim}
-The resulting Gr\"obner basis is a Gr\"obner basis of an ideal whose variety is a subvariety of the original variety.
-\end{claim}
-\begin{proof}
-
-\end{proof}
-
-It is worth noting that selecting one factor for each preprocessed polynomial does not reduce the dimension of the solution set; only the choice of which variables to zero does. This idea is formalized in the following claim.
-\begin{claim}
-Selecting one irreducible factor of each preprocessed polynomial does not reduce the dimension of the solution set, provided the factors are chosen jointly so as to realize a maximal-dimension intersection.
-\end{claim}
-\begin{proof}
-
-\end{proof}
-
-\section*{Experimental Results}
-
-\section*{Conclusion}
 
 \end{document}

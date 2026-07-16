@@ -1,11 +1,10 @@
-//! Sparse-variable candidate resolution and zero-substitution used by the
-//! CDCL search to try forcing variables to zero alongside a factor cover.
+//! Sparse-variable candidate resolution and polynomial structure hints used by
+//! the outer-branching search.
 
 use symbolica::atom::Symbol;
 use symbolica::domains::Ring;
 use symbolica::poly::PolyVariable;
 
-use crate::cover::{WorkItem, decode_cover};
 use crate::factor_prep::PolyExtLex;
 use crate::mathematica::LoadedMathematicaSystem;
 
@@ -56,34 +55,6 @@ pub fn usable_sparse_variables(
         .collect()
 }
 
-fn zero_positions<'a>(
-    sparse_variables: &'a [(String, usize)],
-    zero_mask: u64,
-) -> impl Iterator<Item = usize> + 'a {
-    sparse_variables
-        .iter()
-        .enumerate()
-        .filter(move |(i, _)| zero_mask & (1u64 << i) != 0)
-        .map(|(_, (_, position))| *position)
-}
-
-fn substitute_zeroes(poly: &PolyExtLex, zero_positions: &[usize]) -> PolyExtLex {
-    if zero_positions.is_empty() || poly.is_zero() {
-        return poly.clone();
-    }
-    let mut out = poly.zero_with_capacity(poly.nterms());
-    for i in 0..poly.nterms() {
-        let exponents = poly.exponents(i);
-        if zero_positions
-            .iter()
-            .all(|&position| exponents[position] == 0)
-        {
-            out.append_monomial_back(poly.coefficients[i].clone(), exponents);
-        }
-    }
-    out
-}
-
 /// The polynomial `x_position` in the same ring and variable map as `template`.
 fn variable_generator(template: &PolyExtLex, position: usize) -> PolyExtLex {
     let mut exponents = vec![0u16; template.nvars()];
@@ -93,33 +64,20 @@ fn variable_generator(template: &PolyExtLex, position: usize) -> PolyExtLex {
     out
 }
 
-/// Generators of the work item's ideal: the cover's factors with the zeroed
-/// variables substituted away, plus one generator per zeroed variable — the
-/// constraints `x = 0` belong to the ideal, so the basis must account for
-/// them (otherwise zeroing everything yields an empty basis that looks like
-/// the whole ring rather than the origin).
-pub fn decode_work_item(
-    factors: &[PolyExtLex],
+/// Convert a sparse-variable subset into its structure-hint polynomials
+/// `x_i = 0`, in the same ring and variable map as `template`.
+pub fn decode_hint_mask(
+    template: &PolyExtLex,
     sparse_variables: &[(String, usize)],
-    item: WorkItem,
+    hint_mask: u64,
 ) -> Vec<PolyExtLex> {
-    let zero_positions: Vec<_> = zero_positions(sparse_variables, item.zero_mask).collect();
-    let substituted = decode_cover(factors, item.cover_mask)
-        .into_iter()
-        .map(|factor| substitute_zeroes(&factor, &zero_positions))
-        .filter(|factor| !factor.is_zero());
-    let zero_generators = zero_positions
+    sparse_variables
         .iter()
-        .map(|&position| variable_generator(&factors[0], position));
-    substituted.chain(zero_generators).collect()
+        .enumerate()
+        .filter(|(i, _)| hint_mask & (1u64 << i) != 0)
+        .map(|(_, (_, position))| variable_generator(template, *position))
+        .collect()
 }
-
-/// Krull dimension of the solution locus from a reduced degrevlex Gröbner
-/// basis, via the initial ideal: a variable set is independent iff its
-/// complement hits every leading-monomial support, so the dimension is
-/// `nvars` minus the size of a minimum transversal of the support hypergraph
-/// (reusing `minimal_covers`). `None` when `nvars` exceeds the 63-bit mask
-/// limit or the ideal is the whole ring.
 
 #[cfg(test)]
 mod tests {
@@ -164,26 +122,10 @@ mod tests {
     }
 
     #[test]
-    fn substitute_zeroes_drops_terms_containing_zeroed_variables() {
-        let poly = test_poly("x*y + z");
-
-        let substituted = substitute_zeroes(&poly, &[0]);
-
-        assert_eq!(substituted, poly_like(&poly, "z"));
-        assert!(substitute_zeroes(&test_poly("x*y"), &[0]).is_zero());
-        let unaffected = poly_like(&poly, "z + 1");
-        assert_eq!(substitute_zeroes(&unaffected, &[0]), unaffected);
-    }
-
-    #[test]
-    fn decode_work_item_keeps_zeroed_variables_as_generators() {
+    fn decode_hint_mask_builds_selected_variable_generators() {
         let template = test_poly("x*y");
         let sparse_variables = vec![("x".to_string(), 0), ("y".to_string(), 1)];
-        let item = WorkItem {
-            cover_mask: 0b1,
-            zero_mask: 0b11,
-        };
-        let decoded = decode_work_item(&[template.clone()], &sparse_variables, item);
+        let decoded = decode_hint_mask(&template, &sparse_variables, 0b11);
         let expected = [poly_like(&template, "x"), poly_like(&template, "y")];
         assert_eq!(decoded.len(), 2);
         assert!(expected.iter().all(|e| decoded.contains(e)));

@@ -1,12 +1,12 @@
-//! A CDCL-style search over the minimal factor covers of a polynomial system.
+//! Outer branching over structure hints followed by a CDCL-style search over
+//! each augmented polynomial system's minimal factor covers.
 //!
-//! Implements Algorithm 1 of the method statement: the minimal factor covers
-//! are tried easiest-first — more zeroed variables first, then fewer factors;
-//! a cover that contains a learned
-//! unsatisfiable core is skipped; a cover contained in a learned satisfiable
-//! cover is also skipped by the dual monotonicity property; an inconsistent
-//! cover is shrunk to a minimal unsatisfiable core that is learned to prune later
-//! covers.
+//! Implements Algorithm 1 of the method statement: interreduce the input, then
+//! try structure-hint subsets easiest-first. A hint subset is minimized and
+//! learned only after every one of its minimal factor covers has been proved
+//! inconsistent, allowing every later superset to be pruned. Learned
+//! factor-cover cores are normalized polynomial sets, so they remain valid
+//! across branches whose factor-index universes differ.
 //!
 //! Usage: `idos [path]` — default path: `systems/system.txt`.
 
@@ -18,22 +18,22 @@ use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
 
 use polynomial_cdcl::cover::{
-    Core, WorkItem, build_factor_index, core_subsumes, minimal_covers, ordered_work_items,
-    satisfiable_cover_contains,
+    build_factor_index, decode_cover, minimal_covers, ordered_cover_masks, ordered_hint_masks,
 };
 use polynomial_cdcl::gb_search::{
-    GbBackend, Outcome, PolyExtGrevLex, evaluate_cover, minimal_unsat_core, solution_dimension,
+    Core, GbBackend, Outcome, PolyExtGrevLex, evaluate_cover, minimal_unsat_core,
+    polynomial_set_contains, solution_dimension,
 };
-use polynomial_cdcl::sparse::{decode_work_item, resolve_candidates, usable_sparse_variables};
+use polynomial_cdcl::sparse::{decode_hint_mask, resolve_candidates, usable_sparse_variables};
 use polynomial_cdcl::{
     LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest,
-    load_mathematica_system_from_path_with_var_names, preprocess,
+    factor_groups_from_polys, interreduce_polys, load_mathematica_system_from_path_with_var_names,
+    polynomials_from_loaded,
 };
 
 #[derive(Debug)]
 struct CliOptions {
     path: PathBuf,
-    interreduce: bool,
     max_covers: usize,
     timeout_ms: u64,
     gb_backend: GbBackend,
@@ -43,7 +43,6 @@ struct CliOptions {
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path: Option<PathBuf> = None;
-    let mut interreduce = true;
     let mut max_covers: usize = 2_000;
     let mut timeout_ms: u64 = 5_000;
     let mut gb_backend = GbBackend::M4gb;
@@ -52,7 +51,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut args = args.into_iter().peekable();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--no-interreduce" => interreduce = false,
             "--max-covers" => {
                 max_covers = args
                     .next()
@@ -87,7 +85,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     }
     Ok(CliOptions {
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
-        interreduce,
         max_covers,
         timeout_ms,
         gb_backend,
@@ -114,22 +111,21 @@ fn load_system(path: &Path) -> LoadedMathematicaSystem {
     loaded
 }
 
-fn preprocess_system(
+fn prepare_base_polynomials(
     loaded: &LoadedMathematicaSystem,
     field: &AlgebraicExtension<Q>,
-    interreduce: bool,
-) -> Vec<Vec<PolyExtLex>> {
+) -> Vec<PolyExtLex> {
     let t_pre = Instant::now();
-    let pre = match preprocess(loaded, field, interreduce) {
-        Ok(pre) => pre,
+    let polynomials = match polynomials_from_loaded(loaded, field) {
+        Ok(polynomials) => interreduce_polys(polynomials),
         Err(e) => die(e, 1),
     };
     println!(
-        "  {} non-trivial polynomial(s), elapsed {:?}",
-        pre.len(),
+        "  {} interreduced polynomial(s), elapsed {:?}",
+        polynomials.iter().filter(|poly| !poly.is_zero()).count(),
         t_pre.elapsed()
     );
-    pre
+    polynomials
 }
 
 fn build_cover_universe(pre: &[Vec<PolyExtLex>]) -> (Vec<PolyExtLex>, Vec<u64>) {
@@ -141,17 +137,13 @@ fn build_cover_universe(pre: &[Vec<PolyExtLex>]) -> (Vec<PolyExtLex>, Vec<u64>) 
             1,
         ),
     };
-    println!(
-        "  {} minimal factor cover(s) (hitting sets, no variable zeroing)",
-        base_covers.len()
-    );
     (factors, base_covers)
 }
 
 fn resolve_sparse_variables(
     options: &CliOptions,
     loaded: &LoadedMathematicaSystem,
-    pre: &[Vec<PolyExtLex>],
+    template: Option<&PolyExtLex>,
 ) -> Vec<(String, usize)> {
     if !options.sparse {
         return Vec::new();
@@ -160,7 +152,14 @@ fn resolve_sparse_variables(
         Ok(candidates) => candidates,
         Err(e) => die(e, 2),
     };
-    let sparse_variables = usable_sparse_variables(&pre[0][0], &candidates);
+    let sparse_variables = match template {
+        Some(template) => usable_sparse_variables(template, &candidates),
+        None if candidates.is_empty() => Vec::new(),
+        None => die(
+            "cannot construct sparse hints without an input polynomial",
+            1,
+        ),
+    };
     if sparse_variables.len() >= 64 {
         die(
             "too many usable sparse variables (>= 64) for the bitmask enumerator",
@@ -182,31 +181,84 @@ fn resolve_sparse_variables(
     sparse_variables
 }
 
+fn normalized_candidate(
+    factors: &[PolyExtLex],
+    cover_mask: u64,
+    hints: &[PolyExtLex],
+) -> Vec<PolyExtLex> {
+    let mut candidate = decode_cover(factors, cover_mask);
+    for hint in hints {
+        if !candidate.contains(hint) {
+            candidate.push(hint.clone());
+        }
+    }
+    candidate
+}
+
+/// Shrink an unsatisfiable set of structure hints while keeping the base
+/// polynomial system fixed. A hint is removed exactly when the resulting
+/// augmented system is still inconsistent. Timeouts conservatively retain it.
+fn minimal_unsat_hint_core(
+    base_polynomials: &[PolyExtLex],
+    hints: &[PolyExtLex],
+    timeout: Duration,
+    backend: GbBackend,
+) -> Core {
+    let mut core = hints.to_vec();
+    let mut index = 0;
+    while index < core.len() {
+        let mut reduced = core.clone();
+        reduced.remove(index);
+        let mut augmented = base_polynomials.to_vec();
+        augmented.extend(reduced.iter().cloned());
+        let augmented = interreduce_polys(augmented);
+        if matches!(
+            evaluate_cover(augmented, timeout, backend),
+            Outcome::Inconsistent
+        ) {
+            core = reduced;
+        } else {
+            index += 1;
+        }
+    }
+    core
+}
+
+fn branch_proves_inconsistent(
+    branch_complete: bool,
+    branch_satisfiable: bool,
+    branch_timed_out: bool,
+) -> bool {
+    branch_complete && !branch_satisfiable && !branch_timed_out
+}
+
 struct SearchResult {
     solutions: Vec<(usize, usize, Option<usize>)>,
-    largest_dimension: Option<(usize, WorkItem, usize, Vec<PolyExtGrevLex>)>,
+    largest_dimension: Option<(usize, u64, usize, Vec<PolyExtGrevLex>)>,
     cores: Vec<Core>,
+    hint_cores: Vec<Core>,
+    branches: usize,
+    considered: usize,
     inconsistent: usize,
     timeouts: usize,
     core_pruned: usize,
+    hint_core_pruned: usize,
+    hint_inconsistent: usize,
     satisfiable_inferred: usize,
     elapsed: Duration,
 }
 
 fn run_search(
     options: &CliOptions,
-    factors: &[PolyExtLex],
+    base_polynomials: &[PolyExtLex],
+    template: Option<&PolyExtLex>,
     sparse_variables: &[(String, usize)],
-    base_covers: &[u64],
+    nvars: usize,
 ) -> SearchResult {
-    let total_items = (base_covers.len() as u128) << sparse_variables.len();
-    if options.sparse {
-        println!("  {total_items} cover variant(s) after optional sparsity subsets");
-    }
-
-    let tried = total_items.min(options.max_covers as u128);
+    let total_branches = 1u128 << sparse_variables.len();
     println!(
-        "\nCDCL over {tried} of {total_items} minimal cover(s), sparsest-first then fewest-factors order, {}ms/cover timeout, {} Groebner backend",
+        "\nOuter branching over {total_branches} hint subset(s), at most {} candidate cover(s), most-hints-first then fewest-factors order, {}ms/cover timeout, {} Groebner backend",
+        options.max_covers,
         options.timeout_ms,
         options.gb_backend.label(),
     );
@@ -214,107 +266,163 @@ fn run_search(
     let timeout = Duration::from_millis(options.timeout_ms);
     let t_gb = Instant::now();
     let mut cores: Vec<Core> = Vec::new();
-    let mut satisfiable_covers: Vec<(usize, WorkItem)> = Vec::new();
+    let mut hint_cores: Vec<Core> = Vec::new();
+    let mut satisfiable_covers: Vec<(usize, Vec<PolyExtLex>)> = Vec::new();
     let mut solutions: Vec<(usize, usize, Option<usize>)> = Vec::new();
-    let mut largest_dimension: Option<(usize, WorkItem, usize, Vec<PolyExtGrevLex>)> = None;
+    let mut largest_dimension: Option<(usize, u64, usize, Vec<PolyExtGrevLex>)> = None;
+    let mut branches = 0usize;
+    let mut considered = 0usize;
     let mut inconsistent = 0usize;
     let mut timeouts = 0usize;
     let mut core_pruned = 0usize;
+    let mut hint_core_pruned = 0usize;
+    let mut hint_inconsistent = 0usize;
     let mut satisfiable_inferred = 0usize;
-    for (idx, item) in ordered_work_items(base_covers, sparse_variables.len())
-        .take(options.max_covers)
-        .enumerate()
-    {
-        // Skip the cover if any learned core is a subset of it (not an
-        // equality membership test, despite `manual_contains`).
-        #[allow(clippy::manual_contains)]
-        let subsumed = cores.iter().any(|&core| core_subsumes(core, item));
-        if subsumed {
-            core_pruned += 1;
+    for (branch_idx, hint_mask) in ordered_hint_masks(sparse_variables.len()).enumerate() {
+        if considered >= options.max_covers {
+            break;
+        }
+        branches += 1;
+        let hints = template.map_or_else(Vec::new, |template| {
+            decode_hint_mask(template, sparse_variables, hint_mask)
+        });
+
+        if hint_cores
+            .iter()
+            .any(|core| polynomial_set_contains(&hints, core))
+        {
+            hint_core_pruned += 1;
             continue;
         }
 
-        // If F is contained in a previously satisfiable F', then
-        // V(F) ⊇ V(F') != ∅, so F is also satisfiable. This is the dual of the
-        // unsatisfiable-core superset rule above.
-        #[allow(clippy::manual_contains)]
-        let contained_in_satisfiable = satisfiable_covers
-            .iter()
-            .find(|&&(_, solution)| satisfiable_cover_contains(solution, item));
-        let inferred_from = contained_in_satisfiable.map(|&(solution_idx, _)| solution_idx);
-        if inferred_from.is_some() {
-            satisfiable_inferred += 1;
-        }
-        let t_cover = Instant::now();
-        match evaluate_cover(
-            decode_work_item(factors, sparse_variables, item),
-            timeout,
-            options.gb_backend,
-        ) {
-            Outcome::Consistent(basis) => {
-                let len = basis.len();
-                let dimension = solution_dimension(&basis, factors[0].nvars());
-                let dimension_label = dimension.map_or_else(|| "?".to_string(), |d| d.to_string());
-                if let Some(solution_idx) = inferred_from {
-                    println!(
-                        "  cover #{idx}: satisfiable-inferred from cover #{solution_idx}, basis computed ({len} element(s), dimension {dimension_label}, elapsed {:?})",
-                        t_cover.elapsed()
-                    );
-                } else {
-                    println!(
-                        "  cover #{idx}: satisfiable ({len} basis element(s), dimension {dimension_label}, elapsed {:?})",
-                        t_cover.elapsed()
-                    );
-                    satisfiable_covers.push((idx, item));
-                }
-                solutions.push((idx, len, dimension));
-                if let Some(dimension) = dimension {
-                    let improves =
-                        largest_dimension
-                            .as_ref()
-                            .is_none_or(|&(_, _, best_dim, ref best)| {
-                                dimension > best_dim || (dimension == best_dim && len < best.len())
-                            });
-                    if improves {
-                        largest_dimension = Some((idx, item, dimension, basis));
+        let mut augmented = base_polynomials.to_vec();
+        augmented.extend(hints.iter().cloned());
+        let t_branch = Instant::now();
+        let augmented = interreduce_polys(augmented);
+        let groups = factor_groups_from_polys(augmented);
+        let (factors, covers) = build_cover_universe(&groups);
+        let ordered_covers = ordered_cover_masks(&covers);
+        println!(
+            "  branch #{branch_idx}: {} hint(s), {} factor group(s), {} minimal cover(s), preprocessing {:?}",
+            hint_mask.count_ones(),
+            groups.len(),
+            ordered_covers.len(),
+            t_branch.elapsed()
+        );
+
+        let mut branch_complete = true;
+        let mut branch_satisfiable = false;
+        let mut branch_timed_out = false;
+        for cover_mask in ordered_covers {
+            if considered >= options.max_covers {
+                branch_complete = false;
+                break;
+            }
+            let idx = considered;
+            considered += 1;
+            let candidate = normalized_candidate(&factors, cover_mask, &hints);
+
+            if cores
+                .iter()
+                .any(|core| polynomial_set_contains(&candidate, core))
+            {
+                core_pruned += 1;
+                continue;
+            }
+
+            // If the current generators are contained in a previously
+            // satisfiable generator set, their variety contains a known point.
+            // We still compute a basis for reporting and dimension comparison.
+            let inferred_from = satisfiable_covers
+                .iter()
+                .find(|(_, solution)| polynomial_set_contains(solution, &candidate))
+                .map(|(solution_idx, _)| *solution_idx);
+            if inferred_from.is_some() {
+                satisfiable_inferred += 1;
+                branch_satisfiable = true;
+            }
+            let t_cover = Instant::now();
+            match evaluate_cover(candidate.clone(), timeout, options.gb_backend) {
+                Outcome::Consistent(basis) => {
+                    branch_satisfiable = true;
+                    let len = basis.len();
+                    let dimension = solution_dimension(&basis, nvars);
+                    let dimension_label =
+                        dimension.map_or_else(|| "?".to_string(), |d| d.to_string());
+                    if let Some(solution_idx) = inferred_from {
+                        println!(
+                            "  cover #{idx}: satisfiable-inferred from cover #{solution_idx}, basis computed ({len} element(s), dimension {dimension_label}, elapsed {:?})",
+                            t_cover.elapsed()
+                        );
+                    } else {
+                        println!(
+                            "  cover #{idx}: satisfiable ({len} basis element(s), dimension {dimension_label}, elapsed {:?})",
+                            t_cover.elapsed()
+                        );
+                        satisfiable_covers.push((idx, candidate));
+                    }
+                    solutions.push((idx, len, dimension));
+                    if let Some(dimension) = dimension {
+                        let improves =
+                            largest_dimension
+                                .as_ref()
+                                .is_none_or(|&(_, _, best_dim, ref best)| {
+                                    dimension > best_dim
+                                        || (dimension == best_dim && len < best.len())
+                                });
+                        if improves {
+                            largest_dimension = Some((idx, hint_mask, dimension, basis));
+                        }
                     }
                 }
-            }
-            Outcome::Inconsistent => {
-                if let Some(solution_idx) = inferred_from {
-                    println!(
-                        "  cover #{idx}: unsatisfiable despite containment in satisfiable cover #{solution_idx} (elapsed {:?})",
-                        t_cover.elapsed()
-                    );
-                } else {
-                    println!(
-                        "  cover #{idx}: unsatisfiable (elapsed {:?})",
-                        t_cover.elapsed()
-                    );
+                Outcome::Inconsistent => {
+                    if let Some(solution_idx) = inferred_from {
+                        println!(
+                            "  cover #{idx}: unsatisfiable despite containment in satisfiable cover #{solution_idx} (elapsed {:?})",
+                            t_cover.elapsed()
+                        );
+                    } else {
+                        println!(
+                            "  cover #{idx}: unsatisfiable (elapsed {:?})",
+                            t_cover.elapsed()
+                        );
+                    }
+                    cores.push(minimal_unsat_core(&candidate, timeout, options.gb_backend));
+                    inconsistent += 1;
                 }
-                cores.push(minimal_unsat_core(
-                    factors,
-                    sparse_variables,
-                    item,
-                    timeout,
-                    options.gb_backend,
-                ));
-                inconsistent += 1;
-            }
-            Outcome::Timeout => {
-                if let Some(solution_idx) = inferred_from {
-                    println!(
-                        "  cover #{idx}: satisfiable-inferred from cover #{solution_idx}, basis timed out (elapsed {:?})",
-                        t_cover.elapsed()
-                    );
-                } else {
-                    println!(
-                        "  cover #{idx}: timed out (elapsed {:?})",
-                        t_cover.elapsed()
-                    );
+                Outcome::Timeout => {
+                    branch_timed_out = true;
+                    if let Some(solution_idx) = inferred_from {
+                        println!(
+                            "  cover #{idx}: satisfiable-inferred from cover #{solution_idx}, basis timed out (elapsed {:?})",
+                            t_cover.elapsed()
+                        );
+                    } else {
+                        println!(
+                            "  cover #{idx}: timed out (elapsed {:?})",
+                            t_cover.elapsed()
+                        );
+                    }
+                    timeouts += 1;
                 }
-                timeouts += 1;
             }
+        }
+
+        // A timeout or a partially explored branch is not evidence that the
+        // augmented system is inconsistent. Learn a hint core only when every
+        // minimal hitting set has been either checked or soundly core-pruned,
+        // and none was satisfiable.
+        if branch_proves_inconsistent(branch_complete, branch_satisfiable, branch_timed_out) {
+            let t_core = Instant::now();
+            let core =
+                minimal_unsat_hint_core(base_polynomials, &hints, timeout, options.gb_backend);
+            println!(
+                "  branch #{branch_idx}: no satisfiable minimal cover; learned a {}-hint core ({:?})",
+                core.len(),
+                t_core.elapsed()
+            );
+            hint_cores.push(core);
+            hint_inconsistent += 1;
         }
     }
 
@@ -322,9 +430,14 @@ fn run_search(
         solutions,
         largest_dimension,
         cores,
+        hint_cores,
+        branches,
+        considered,
         inconsistent,
         timeouts,
         core_pruned,
+        hint_core_pruned,
+        hint_inconsistent,
         satisfiable_inferred,
         elapsed: t_gb.elapsed(),
     }
@@ -336,10 +449,14 @@ fn report_results(
     loaded: &LoadedMathematicaSystem,
 ) {
     println!(
-        "  {} satisfiable, {} unsatisfiable, {} core-pruned, {} satisfiable-inferred, {} timed out, elapsed {:?}",
+        "  {} branch(es), {} candidate(s): {} satisfiable, {} unsatisfiable, {} cover-core-pruned, {} hint-unsatisfiable, {} hint-core-pruned, {} satisfiable-inferred, {} cover timeout(s), elapsed {:?}",
+        result.branches,
+        result.considered,
         result.solutions.len(),
         result.inconsistent,
         result.core_pruned,
+        result.hint_inconsistent,
+        result.hint_core_pruned,
         result.satisfiable_inferred,
         result.timeouts,
         result.elapsed
@@ -348,7 +465,7 @@ fn report_results(
         let dimension_label = dimension.map_or_else(|| "?".to_string(), |d| d.to_string());
         println!("\tcover #{idx}: {len} basis element(s), dimension {dimension_label}");
     }
-    if let Some((idx, item, dimension, basis)) = &result.largest_dimension {
+    if let Some((idx, hint_mask, dimension, basis)) = &result.largest_dimension {
         println!(
             "  largest solution dimension found: cover #{idx}, dimension {dimension} ({} basis element(s))",
             basis.len()
@@ -356,9 +473,7 @@ fn report_results(
         let zeroed_variables: Vec<_> = sparse_variables
             .iter()
             .enumerate()
-            .filter_map(|(i, (name, _))| {
-                (item.zero_mask & (1u64 << i) != 0).then_some(name.as_str())
-            })
+            .filter_map(|(i, (name, _))| (hint_mask & (1u64 << i) != 0).then_some(name.as_str()))
             .collect();
         let variables_not_zeroed: Vec<_> = loaded
             .var_names
@@ -392,6 +507,12 @@ fn report_results(
             result.cores.len()
         );
     }
+    if !result.hint_cores.is_empty() {
+        println!(
+            "  learned {} minimal unsatisfiable structure-hint core(s)",
+            result.hint_cores.len()
+        );
+    }
 }
 
 fn main() {
@@ -405,27 +526,37 @@ fn main() {
     let loaded = load_system(&options.path);
 
     let field = AlgebraicExtension::new_complex(Q);
-    let pre = preprocess_system(&loaded, &field, options.interreduce);
-    if pre.is_empty() {
-        println!("Nothing to cover — all polynomials reduced to zero.");
-        return;
-    }
+    let base_polynomials = prepare_base_polynomials(&loaded, &field);
+    let template = base_polynomials.first();
+    let nvars = template.map_or(loaded.var_names.len(), PolyExtLex::nvars);
+    let sparse_variables = resolve_sparse_variables(&options, &loaded, template);
 
-    let (factors, base_covers) = build_cover_universe(&pre);
-    if base_covers.is_empty() {
-        println!("No factor cover exists — some equation has no factors.");
-        return;
-    }
-
-    let sparse_variables = resolve_sparse_variables(&options, &loaded, &pre);
-
-    let result = run_search(&options, &factors, &sparse_variables, &base_covers);
+    let result = run_search(
+        &options,
+        &base_polynomials,
+        template,
+        &sparse_variables,
+        nvars,
+    );
     report_results(&result, &sparse_variables, &loaded);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Once;
+
+    use polynomial_cdcl::load_mathematica_system_from_str_with_var_names;
+
+    static LICENSE: Once = Once::new();
+
+    fn activate_license() {
+        LICENSE.call_once(|| {
+            let _ = LicenseManager::set_license_key(
+                "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21",
+            );
+        });
+    }
 
     #[test]
     fn parse_args_sparse_all_variables() {
@@ -450,12 +581,11 @@ mod tests {
     #[test]
     fn parse_args_existing_options_still_work() {
         let options = parse_args(
-            ["--no-interreduce", "--max-covers", "17", "--timeout", "250"]
+            ["--max-covers", "17", "--timeout", "250"]
                 .into_iter()
                 .map(String::from),
         )
         .unwrap();
-        assert!(!options.interreduce);
         assert_eq!(options.max_covers, 17);
         assert_eq!(options.timeout_ms, 250);
         assert_eq!(options.gb_backend, GbBackend::M4gb);
@@ -476,5 +606,66 @@ mod tests {
     #[test]
     fn parse_args_unknown_flag_fails() {
         assert!(parse_args(["--missing"].into_iter().map(String::from)).is_err());
+    }
+
+    #[test]
+    fn parse_args_removed_no_interreduce_flag_fails() {
+        assert!(parse_args(["--no-interreduce"].into_iter().map(String::from)).is_err());
+    }
+
+    #[test]
+    fn hint_core_requires_every_cover_to_be_proved_inconsistent() {
+        assert!(branch_proves_inconsistent(true, false, false));
+        assert!(!branch_proves_inconsistent(false, false, false));
+        assert!(!branch_proves_inconsistent(true, true, false));
+        assert!(!branch_proves_inconsistent(true, false, true));
+    }
+
+    #[test]
+    fn structure_hint_is_interreduced_before_factorization() {
+        activate_license();
+        let loaded =
+            load_mathematica_system_from_str_with_var_names("{(x + 1)*y == 0}").expect("load");
+        let field = AlgebraicExtension::new_complex(Q);
+        let base =
+            interreduce_polys(polynomials_from_loaded(&loaded, &field).expect("polynomials"));
+        let candidates = resolve_candidates(&loaded, &["x".to_string()]).expect("candidate");
+        let sparse_variables = usable_sparse_variables(&base[0], &candidates);
+        let hints = decode_hint_mask(&base[0], &sparse_variables, 0b1);
+        let mut augmented = base;
+        augmented.extend(hints);
+
+        let groups = factor_groups_from_polys(interreduce_polys(augmented));
+        let (factors, covers) = build_cover_universe(&groups);
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(factors.len(), 2);
+        assert_eq!(covers.len(), 1);
+        assert_eq!(covers[0].count_ones(), 2);
+    }
+
+    #[test]
+    fn unsatisfiable_hint_core_minimizes_only_hints() {
+        activate_license();
+        let loaded =
+            load_mathematica_system_from_str_with_var_names("{x - 1 == 0, y == 0}").expect("load");
+        let field = AlgebraicExtension::new_complex(Q);
+        let base =
+            interreduce_polys(polynomials_from_loaded(&loaded, &field).expect("polynomials"));
+        let candidates =
+            resolve_candidates(&loaded, &["x".to_string(), "y".to_string()]).expect("candidates");
+        let sparse_variables = usable_sparse_variables(&base[0], &candidates);
+        let all_hints_mask = (1u64 << sparse_variables.len()) - 1;
+        let hints = decode_hint_mask(&base[0], &sparse_variables, all_hints_mask);
+        let x_index = sparse_variables
+            .iter()
+            .position(|(name, _)| name == "x")
+            .expect("x candidate");
+        let x_hint = decode_hint_mask(&base[0], &sparse_variables, 1u64 << x_index);
+
+        let core =
+            minimal_unsat_hint_core(&base, &hints, Duration::from_secs(5), GbBackend::Symbolica);
+
+        assert_eq!(core, x_hint);
     }
 }

@@ -1,5 +1,4 @@
-//! Minimal factor covers: hitting-set enumeration over bitmasks, and the
-//! `WorkItem`/`Core` types the CDCL search prunes and learns against.
+//! Minimal factor covers and deterministic subset enumeration over bitmasks.
 
 use std::collections::HashMap;
 
@@ -96,18 +95,6 @@ pub fn decode_cover(factors: &[PolyExtLex], mask: u64) -> Vec<PolyExtLex> {
         .collect()
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct WorkItem {
-    pub cover_mask: u64,
-    pub zero_mask: u64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Core {
-    pub cover_mask: u64,
-    pub zero_mask: u64,
-}
-
 /// Masks over the `n` low bits with exactly `k` set bits, ascending (Gosper's
 /// hack). `k == 0` yields the single empty mask; `k > n` yields nothing.
 fn masks_with_popcount(n: usize, k: usize) -> impl Iterator<Item = u64> {
@@ -126,35 +113,21 @@ fn masks_with_popcount(n: usize, k: usize) -> impl Iterator<Item = u64> {
     })
 }
 
-/// Work items streamed lazily in difficulty order: items with more zeroed
-/// variables first (sparser is easier), then covers with fewer factors first
-/// (more factors is harder); ties broken by cover mask then zero mask. Never
-/// materializes the 2^sparse_count expansion. For `sparse_count == 0` this
-/// yields each cover once with an empty zero mask.
-pub fn ordered_work_items(
-    base_covers: &[u64],
-    sparse_count: usize,
-) -> impl Iterator<Item = WorkItem> {
-    let mut covers = base_covers.to_vec();
-    covers.sort_unstable_by_key(|&m| (m.count_ones(), m));
-    (0..=sparse_count).rev().flat_map(move |k| {
-        covers.clone().into_iter().flat_map(move |cover_mask| {
-            masks_with_popcount(sparse_count, k).map(move |zero_mask| WorkItem {
-                cover_mask,
-                zero_mask,
-            })
-        })
-    })
+/// Hint subsets in easiest-first order: more enabled hints first, with the
+/// numeric mask as a deterministic tie-breaker. The iterator is lazy and does
+/// not materialize all `2^hint_count` subsets.
+pub fn ordered_hint_masks(hint_count: usize) -> impl Iterator<Item = u64> {
+    (0..=hint_count)
+        .rev()
+        .flat_map(move |k| masks_with_popcount(hint_count, k))
 }
 
-pub fn core_subsumes(core: Core, item: WorkItem) -> bool {
-    core.cover_mask & item.cover_mask == core.cover_mask
-        && core.zero_mask & item.zero_mask == core.zero_mask
-}
-
-pub fn satisfiable_cover_contains(solution: WorkItem, item: WorkItem) -> bool {
-    solution.cover_mask & item.cover_mask == item.cover_mask
-        && solution.zero_mask & item.zero_mask == item.zero_mask
+/// Branch-local covers in easiest-first order: fewer selected factors first,
+/// with the numeric mask as a deterministic tie-breaker.
+pub fn ordered_cover_masks(covers: &[u64]) -> Vec<u64> {
+    let mut ordered = covers.to_vec();
+    ordered.sort_unstable_by_key(|&mask| (mask.count_ones(), mask));
+    ordered
 }
 
 #[cfg(test)]
@@ -213,147 +186,23 @@ mod tests {
     }
 
     #[test]
-    fn sparse_expansion_no_mask_keeps_base_covers() {
+    fn no_hints_yields_the_empty_subset() {
+        assert_eq!(ordered_hint_masks(0).collect::<Vec<_>>(), vec![0]);
+    }
+
+    #[test]
+    fn hint_masks_check_more_hints_first() {
         assert_eq!(
-            ordered_work_items(&[0b001, 0b010], 0).collect::<Vec<_>>(),
-            vec![
-                WorkItem {
-                    cover_mask: 0b001,
-                    zero_mask: 0
-                },
-                WorkItem {
-                    cover_mask: 0b010,
-                    zero_mask: 0
-                }
-            ]
+            ordered_hint_masks(3).collect::<Vec<_>>(),
+            vec![0b111, 0b011, 0b101, 0b110, 0b001, 0b010, 0b100, 0]
         );
     }
 
     #[test]
-    fn work_item_order_checks_more_zeroes_first_for_same_cover() {
+    fn cover_masks_check_fewest_factors_first() {
         assert_eq!(
-            ordered_work_items(&[0b001], 2).collect::<Vec<_>>(),
-            vec![
-                WorkItem {
-                    cover_mask: 0b001,
-                    zero_mask: 0b011
-                },
-                WorkItem {
-                    cover_mask: 0b001,
-                    zero_mask: 0b001
-                },
-                WorkItem {
-                    cover_mask: 0b001,
-                    zero_mask: 0b010
-                },
-                WorkItem {
-                    cover_mask: 0b001,
-                    zero_mask: 0
-                }
-            ]
+            ordered_cover_masks(&[0b110, 0b001, 0b010, 0b101]),
+            vec![0b001, 0b010, 0b101, 0b110]
         );
-    }
-
-    #[test]
-    fn work_item_order_checks_sparsest_first_then_fewest_factors() {
-        assert_eq!(
-            ordered_work_items(&[0b011, 0b100], 1).collect::<Vec<_>>(),
-            vec![
-                WorkItem {
-                    cover_mask: 0b100,
-                    zero_mask: 0b1
-                },
-                WorkItem {
-                    cover_mask: 0b011,
-                    zero_mask: 0b1
-                },
-                WorkItem {
-                    cover_mask: 0b100,
-                    zero_mask: 0
-                },
-                WorkItem {
-                    cover_mask: 0b011,
-                    zero_mask: 0
-                }
-            ]
-        );
-    }
-
-    #[test]
-    fn core_subsumes_zero_supersets() {
-        let core = Core {
-            cover_mask: 0b001,
-            zero_mask: 0b001,
-        };
-
-        assert!(core_subsumes(
-            core,
-            WorkItem {
-                cover_mask: 0b101,
-                zero_mask: 0b011
-            }
-        ));
-    }
-
-    #[test]
-    fn core_subsumes_requires_cover_and_zero_bits() {
-        let core = Core {
-            cover_mask: 0b101,
-            zero_mask: 0b011,
-        };
-
-        assert!(!core_subsumes(
-            core,
-            WorkItem {
-                cover_mask: 0b001,
-                zero_mask: 0b011
-            }
-        ));
-        assert!(!core_subsumes(
-            core,
-            WorkItem {
-                cover_mask: 0b101,
-                zero_mask: 0b001
-            }
-        ));
-    }
-
-    #[test]
-    fn satisfiable_cover_contains_factor_and_zero_subsets() {
-        let solution = WorkItem {
-            cover_mask: 0b101,
-            zero_mask: 0b011,
-        };
-
-        assert!(satisfiable_cover_contains(
-            solution,
-            WorkItem {
-                cover_mask: 0b001,
-                zero_mask: 0b001
-            }
-        ));
-    }
-
-    #[test]
-    fn satisfiable_cover_contains_requires_item_to_be_subset() {
-        let solution = WorkItem {
-            cover_mask: 0b001,
-            zero_mask: 0b001,
-        };
-
-        assert!(!satisfiable_cover_contains(
-            solution,
-            WorkItem {
-                cover_mask: 0b101,
-                zero_mask: 0b001
-            }
-        ));
-        assert!(!satisfiable_cover_contains(
-            solution,
-            WorkItem {
-                cover_mask: 0b001,
-                zero_mask: 0b011
-            }
-        ));
     }
 }

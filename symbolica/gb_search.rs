@@ -1,6 +1,5 @@
 //! Evaluates a candidate factor cover against a Gröbner-basis backend and
-//! extracts a minimal unsat core (the zero-substitutions actually needed)
-//! when the cover turns out inconsistent.
+//! extracts a minimal unsat core when the cover turns out inconsistent.
 
 use std::sync::mpsc;
 use std::thread;
@@ -9,9 +8,8 @@ use std::time::Duration;
 use symbolica::poly::polynomial::MultivariatePolynomial;
 use symbolica::poly::{GrevLexOrder, MonomialOrder};
 
-use crate::cover::{Core, WorkItem, minimal_covers, set_bits};
+use crate::cover::minimal_covers;
 use crate::factor_prep::{ExtQ, PolyExtLex};
-use crate::sparse::decode_work_item;
 use crate::{groebner_f5, groebner_gvw, groebner_m4gb};
 
 pub type PolyExtGrevLex = MultivariatePolynomial<ExtQ, u16, GrevLexOrder>;
@@ -87,8 +85,18 @@ impl GbBackend {
 /// satisfiability (Section 3.1). Cancellation is cooperative-free, so a
 /// timed-out thread keeps running until it finishes on its own.
 pub fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBackend) -> Outcome {
+    // Interreduction retains zero polynomials to preserve the input slots, but
+    // they impose no constraint. In particular, Symbolica 1.5.1 attempts to
+    // normalize a zero generator and divides by its zero leading coefficient.
+    let cover: Vec<_> = cover.into_iter().filter(|poly| !poly.is_zero()).collect();
     if cover.is_empty() {
         return Outcome::Consistent(Vec::new());
+    }
+    // Do not send an explicit unit ideal to a Gröbner backend. Besides being
+    // unnecessary, Symbolica 1.5.1 attempts to normalize the constant again
+    // and can divide by zero in its algebraic-number arithmetic.
+    if is_unit_ideal(&cover) {
+        return Outcome::Inconsistent;
     }
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
@@ -110,67 +118,36 @@ pub fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBack
     }
 }
 
-/// Shrink an inconsistent work item to a minimal unsatisfiable core by deletion:
-/// drop each factor or zero substitution whose removal leaves the ideal equal to
-/// the whole ring. A removal that turns the item satisfiable keeps the bit; a
-/// removal that times out also keeps it, conservatively, since the larger item is
-/// still known inconsistent. The result is deletion-minimal over both masks.
-pub fn minimal_unsat_core(
-    factors: &[PolyExtLex],
-    sparse_variables: &[(String, usize)],
-    item: WorkItem,
-    timeout: Duration,
-    backend: GbBackend,
-) -> Core {
-    let mut core = item;
-    loop {
-        let mut changed = false;
+pub type Core = Vec<PolyExtLex>;
 
-        for bit in set_bits(core.cover_mask).collect::<Vec<_>>() {
-            let reduced = WorkItem {
-                cover_mask: core.cover_mask & !bit,
-                zero_mask: core.zero_mask,
-            };
-            if matches!(
-                evaluate_cover(
-                    decode_work_item(factors, sparse_variables, reduced),
-                    timeout,
-                    backend,
-                ),
-                Outcome::Inconsistent
-            ) {
-                core = reduced;
-                changed = true;
-            }
-        }
+/// Whether `superset` contains every normalized polynomial in `subset`.
+/// Candidates from different hint branches have different factor-index
+/// universes, so pruning must compare the actual generators rather than masks.
+pub fn polynomial_set_contains(superset: &[PolyExtLex], subset: &[PolyExtLex]) -> bool {
+    subset.iter().all(|poly| superset.contains(poly))
+}
 
-        for bit in set_bits(core.zero_mask).collect::<Vec<_>>() {
-            let reduced = WorkItem {
-                cover_mask: core.cover_mask,
-                zero_mask: core.zero_mask & !bit,
-            };
-            if matches!(
-                evaluate_cover(
-                    decode_work_item(factors, sparse_variables, reduced),
-                    timeout,
-                    backend,
-                ),
-                Outcome::Inconsistent
-            ) {
-                core = reduced;
-                changed = true;
-            }
-        }
-
-        if !changed {
-            break;
+/// Shrink an inconsistent candidate to a minimal unsatisfiable core by
+/// deletion. A removal that turns the candidate satisfiable keeps the
+/// polynomial; a removal that times out also keeps it conservatively. Since
+/// removing constraints cannot make a satisfiable system inconsistent, one
+/// pass produces a deletion-minimal core.
+pub fn minimal_unsat_core(candidate: &[PolyExtLex], timeout: Duration, backend: GbBackend) -> Core {
+    let mut core = candidate.to_vec();
+    let mut index = 0;
+    while index < core.len() {
+        let mut reduced = core.clone();
+        reduced.remove(index);
+        if matches!(
+            evaluate_cover(reduced.clone(), timeout, backend),
+            Outcome::Inconsistent
+        ) {
+            core = reduced;
+        } else {
+            index += 1;
         }
     }
-
-    Core {
-        cover_mask: core.cover_mask,
-        zero_mask: core.zero_mask,
-    }
+    core
 }
 
 #[cfg(test)]
@@ -249,54 +226,71 @@ mod tests {
     }
 
     #[test]
+    fn explicit_unit_ideal_skips_symbolica_backend() {
+        let template = test_poly("x");
+        let one = poly_like(&template, "1");
+
+        assert!(matches!(
+            evaluate_cover(vec![one], Duration::from_millis(10), GbBackend::Symbolica),
+            Outcome::Inconsistent
+        ));
+    }
+
+    #[test]
+    fn zero_generators_are_removed_before_symbolica_backend() {
+        let template = test_poly("x");
+        let zero = poly_like(&template, "0");
+
+        assert!(matches!(
+            evaluate_cover(
+                vec![zero, template],
+                Duration::from_secs(5),
+                GbBackend::Symbolica
+            ),
+            Outcome::Consistent(_)
+        ));
+    }
+
+    #[test]
     fn minimal_unsat_core_retains_required_zero_substitution() {
         let factor = test_poly("x + 1");
-        let factors = vec![factor];
-        let sparse_variables = vec![("x".to_string(), 0)];
+        let hint = poly_like(&factor, "x");
 
         let core = minimal_unsat_core(
-            &factors,
-            &sparse_variables,
-            WorkItem {
-                cover_mask: 0b1,
-                zero_mask: 0b1,
-            },
+            &[factor.clone(), hint.clone()],
             Duration::from_secs(5),
             GbBackend::M4gb,
         );
 
-        assert_eq!(
-            core,
-            Core {
-                cover_mask: 0b1,
-                zero_mask: 0b1
-            }
-        );
+        assert_eq!(core, vec![factor, hint]);
     }
 
     #[test]
     fn minimal_unsat_core_drops_unneeded_zero_substitution() {
         let template = test_poly("x + y + 1");
-        let factors = vec![poly_like(&template, "x + 1")];
-        let sparse_variables = vec![("x".to_string(), 0), ("y".to_string(), 1)];
+        let factor = poly_like(&template, "x + 1");
+        let x_hint = poly_like(&template, "x");
+        let y_hint = poly_like(&template, "y");
 
         let core = minimal_unsat_core(
-            &factors,
-            &sparse_variables,
-            WorkItem {
-                cover_mask: 0b1,
-                zero_mask: 0b11,
-            },
+            &[factor.clone(), x_hint.clone(), y_hint],
             Duration::from_secs(5),
             GbBackend::M4gb,
         );
 
-        assert_eq!(
-            core,
-            Core {
-                cover_mask: 0b1,
-                zero_mask: 0b01
-            }
-        );
+        assert_eq!(core, vec![factor, x_hint]);
+    }
+
+    #[test]
+    fn polynomial_set_containment_uses_actual_generators() {
+        let template = test_poly("x + y");
+        let x = poly_like(&template, "x");
+        let y = poly_like(&template, "y");
+
+        assert!(polynomial_set_contains(
+            &[x.clone(), y.clone()],
+            std::slice::from_ref(&x)
+        ));
+        assert!(!polynomial_set_contains(&[x], &[y]));
     }
 }

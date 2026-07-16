@@ -232,32 +232,37 @@ fn non_constant_factors(poly: PolyExtLex) -> Vec<PolyExtLex> {
         .collect()
 }
 
-fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> {
+/// Factor each nonzero polynomial into its nonconstant irreducible factors.
+///
+/// A nonzero constant is retained as an empty factor group: the equation
+/// `c = 0` is inconsistent and therefore admits no hitting set. Zero
+/// polynomials, on the other hand, impose no constraint and are discarded.
+pub fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> {
     polys
         .into_iter()
         .filter(|poly| !poly.is_zero())
-        .filter_map(|poly| {
-            let factors = non_constant_factors(poly);
-            (!factors.is_empty()).then_some(factors)
-        })
+        .map(non_constant_factors)
         .collect()
+}
+
+/// Convert the loaded equations to a shared lexicographic polynomial ring,
+/// using the deterministic fill heuristic for the variable order.
+pub fn polynomials_from_loaded(
+    loaded: &LoadedMathematicaSystem,
+    field: &ExtQ,
+) -> Result<Vec<PolyExtLex>, String> {
+    let var_order = heuristic_variable_order(loaded);
+    ideal_ext_lex(&loaded.system, field, var_order)
+        .map_err(|e| format!("equation -> polynomial over AlgebraicExtension<Q>: {e}"))
 }
 
 pub fn preprocess(
     loaded: &LoadedMathematicaSystem,
     field: &ExtQ,
-    interreduce: bool,
 ) -> Result<Vec<Vec<PolyExtLex>>, String> {
-    let var_order = heuristic_variable_order(loaded);
-    let polys = ideal_ext_lex(&loaded.system, field, var_order)
-        .map_err(|e| format!("equation -> polynomial over AlgebraicExtension<Q>: {e}"))?;
-    let polys = if interreduce {
-        interreduce_polys(polys)
-    } else {
-        polys
-    };
-
-    Ok(factor_groups_from_polys(polys))
+    Ok(factor_groups_from_polys(interreduce_polys(
+        polynomials_from_loaded(loaded, field)?,
+    )))
 }
 
 #[cfg(test)]
@@ -339,23 +344,17 @@ mod tests {
     }
 
     #[test]
-    fn preprocess_drops_pure_constant_equation() {
+    fn preprocess_retains_pure_constant_as_empty_factor_group() {
         // equation is q == q + 1 → q - (q + 1) = -1, a nonzero constant.
         let loaded = load("{q == q + 1}");
-        let pre =
-            preprocess(&loaded, &AlgebraicExtension::new_complex(Q), true).expect("preprocess");
-        assert!(
-            pre.is_empty(),
-            "constant-only system should produce no factor groups, got {:?}",
-            pre.len()
-        );
+        let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
+        assert_eq!(pre, vec![Vec::<PolyExtLex>::new()]);
     }
 
     #[test]
     fn preprocess_factors_are_non_constant_and_non_zero() {
         let loaded = load("{(x + 1)^2 * (y + 2) == 0, (x^2 + 1) == 0}");
-        let pre =
-            preprocess(&loaded, &AlgebraicExtension::new_complex(Q), true).expect("preprocess");
+        let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
         assert!(!pre.is_empty());
         for group in &pre {
             assert!(!group.is_empty());
@@ -369,8 +368,7 @@ mod tests {
     #[test]
     fn preprocess_returns_one_group_per_nonzero_equation() {
         let loaded = load("{x + 1 == 0, y + 2 == 0, z + 3 == 0}");
-        let pre =
-            preprocess(&loaded, &AlgebraicExtension::new_complex(Q), true).expect("preprocess");
+        let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
         assert_eq!(pre.len(), 3);
         for group in &pre {
             assert_eq!(group.len(), 1);
