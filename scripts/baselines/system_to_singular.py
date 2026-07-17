@@ -2,12 +2,15 @@
 
 Tasks:
     gb         — lex Gröbner basis via ``std(I)``; reports ``basis_len``.
+    facstd     — factorizing Gröbner bases via Gräbe's ``facstd``;
+                 reports ``num_components`` and ``max_dim``.
     decompose  — primary decomposition via ``primdec.lib``'s ``primdecGTZ``;
                  reports ``num_components`` and ``max_dim``.
 
-All free symbols (including ``pi`` and physics constants like ``e``) are
-treated as polynomial-ring variables — the variety is computed in the extended
-space. This keeps the comparison apples-to-apples across baselines.
+The historical ``gb`` and ``decompose`` modes treat every free symbol as a
+polynomial-ring variable.  To match the Rust parser used by ``idos``, the
+``facstd`` mode instead treats ``pi`` as a transcendental coefficient in
+``Q(pi)`` and all other free symbols (including ``e``) as ring variables.
 
 Emits a single JSON line on stdout in the ``BaselineResult`` shape from
 ``_common.py``.
@@ -18,7 +21,6 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 import sympy as sp
@@ -27,6 +29,7 @@ from _common import BaselineResult, load_system, require_tool, run_subprocess, t
 
 _BASELINE_LABEL_BY_TASK = {
     "gb": "singular-gb-lex",
+    "facstd": "singular-facstd",
     "decompose": "singular-primdecGTZ",
 }
 
@@ -38,7 +41,19 @@ def _poly_to_singular(poly: sp.Basic) -> str:
 
 
 def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str) -> str:
-    ring_vars = ",".join(str(s) for s in symbols)
+    # The Rust loader used by idos recognizes Mathematica's \[Pi] as the
+    # coefficient ``pi`` and excludes it from the polynomial variable order.
+    # Match that interpretation for facstd with the transcendental coefficient
+    # field Q(pi).  The older baseline modes retain their historical behavior.
+    coefficient_symbols = [s for s in symbols if task == "facstd" and str(s) == "pi"]
+    polynomial_symbols = [s for s in symbols if s not in coefficient_symbols]
+    coefficients = (
+        f"(0,{','.join(str(s) for s in coefficient_symbols)})"
+        if coefficient_symbols
+        else "0"
+    )
+    ordering = "dp" if task == "facstd" else "lp"
+    ring_vars = ",".join(str(s) for s in polynomial_symbols)
     ideal_body = ",\n    ".join(_poly_to_singular(p) for p in polys)
     # Singular's `printf` only accepts a literal format with no substitution;
     # we use `print("LABEL " + string(value))` instead, which auto-newlines.
@@ -50,6 +65,24 @@ def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str
             'int dt = rtimer - t0;\n'
             'print("SOLVE_MS " + string(dt));\n'
             'print("BASIS_LEN " + string(size(G)));\n'
+        )
+    elif task == "facstd":
+        body = (
+            'int t0 = rtimer;\n'
+            'ideal FI = interred(I);\n'
+            'list F = facstd(FI);\n'
+            'int dt = rtimer - t0;\n'
+            'print("SOLVE_MS " + string(dt));\n'
+            'print("NUM_COMPONENTS " + string(size(F)));\n'
+            'int i;\n'
+            'int maxd = -1;\n'
+            'ideal J;\n'
+            'for (i = 1; i <= size(F); i = i + 1) {\n'
+            '  J = F[i];\n'
+            '  int d = dim(J);\n'
+            '  if (d > maxd) { maxd = d; }\n'
+            '}\n'
+            'print("MAX_DIM " + string(maxd));\n'
         )
     elif task == "decompose":
         body = (
@@ -73,7 +106,7 @@ def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str
         # rtimer ticks per second; default is 1 (whole seconds) — bump to 1000
         # so SOLVE_MS is in milliseconds, matching the other baselines.
         'system("--ticks-per-sec", 1000);\n'
-        f"ring R = 0, ({ring_vars}), lp;\n"
+        f"ring R = {coefficients}, ({ring_vars}), {ordering};\n"
         f"ideal I = {ideal_body};\n"
         f"{body}"
         f'print("DONE");\n'
@@ -145,7 +178,7 @@ def main() -> int:
     )
     if args.task == "gb":
         result.basis_len = parsed.get("BASIS_LEN")
-    elif args.task == "decompose":
+    elif args.task in {"facstd", "decompose"}:
         result.num_components = parsed.get("NUM_COMPONENTS")
         result.max_dim = parsed.get("MAX_DIM")
     result.emit()

@@ -15,7 +15,7 @@ pub mod var_id;
 pub use atom_util::{parse_expression, substitute_symbol};
 pub use factor_prep::{
     PolyExtLex, factor_groups_from_polys, ideal_ext_lex, interreduce_polys,
-    polynomials_from_loaded, preprocess, variable_order,
+    polynomials_from_loaded, preprocess, try_factor_groups_from_polys, variable_order,
 };
 pub use m4gb::{groebner_m4gb, groebner_m4gb_from_system, groebner_m4gb_from_system_with};
 pub use mathematica::{

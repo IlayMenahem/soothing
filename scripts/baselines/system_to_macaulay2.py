@@ -39,9 +39,9 @@ def _poly_to_m2(poly: sp.Basic, rename: dict[str, str]) -> str:
 
 def _m2_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str) -> str:
     # M2 predefines several lower-case identifiers as mathematical constants
-    # (e, pi, ii) and treating them as ring variables raises "expected strings,
-    # integers, or symbols". Prefix every variable to make collisions impossible.
-    rename = {str(s): f"v_{s}" for s in symbols}
+    # (e, pi, ii), and "_" is its indexed-variable operator. Use positional
+    # alphanumeric names so both collisions and accidental indexing are impossible.
+    rename = {str(symbol): f"v{index}" for index, symbol in enumerate(symbols)}
     ring_vars = ",".join(rename[str(s)] for s in symbols)
     ideal_body = ",\n  ".join(_poly_to_m2(p, rename) for p in polys)
     # cpuTime() returns floating-point seconds; ``currentTime()`` is integer-second
@@ -125,6 +125,16 @@ def main() -> int:
 
     parsed = _parse_m2_output(out)
     if "SOLVE_MS" not in parsed or "DONE" not in out:
+        if rc != 0 and "Library not loaded:" in err:
+            match = re.search(r"Library not loaded:\s*(\S+)", err)
+            missing = match.group(1) if match else "an unresolved dynamic-library dependency"
+            BaselineResult(
+                baseline=label,
+                status="tool_unavailable",
+                elapsed_secs=wall,
+                error=f"installed M2 cannot start; missing dynamic library {missing}",
+            ).emit()
+            return 0
         BaselineResult(
             baseline=label,
             status="error",

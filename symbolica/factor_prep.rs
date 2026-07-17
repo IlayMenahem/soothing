@@ -222,12 +222,40 @@ pub fn interreduce_polys(mut polys: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
     }
 }
 
-fn non_constant_factors(poly: PolyExtLex) -> Vec<PolyExtLex> {
-    poly.factor()
-        .into_iter()
-        .map(|(factor, _pow)| factor)
-        .filter(|factor| !factor.is_constant())
-        .collect()
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else {
+        "unknown factorization panic".to_string()
+    }
+}
+
+fn non_constant_factors(poly: PolyExtLex) -> Result<Vec<PolyExtLex>, String> {
+    // Symbolica's multivariate factorizer chooses randomized evaluation points.
+    // A bad choice can occasionally make its leading-coefficient reconstruction
+    // panic even though another choice factors the same polynomial correctly.
+    // Retry the operation, but never reinterpret an unfactored polynomial as an
+    // irreducible factor: exhausting the retries is an explicit error.
+    const ATTEMPTS: usize = 4;
+    let mut last_error = String::new();
+    for _ in 0..ATTEMPTS {
+        let candidate = poly.clone();
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| candidate.factor())) {
+            Ok(factors) => {
+                return Ok(factors
+                    .into_iter()
+                    .map(|(factor, _pow)| factor)
+                    .filter(|factor| !factor.is_constant())
+                    .collect());
+            }
+            Err(payload) => last_error = panic_message(payload.as_ref()),
+        }
+    }
+    Err(format!(
+        "factorization failed after {ATTEMPTS} randomized attempts: {last_error}"
+    ))
 }
 
 /// Factor each nonzero polynomial into its nonconstant irreducible factors.
@@ -235,12 +263,20 @@ fn non_constant_factors(poly: PolyExtLex) -> Vec<PolyExtLex> {
 /// A nonzero constant is retained as an empty factor group: the equation
 /// `c = 0` is inconsistent and therefore admits no hitting set. Zero
 /// polynomials, on the other hand, impose no constraint and are discarded.
-pub fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> {
+pub fn try_factor_groups_from_polys(
+    polys: Vec<PolyExtLex>,
+) -> Result<Vec<Vec<PolyExtLex>>, String> {
     polys
         .into_iter()
         .filter(|poly| !poly.is_zero())
         .map(non_constant_factors)
         .collect()
+}
+
+/// Compatibility wrapper for callers that cannot propagate preprocessing
+/// failures. New command-line code should use `try_factor_groups_from_polys`.
+pub fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> {
+    try_factor_groups_from_polys(polys).unwrap_or_else(|error| panic!("{error}"))
 }
 
 /// Convert the loaded equations to a shared lexicographic polynomial ring,
@@ -258,9 +294,7 @@ pub fn preprocess(
     loaded: &LoadedMathematicaSystem,
     field: &Q,
 ) -> Result<Vec<Vec<PolyExtLex>>, String> {
-    Ok(factor_groups_from_polys(interreduce_polys(
-        polynomials_from_loaded(loaded, field)?,
-    )))
+    try_factor_groups_from_polys(interreduce_polys(polynomials_from_loaded(loaded, field)?))
 }
 
 #[cfg(test)]

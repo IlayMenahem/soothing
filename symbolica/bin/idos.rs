@@ -1,8 +1,8 @@
 //! Outer branching over structure hints followed by a CDCL-style search over
 //! each augmented polynomial system's minimal factor covers.
 //!
-//! Implements Algorithm 1 of the method statement: interreduce the input, then
-//! try structure-hint subsets easiest-first. A hint subset is minimized and
+//! Implements Algorithm 1 of the method statement: optionally interreduce the
+//! input, then try structure-hint subsets easiest-first. A hint subset is minimized and
 //! learned only after every one of its minimal factor covers has been proved
 //! inconsistent, allowing every later superset to be pruned. Learned
 //! factor-cover cores are normalized polynomial sets, so they remain valid
@@ -20,36 +20,41 @@ use polynomial_cdcl::cover::{
     build_factor_index, decode_cover, minimal_covers, ordered_cover_masks, ordered_hint_masks,
 };
 use polynomial_cdcl::gb_search::{
-    Core, GbBackend, Outcome, PolyExtGrevLex, evaluate_cover, minimal_unsat_core,
+    ComputedBasis, Core, GbBackend, Outcome, evaluate_cover, minimal_unsat_core,
     polynomial_set_contains, solution_dimension,
 };
 use polynomial_cdcl::sparse::{decode_hint_mask, resolve_candidates, usable_sparse_variables};
 use polynomial_cdcl::{
-    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest,
-    factor_groups_from_polys, interreduce_polys, load_mathematica_system_from_path_with_var_names,
-    polynomials_from_loaded,
+    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest, interreduce_polys,
+    load_mathematica_system_from_path_with_var_names, polynomials_from_loaded,
+    try_factor_groups_from_polys,
 };
 
 #[derive(Debug)]
 struct CliOptions {
     path: PathBuf,
+    interreduce: bool,
     max_covers: usize,
     timeout_ms: u64,
     gb_backend: GbBackend,
     sparse: bool,
     sparse_names: Vec<String>,
+    summary: bool,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path: Option<PathBuf> = None;
+    let mut interreduce = true;
     let mut max_covers: usize = 2_000;
     let mut timeout_ms: u64 = 5_000;
     let mut gb_backend = GbBackend::M4gb;
     let mut sparse = false;
     let mut sparse_names = Vec::new();
+    let mut summary = false;
     let mut args = args.into_iter().peekable();
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--no-interreduce" => interreduce = false,
             "--max-covers" => {
                 max_covers = args
                     .next()
@@ -65,11 +70,13 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     .map_err(|e| format!("invalid --timeout: {e}"))?;
             }
             "--gb" => {
-                let value = args
-                    .next()
-                    .ok_or_else(|| "--gb requires one of: m4gb, f5, gvw, symbolica".to_string())?;
+                let value = args.next().ok_or_else(|| {
+                    "--gb requires one of: m4gb, f5, gvw, symbolica, singular-gb".to_string()
+                })?;
                 gb_backend = GbBackend::parse(&value).ok_or_else(|| {
-                    format!("invalid --gb {value:?}: expected m4gb, f5, gvw, or symbolica")
+                    format!(
+                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, or singular-gb"
+                    )
                 })?;
             }
             "--sparse" => {
@@ -78,17 +85,20 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     sparse_names.push(args.next().expect("peeked sparse argument"));
                 }
             }
+            "--summary" => summary = true,
             _ if arg.starts_with("--") => return Err(format!("unknown option {arg:?}")),
             _ => path = Some(PathBuf::from(arg)),
         }
     }
     Ok(CliOptions {
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
+        interreduce,
         max_covers,
         timeout_ms,
         gb_backend,
         sparse,
         sparse_names,
+        summary,
     })
 }
 
@@ -110,15 +120,21 @@ fn load_system(path: &Path) -> LoadedMathematicaSystem {
     loaded
 }
 
-fn prepare_base_polynomials(loaded: &LoadedMathematicaSystem, field: &Q) -> Vec<PolyExtLex> {
+fn prepare_base_polynomials(
+    loaded: &LoadedMathematicaSystem,
+    field: &Q,
+    interreduce: bool,
+) -> Vec<PolyExtLex> {
     let t_pre = Instant::now();
     let polynomials = match polynomials_from_loaded(loaded, field) {
-        Ok(polynomials) => interreduce_polys(polynomials),
+        Ok(polynomials) if interreduce => interreduce_polys(polynomials),
+        Ok(polynomials) => polynomials,
         Err(e) => die(e, 1),
     };
     println!(
-        "  {} interreduced polynomial(s), elapsed {:?}",
+        "  {} polynomial(s), interreduction {}, elapsed {:?}",
         polynomials.iter().filter(|poly| !poly.is_zero()).count(),
+        if interreduce { "enabled" } else { "disabled" },
         t_pre.elapsed()
     );
     polynomials
@@ -230,7 +246,7 @@ fn branch_proves_inconsistent(
 
 struct SearchResult {
     solutions: Vec<(usize, usize, Option<usize>)>,
-    largest_dimension: Option<(usize, u64, usize, Vec<PolyExtGrevLex>)>,
+    largest_dimension: Option<(usize, u64, usize, ComputedBasis)>,
     cores: Vec<Core>,
     hint_cores: Vec<Core>,
     branches: usize,
@@ -265,7 +281,7 @@ fn run_search(
     let mut hint_cores: Vec<Core> = Vec::new();
     let mut satisfiable_covers: Vec<(usize, Vec<PolyExtLex>)> = Vec::new();
     let mut solutions: Vec<(usize, usize, Option<usize>)> = Vec::new();
-    let mut largest_dimension: Option<(usize, u64, usize, Vec<PolyExtGrevLex>)> = None;
+    let mut largest_dimension: Option<(usize, u64, usize, ComputedBasis)> = None;
     let mut branches = 0usize;
     let mut considered = 0usize;
     let mut inconsistent = 0usize;
@@ -294,8 +310,13 @@ fn run_search(
         let mut augmented = base_polynomials.to_vec();
         augmented.extend(hints.iter().cloned());
         let t_branch = Instant::now();
-        let augmented = interreduce_polys(augmented);
-        let groups = factor_groups_from_polys(augmented);
+        let augmented = if options.interreduce {
+            interreduce_polys(augmented)
+        } else {
+            augmented
+        };
+        let groups = try_factor_groups_from_polys(augmented)
+            .unwrap_or_else(|error| die(format!("factorization error: {error}"), 1));
         let (factors, covers) = build_cover_universe(&groups);
         let ordered_covers = ordered_cover_masks(&covers);
         println!(
@@ -341,8 +362,8 @@ fn run_search(
             match evaluate_cover(candidate.clone(), timeout, options.gb_backend) {
                 Outcome::Consistent(basis) => {
                     branch_satisfiable = true;
-                    let len = basis.len();
-                    let dimension = solution_dimension(&basis, nvars);
+                    let len = basis.elements.len();
+                    let dimension = solution_dimension(&basis.elements, nvars);
                     let dimension_label =
                         dimension.map_or_else(|| "?".to_string(), |d| d.to_string());
                     if let Some(solution_idx) = inferred_from {
@@ -364,7 +385,7 @@ fn run_search(
                                 .as_ref()
                                 .is_none_or(|&(_, _, best_dim, ref best)| {
                                     dimension > best_dim
-                                        || (dimension == best_dim && len < best.len())
+                                        || (dimension == best_dim && len < best.elements.len())
                                 });
                         if improves {
                             largest_dimension = Some((idx, hint_mask, dimension, basis));
@@ -400,6 +421,15 @@ fn run_search(
                         );
                     }
                     timeouts += 1;
+                }
+                Outcome::BackendError(error) => {
+                    die(
+                        format!(
+                            "{} Groebner backend error: {error}",
+                            options.gb_backend.label()
+                        ),
+                        1,
+                    );
                 }
             }
         }
@@ -464,7 +494,7 @@ fn report_results(
     if let Some((idx, hint_mask, dimension, basis)) = &result.largest_dimension {
         println!(
             "  largest solution dimension found: cover #{idx}, dimension {dimension} ({} basis element(s))",
-            basis.len()
+            basis.elements.len()
         );
         let zeroed_variables: Vec<_> = sparse_variables
             .iter()
@@ -489,10 +519,13 @@ fn report_results(
                 variables_not_zeroed.join(", ")
             );
         }
-        if basis.is_empty() {
+        if basis.elements.is_empty() {
             println!("\t<empty basis>");
         } else {
-            for (i, polynomial) in basis.iter().enumerate() {
+            if basis.leading_monomials_only {
+                println!("\tleading monomials of the external basis:");
+            }
+            for (i, polynomial) in basis.elements.iter().enumerate() {
                 println!("\tg{i} = {polynomial}");
             }
         }
@@ -522,7 +555,7 @@ fn main() {
     let loaded = load_system(&options.path);
 
     let field = Q;
-    let base_polynomials = prepare_base_polynomials(&loaded, &field);
+    let base_polynomials = prepare_base_polynomials(&loaded, &field, options.interreduce);
     let template = base_polynomials.first();
     let nvars = template.map_or(loaded.var_names.len(), PolyExtLex::nvars);
     let sparse_variables = resolve_sparse_variables(&options, &loaded, template);
@@ -534,7 +567,25 @@ fn main() {
         &sparse_variables,
         nvars,
     );
-    report_results(&result, &sparse_variables, &loaded);
+    if options.summary {
+        let (largest_dimension, largest_basis_len) = result.largest_dimension.as_ref().map_or_else(
+            || ("unknown".to_string(), 0),
+            |(_, _, dimension, basis)| (dimension.to_string(), basis.elements.len()),
+        );
+        println!(
+            "IDOS_SUMMARY branches={} candidates={} satisfiable={} unsatisfiable={} timeouts={} largest_dimension={} largest_basis_len={} elapsed_secs={:.6}",
+            result.branches,
+            result.considered,
+            result.solutions.len(),
+            result.inconsistent,
+            result.timeouts,
+            largest_dimension,
+            largest_basis_len,
+            result.elapsed.as_secs_f64(),
+        );
+    } else {
+        report_results(&result, &sparse_variables, &loaded);
+    }
 }
 
 #[cfg(test)]
@@ -577,11 +628,12 @@ mod tests {
     #[test]
     fn parse_args_existing_options_still_work() {
         let options = parse_args(
-            ["--max-covers", "17", "--timeout", "250"]
+            ["--no-interreduce", "--max-covers", "17", "--timeout", "250"]
                 .into_iter()
                 .map(String::from),
         )
         .unwrap();
+        assert!(!options.interreduce);
         assert_eq!(options.max_covers, 17);
         assert_eq!(options.timeout_ms, 250);
         assert_eq!(options.gb_backend, GbBackend::M4gb);
@@ -592,6 +644,10 @@ mod tests {
     fn parse_args_groebner_backend() {
         let options = parse_args(["--gb", "gvw"].into_iter().map(String::from)).unwrap();
         assert_eq!(options.gb_backend, GbBackend::Gvw);
+
+        let options =
+            parse_args(["--gb", "singular-gb"].into_iter().map(String::from)).unwrap();
+        assert_eq!(options.gb_backend, GbBackend::SingularGb);
     }
 
     #[test]
@@ -605,8 +661,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_args_removed_no_interreduce_flag_fails() {
-        assert!(parse_args(["--no-interreduce"].into_iter().map(String::from)).is_err());
+    fn parse_args_interreduces_by_default() {
+        let options = parse_args(std::iter::empty()).unwrap();
+        assert!(options.interreduce);
     }
 
     #[test]
@@ -631,7 +688,8 @@ mod tests {
         let mut augmented = base;
         augmented.extend(hints);
 
-        let groups = factor_groups_from_polys(interreduce_polys(augmented));
+        let groups = try_factor_groups_from_polys(interreduce_polys(augmented))
+            .expect("factor structure hint");
         let (factors, covers) = build_cover_universe(&groups);
 
         assert_eq!(groups.len(), 2);

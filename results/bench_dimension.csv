@@ -1,2 +1,0 @@
-system,n_vars,reference_source,reference_status,reference_dim,reference_rank,reference_secs,method,found_dim,codim_shortfall
-system,22,z3,ok,9,13,4.184360,milp-cover,2,7

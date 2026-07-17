@@ -53,6 +53,7 @@ struct Args {
     algo: Algo,
     order: Order,
     timeout: Option<Duration>,
+    summary: bool,
 }
 
 fn parse_args(it: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -60,6 +61,7 @@ fn parse_args(it: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut algo = Algo::Both;
     let mut order = Order::Lex;
     let mut timeout: Option<Duration> = None;
+    let mut summary = false;
     let mut it = it.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -85,6 +87,7 @@ fn parse_args(it: impl IntoIterator<Item = String>) -> Result<Args, String> {
                 let secs: u64 = v.parse().map_err(|e| format!("--timeout-secs: {e}"))?;
                 timeout = Some(Duration::from_secs(secs));
             }
+            "--summary" => summary = true,
             s if s.starts_with("--") => return Err(format!("unknown option {s:?}")),
             _ => path = Some(PathBuf::from(arg)),
         }
@@ -95,6 +98,7 @@ fn parse_args(it: impl IntoIterator<Item = String>) -> Result<Args, String> {
         algo,
         order,
         timeout,
+        summary,
     })
 }
 
@@ -130,11 +134,14 @@ where
     }
 }
 
-fn report<O: MonomialOrder>(gb: &GroebnerBasis<Q, u16, O>)
+fn report<O: MonomialOrder>(gb: &GroebnerBasis<Q, u16, O>, summary: bool)
 where
     MultivariatePolynomial<Q, u16, O>: std::fmt::Display,
 {
     println!("  basis size: {}", gb.system.len());
+    if summary {
+        return;
+    }
     for g in &gb.system {
         println!("\t{g}");
     }
@@ -146,6 +153,7 @@ fn run_algo<O: MonomialOrder + Send + 'static>(
     system: &PolynomialSystem,
     var_order: Arc<Vec<PolyVariable>>,
     timeout: Option<Duration>,
+    summary: bool,
 ) where
     MultivariatePolynomial<Q, u16, O>: std::fmt::Display,
 {
@@ -157,7 +165,7 @@ fn run_algo<O: MonomialOrder + Send + 'static>(
             groebner_m4gb_from_system_with::<Q, O>(&sys, &Q, vo)
         });
         match r {
-            Some(Ok(gb)) => report(&gb),
+            Some(Ok(gb)) => report(&gb, summary),
             Some(Err(e)) => eprintln!("  error: {e}"),
             None => {}
         }
@@ -170,7 +178,7 @@ fn run_algo<O: MonomialOrder + Send + 'static>(
             groebner_f5_from_system_with::<Q, O>(&sys, &Q, vo)
         });
         match r {
-            Some(Ok(gb)) => report(&gb),
+            Some(Ok(gb)) => report(&gb, summary),
             Some(Err(e)) => eprintln!("  error: {e}"),
             None => {}
         }
@@ -183,7 +191,7 @@ fn run_algo<O: MonomialOrder + Send + 'static>(
             groebner_gvw_from_system_with::<Q, O>(&sys, &Q, vo)
         });
         match r {
-            Some(Ok(gb)) => report(&gb),
+            Some(Ok(gb)) => report(&gb, summary),
             Some(Err(e)) => eprintln!("  error: {e}"),
             None => {}
         }
@@ -201,7 +209,7 @@ fn run_algo<O: MonomialOrder + Send + 'static>(
             },
         );
         match r {
-            Some(Ok(gb)) => report(&gb),
+            Some(Ok(gb)) => report(&gb, summary),
             Some(Err(e)) => eprintln!("  error: {e}"),
             None => {}
         }
@@ -237,15 +245,21 @@ fn main() {
     let var_order = variable_order(&loaded.id_to_sym);
 
     match args.order {
-        Order::Lex => {
-            run_algo::<LexOrder>("lex", args.algo, &loaded.system, var_order, args.timeout)
-        }
+        Order::Lex => run_algo::<LexOrder>(
+            "lex",
+            args.algo,
+            &loaded.system,
+            var_order,
+            args.timeout,
+            args.summary,
+        ),
         Order::GrevLex => run_algo::<GrevLexOrder>(
             "grevlex",
             args.algo,
             &loaded.system,
             var_order,
             args.timeout,
+            args.summary,
         ),
     }
 }

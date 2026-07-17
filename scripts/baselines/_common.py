@@ -4,8 +4,8 @@ Each baseline driver (Singular / Macaulay2 / HomotopyContinuation.jl) loads a
 Mathematica-style polynomial system from a `.txt` file, translates it into the
 syntax of its target tool, runs the tool as a subprocess with a wall-clock
 timeout, and prints a single JSON line in the unified ``BaselineResult`` shape
-below. The Rust orchestrator in ``symbolica/bin/bench.rs`` consumes those JSON
-lines.
+below. ``scripts/benchmark_idos.py`` consumes those JSON lines when comparing
+IDOS with external computer-algebra systems.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ class BaselineResult:
     """Unified result shape emitted by every baseline driver."""
 
     baseline: str
-    status: str  # "ok" | "timeout" | "tool_missing" | "error" | "parse_error"
+    status: str  # "ok" | "timeout" | "tool_missing" | "tool_unavailable" | "error" | "parse_error"
     elapsed_secs: float = 0.0
     # Algorithm-specific metrics — only the relevant fields are populated.
     basis_len: int | None = None
