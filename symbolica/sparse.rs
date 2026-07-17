@@ -86,7 +86,6 @@ mod tests {
 
     use symbolica::LicenseManager;
     use symbolica::atom::AtomCore;
-    use symbolica::domains::algebraic_number::AlgebraicExtension;
     use symbolica::domains::rational::Q;
 
     use crate::atom_util::parse_expression;
@@ -107,7 +106,7 @@ mod tests {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(&format!("{{{source} == 0}}"))
             .expect("load");
-        let field = AlgebraicExtension::new_complex(Q);
+        let field = Q;
         let order = variable_order(&loaded.id_to_sym);
         ideal_ext_lex(&loaded.system, &field, order)
             .expect("polynomial")

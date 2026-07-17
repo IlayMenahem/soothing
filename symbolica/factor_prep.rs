@@ -10,7 +10,6 @@
 use std::sync::Arc;
 
 use symbolica::atom::{AtomCore, Symbol};
-use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
 use symbolica::poly::factor::Factorize;
 use symbolica::poly::{LexOrder, PolyVariable, polynomial::MultivariatePolynomial};
@@ -18,8 +17,7 @@ use symbolica::poly::{LexOrder, PolyVariable, polynomial::MultivariatePolynomial
 use crate::mathematica::LoadedMathematicaSystem;
 use crate::system::PolynomialSystem;
 
-pub type ExtQ = AlgebraicExtension<Q>;
-pub type PolyExtLex = MultivariatePolynomial<ExtQ, u16, LexOrder>;
+pub type PolyExtLex = MultivariatePolynomial<Q, u16, LexOrder>;
 
 #[must_use]
 pub fn variable_order(symbols: &[Symbol]) -> Arc<Vec<PolyVariable>> {
@@ -175,7 +173,7 @@ fn heuristic_variable_order(loaded: &LoadedMathematicaSystem) -> Arc<Vec<PolyVar
 
 pub fn ideal_ext_lex(
     system: &PolynomialSystem,
-    field: &ExtQ,
+    field: &Q,
     var_order: Arc<Vec<PolyVariable>>,
 ) -> Result<Vec<PolyExtLex>, String> {
     system
@@ -249,16 +247,16 @@ pub fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> 
 /// using the deterministic fill heuristic for the variable order.
 pub fn polynomials_from_loaded(
     loaded: &LoadedMathematicaSystem,
-    field: &ExtQ,
+    field: &Q,
 ) -> Result<Vec<PolyExtLex>, String> {
     let var_order = heuristic_variable_order(loaded);
     ideal_ext_lex(&loaded.system, field, var_order)
-        .map_err(|e| format!("equation -> polynomial over AlgebraicExtension<Q>: {e}"))
+        .map_err(|e| format!("equation -> polynomial over Q: {e}"))
 }
 
 pub fn preprocess(
     loaded: &LoadedMathematicaSystem,
-    field: &ExtQ,
+    field: &Q,
 ) -> Result<Vec<Vec<PolyExtLex>>, String> {
     Ok(factor_groups_from_polys(interreduce_polys(
         polynomials_from_loaded(loaded, field)?,
@@ -332,7 +330,7 @@ mod tests {
         // of ⟨x,y⟩ survive.
         activate_license();
         let loaded = load("{x + y == 0, x - y == 0}");
-        let field = AlgebraicExtension::new_complex(Q);
+        let field = Q;
         let var_order = variable_order(&loaded.id_to_sym);
         let polys = ideal_ext_lex(&loaded.system, &field, var_order).expect("ideal_ext_lex");
         let reduced = interreduce_polys(polys);
@@ -347,14 +345,14 @@ mod tests {
     fn preprocess_retains_pure_constant_as_empty_factor_group() {
         // equation is q == q + 1 → q - (q + 1) = -1, a nonzero constant.
         let loaded = load("{q == q + 1}");
-        let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
+        let pre = preprocess(&loaded, &Q).expect("preprocess");
         assert_eq!(pre, vec![Vec::<PolyExtLex>::new()]);
     }
 
     #[test]
     fn preprocess_factors_are_non_constant_and_non_zero() {
         let loaded = load("{(x + 1)^2 * (y + 2) == 0, (x^2 + 1) == 0}");
-        let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
+        let pre = preprocess(&loaded, &Q).expect("preprocess");
         assert!(!pre.is_empty());
         for group in &pre {
             assert!(!group.is_empty());
@@ -368,7 +366,7 @@ mod tests {
     #[test]
     fn preprocess_returns_one_group_per_nonzero_equation() {
         let loaded = load("{x + 1 == 0, y + 2 == 0, z + 3 == 0}");
-        let pre = preprocess(&loaded, &AlgebraicExtension::new_complex(Q)).expect("preprocess");
+        let pre = preprocess(&loaded, &Q).expect("preprocess");
         assert_eq!(pre.len(), 3);
         for group in &pre {
             assert_eq!(group.len(), 1);

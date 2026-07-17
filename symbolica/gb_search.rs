@@ -5,14 +5,15 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use symbolica::domains::rational::Q;
 use symbolica::poly::polynomial::MultivariatePolynomial;
 use symbolica::poly::{GrevLexOrder, MonomialOrder};
 
 use crate::cover::minimal_covers;
-use crate::factor_prep::{ExtQ, PolyExtLex};
+use crate::factor_prep::PolyExtLex;
 use crate::{groebner_f5, groebner_gvw, groebner_m4gb};
 
-pub type PolyExtGrevLex = MultivariatePolynomial<ExtQ, u16, GrevLexOrder>;
+pub type PolyExtGrevLex = MultivariatePolynomial<Q, u16, GrevLexOrder>;
 
 pub fn solution_dimension(basis: &[PolyExtGrevLex], nvars: usize) -> Option<usize> {
     let supports: Vec<Vec<usize>> = basis
@@ -36,7 +37,7 @@ pub fn solution_dimension(basis: &[PolyExtGrevLex], nvars: usize) -> Option<usiz
 /// A reduced degrevlex Gröbner basis equal to `{1}` (a non-zero constant)
 /// certifies that the cover's ideal is the whole ring, i.e. the cover is
 /// inconsistent.
-fn is_unit_ideal<O: MonomialOrder>(system: &[MultivariatePolynomial<ExtQ, u16, O>]) -> bool {
+fn is_unit_ideal<O: MonomialOrder>(system: &[MultivariatePolynomial<Q, u16, O>]) -> bool {
     system.iter().any(|p| !p.is_zero() && p.is_constant())
 }
 
@@ -157,7 +158,6 @@ mod tests {
 
     use symbolica::LicenseManager;
     use symbolica::atom::AtomCore;
-    use symbolica::domains::algebraic_number::AlgebraicExtension;
     use symbolica::domains::rational::Q;
 
     use crate::atom_util::parse_expression;
@@ -178,7 +178,7 @@ mod tests {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(&format!("{{{source} == 0}}"))
             .expect("load");
-        let field = AlgebraicExtension::new_complex(Q);
+        let field = Q;
         let order = variable_order(&loaded.id_to_sym);
         ideal_ext_lex(&loaded.system, &field, order)
             .expect("polynomial")

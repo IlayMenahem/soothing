@@ -14,7 +14,6 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use symbolica::LicenseManager;
-use symbolica::domains::algebraic_number::AlgebraicExtension;
 use symbolica::domains::rational::Q;
 
 use polynomial_cdcl::cover::{
@@ -111,10 +110,7 @@ fn load_system(path: &Path) -> LoadedMathematicaSystem {
     loaded
 }
 
-fn prepare_base_polynomials(
-    loaded: &LoadedMathematicaSystem,
-    field: &AlgebraicExtension<Q>,
-) -> Vec<PolyExtLex> {
+fn prepare_base_polynomials(loaded: &LoadedMathematicaSystem, field: &Q) -> Vec<PolyExtLex> {
     let t_pre = Instant::now();
     let polynomials = match polynomials_from_loaded(loaded, field) {
         Ok(polynomials) => interreduce_polys(polynomials),
@@ -525,7 +521,7 @@ fn main() {
     };
     let loaded = load_system(&options.path);
 
-    let field = AlgebraicExtension::new_complex(Q);
+    let field = Q;
     let base_polynomials = prepare_base_polynomials(&loaded, &field);
     let template = base_polynomials.first();
     let nvars = template.map_or(loaded.var_names.len(), PolyExtLex::nvars);
@@ -626,7 +622,7 @@ mod tests {
         activate_license();
         let loaded =
             load_mathematica_system_from_str_with_var_names("{(x + 1)*y == 0}").expect("load");
-        let field = AlgebraicExtension::new_complex(Q);
+        let field = Q;
         let base =
             interreduce_polys(polynomials_from_loaded(&loaded, &field).expect("polynomials"));
         let candidates = resolve_candidates(&loaded, &["x".to_string()]).expect("candidate");
@@ -649,7 +645,7 @@ mod tests {
         activate_license();
         let loaded =
             load_mathematica_system_from_str_with_var_names("{x - 1 == 0, y == 0}").expect("load");
-        let field = AlgebraicExtension::new_complex(Q);
+        let field = Q;
         let base =
             interreduce_polys(polynomials_from_loaded(&loaded, &field).expect("polynomials"));
         let candidates =
