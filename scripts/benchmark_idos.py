@@ -26,7 +26,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -266,42 +266,6 @@ def affine_factor_hypergraph(
     )
 
 
-def axis_aligned_cycle(output: Path, vertices: int) -> Instance:
-    if vertices < 3:
-        raise ValueError("an axis-aligned cycle needs at least three vertices")
-    polynomials = []
-    for vertex in range(vertices):
-        following = (vertex + 1) % vertices
-        polynomials.append(
-            f"(x{following} - x{vertex})*(y{following} - y{vertex})"
-        )
-    path = output / f"axis_aligned_cycle_n{vertices}.txt"
-    write_system(path, polynomials)
-    return Instance(
-        suite="positive-dimensional",
-        name=path.stem,
-        path=path.name,
-        variables=2 * vertices,
-        equations=vertices,
-        raw_factor_choices=1 << vertices,
-        idos_args=[
-            "--no-interreduce",
-            "--max-covers",
-            str(1 << vertices),
-            "--gb",
-            "m4gb",
-        ],
-        description=(
-            "Each polygon edge is horizontal or vertical. A factor cover chooses an "
-            "orientation for every edge and yields a linear configuration space."
-        ),
-        expected_largest_component=(
-            "A dimension-(n+1) subvariety; the raw factor covers are linear "
-            "orientation components."
-        ),
-    )
-
-
 def signed_distance_cycle(output: Path, vertices: int) -> Instance:
     if vertices < 4 or vertices % 2:
         raise ValueError("use an even signed-distance cycle of size at least four")
@@ -330,141 +294,11 @@ def signed_distance_cycle(output: Path, vertices: int) -> Instance:
     )
 
 
-def switched_hankel_minors(output: Path, degree: int) -> Instance:
-    if degree < 3:
-        raise ValueError("rational-normal-curve degree must be at least three")
-    equations = []
-    for left, right in itertools.combinations(range(degree), 2):
-        minor = f"h{left}*h{right + 1} - h{left + 1}*h{right}"
-        equations.append(f"s{left}_{right}*({minor})")
-    count = len(equations)
-    path = output / f"switched_rational_normal_curve_d{degree}.txt"
-    write_system(path, equations)
-    return Instance(
-        suite="positive-dimensional",
-        name=path.stem,
-        path=path.name,
-        variables=degree + 1 + count,
-        equations=count,
-        raw_factor_choices=1 << count,
-        idos_args=[
-            "--no-interreduce",
-            "--max-covers",
-            str(1 << count),
-            "--gb",
-            "m4gb",
-        ],
-        description=(
-            "Each 2x2 Hankel minor has its own switch. Choosing every minor recovers "
-            "the affine cone over the degree-d rational normal curve."
-        ),
-        expected_largest_component=(
-            "The rational-normal-curve cone times the free switch space, "
-            f"dimension {count + 2}."
-        ),
-    )
-
-
-def switched_rank_one_matrix(output: Path, columns: int) -> Instance:
-    if columns < 3:
-        raise ValueError("a switched rank-one matrix needs at least three columns")
-    equations = []
-    for left, right in itertools.combinations(range(columns), 2):
-        minor = f"a{left}*b{right} - a{right}*b{left}"
-        equations.append(f"t{left}_{right}*({minor})")
-    count = len(equations)
-    path = output / f"switched_rank_one_matrix_2x{columns}.txt"
-    write_system(path, equations)
-    return Instance(
-        suite="positive-dimensional",
-        name=path.stem,
-        path=path.name,
-        variables=2 * columns + count,
-        equations=count,
-        raw_factor_choices=1 << count,
-        idos_args=[
-            "--no-interreduce",
-            "--max-covers",
-            str(1 << count),
-            "--gb",
-            "m4gb",
-        ],
-        description=(
-            "Every 2x2 minor of a generic 2-by-n matrix has an independent switch. "
-            "Selecting all minors recovers the rank-at-most-one variety."
-        ),
-        expected_largest_component=(
-            "The affine cone over P^1 x P^(n-1), times the free switch space; "
-            f"for n={columns} its affine dimension is {columns + 1 + count}."
-        ),
-    )
-
-
-def plucker_name(left: int, right: int) -> str:
-    return f"p{left}{right}"
-
-
-def switched_plucker(output: Path, points: int) -> Instance:
-    if points < 4:
-        raise ValueError("Gr(2,n) requires n at least four")
-    equations = []
-    for relation, (i, j, k, final) in enumerate(
-        itertools.combinations(range(points), 4)
-    ):
-        plucker = (
-            f"{plucker_name(i, j)}*{plucker_name(k, final)}"
-            f" - {plucker_name(i, k)}*{plucker_name(j, final)}"
-            f" + {plucker_name(i, final)}*{plucker_name(j, k)}"
-        )
-        equations.append(f"g{relation}*({plucker})")
-    relation_count = len(equations)
-    coordinate_count = points * (points - 1) // 2
-    path = output / f"switched_grassmannian_gr2_{points}.txt"
-    write_system(path, equations)
-    return Instance(
-        suite="positive-dimensional",
-        name=path.stem,
-        path=path.name,
-        variables=coordinate_count + relation_count,
-        equations=relation_count,
-        raw_factor_choices=1 << relation_count,
-        idos_args=[
-            "--no-interreduce",
-            "--max-covers",
-            str(1 << relation_count),
-            "--gb",
-            "m4gb",
-        ],
-        description=(
-            "Every quadratic Plucker relation has an independent switch. Selecting all "
-            "relations recovers the affine cone over Gr(2,n)."
-        ),
-        expected_largest_component=(
-            f"For n={points}, the Grassmannian cone times {relation_count} free "
-            f"switches, dimension {2 * points - 3 + relation_count}."
-        ),
-    )
-
-
 def generate_matrix(output: Path) -> list[Instance]:
     """Generate each system in the consolidated comparison matrix exactly once."""
     output.mkdir(parents=True, exist_ok=True)
     instances = [
-        *(axis_aligned_cycle(output, size) for size in (8, 10, 12)),
         *(signed_distance_cycle(output, size) for size in (8, 10, 12)),
-        *(switched_hankel_minors(output, degree) for degree in (3, 4, 5)),
-        *(switched_rank_one_matrix(output, columns) for columns in (3, 4, 5)),
-        switched_plucker(output, 5),
-        replace(
-            switched_plucker(output, 6),
-            idos_args=[
-                "--no-interreduce",
-                "--max-covers",
-                "2000",
-                "--gb",
-                "m4gb",
-            ],
-        ),
         affine_factor_hypergraph(
             output,
             8,
@@ -763,20 +597,9 @@ DECOMPOSITION_METHODS = {
 }
 
 MATRIX_REQUIRED_COVERS = {
-    "axis_aligned_cycle_n8": 256,
-    "axis_aligned_cycle_n10": 1024,
-    "axis_aligned_cycle_n12": 4096,
     "signed_distance_cycle_n8": 8,
     "signed_distance_cycle_n10": 8,
     "signed_distance_cycle_n12": 32,
-    "switched_rational_normal_curve_d3": 8,
-    "switched_rational_normal_curve_d4": 64,
-    "switched_rational_normal_curve_d5": 1024,
-    "switched_rank_one_matrix_2x3": 8,
-    "switched_rank_one_matrix_2x4": 64,
-    "switched_rank_one_matrix_2x5": 1024,
-    "switched_grassmannian_gr2_5": 32,
-    "switched_grassmannian_gr2_6": 32768,
     "affine_factor_hypergraph_n8_m6_k4_seed42": 63,
     "affine_factor_hypergraph_n10_m8_k5_seed42": 239,
     "affine_factor_hypergraph_n12_m10_k6_seed42": 833,

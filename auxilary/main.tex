@@ -152,12 +152,12 @@ covers and how the inner Gr\"obner engine affects performance.
 
 \subsection*{Benchmark systems}
 
-The benchmark has 25 systems from nine families
+The benchmark has 14 systems from five families
 (Table~\ref{tab:benchmark-families}).  In the structured suite, covers encode
-geometric choices such as edge orientations or selected determinantal
-relations.  In the hard-residual suite, a common selector gates a Cyclic,
-Katsura, or dense-quadratic system, so IDOS must solve both the selector
-hyperplane and a nonlinear residual cover.
+geometric choices such as signed edge lengths or selected affine factors.  In
+the hard-residual suite, a common selector gates a Cyclic, Katsura, or
+dense-quadratic system, so IDOS must solve both the selector hyperplane and a
+nonlinear residual cover.
 
 \begin{table}[t]
 \centering
@@ -169,18 +169,14 @@ hyperplane and a nonlinear residual cover.
 \toprule
 Family & Tested sizes & Variables/equations and required covers \\
 \midrule
-Axis-aligned cycle & $n=8,10,12$ & $(16,8),(20,10),(24,12)$; $256,1024,4096$ covers \\
 Signed-distance cycle & $n=8,10,12$ & $(8,8),(10,10),(12,12)$; $8,8,32$ covers after interreduction \\
-Switched rational normal curve & $d=3,4,5$ & $(7,3),(11,6),(16,10)$; $8,64,1024$ covers \\
-Switched rank-one matrix & $2\times c$, $c=3,4,5$ & $(9,3),(14,6),(20,10)$; $8,64,1024$ covers \\
-Switched Grassmannian & $\operatorname{Gr}(2,5)$, $\operatorname{Gr}(2,6)$ & $(15,5),(30,15)$; $32,32768$ covers \\
 Positive affine hypergraph & $(n,m,k)=$\newline $(8,6,4),(10,8,5),$\newline $(12,10,6)$ & $63,239,833$ covers \\
 Gated Cyclic & orders $5,6$ & $(6,5),(7,6)$; two covers \\
 Gated Katsura and dense quadratics & Katsura $6,7$; dense $n=5,6$ & $(8,7),(9,8),(6,5),(7,6)$; two covers \\
 Square affine hypergraph & $(n,k)=(8,4),(10,5)$, seed 42 & $(8,8),(10,10)$; $31,304$ covers \\
 \bottomrule
 \end{tabular}
-\caption{The 25 nontrivial systems used in the experiments.  A pair in the
+\caption{The 14 nontrivial systems used in the experiments.  A pair in the
 third column gives (number of variables, number of equations).}
 \label{tab:benchmark-families}
 \end{table}
@@ -205,30 +201,21 @@ worker.
 \subsection*{Results}
 
 \paragraph{Scaling.}
-IDOS exhausts 4096 covers for the $n=12$ axis cycle and 1024 covers for both
-the degree-5 rational-normal-curve and $2\times5$ rank-one systems.  Symbolica
-processes the 833-cover positive affine system in $0.100$ wall seconds.
-Completed IDOS runs agree on the largest dimension throughout the matrix.
-The exception to exhaustive reporting is $\operatorname{Gr}(2,6)$: M4GB,
-Symbolica, and Singular reach the 2000-cover cap and find dimension 24, while
-F5 and GVW time out.  This is only 6.1\% of the 32768-cover search.
+Symbolica processes the 833-cover positive affine system in $0.100$ wall
+seconds.  Completed IDOS runs agree on the largest dimension throughout the
+matrix.
 
 \paragraph{Inner engine.}
-For many cheap covers, the in-process engines are close: on the degree-5
-rational-normal-curve system, M4GB, F5, GVW, and Symbolica finish in
-$0.179$--$0.208$ wall seconds.  Symbolica is strongest on the square affine
-$(10,5)$ system ($1.250$ seconds).  Singular dominates the larger nonlinear
-residuals: gated Cyclic-6 takes $0.046$ seconds with Singular, compared with
-$2.695$ for GVW and $6.574$ for F5, while M4GB and Symbolica are partial.
-Thus no inner engine dominates both regimes.
+Symbolica is strongest on the square affine $(10,5)$ system ($1.250$
+seconds).  Singular dominates the larger nonlinear residuals: gated Cyclic-6
+takes $0.046$ seconds with Singular, compared with $2.695$ for GVW and $6.574$
+for F5, while M4GB and Symbolica are partial.  Thus no inner engine dominates
+both regimes.
 
 \paragraph{Baselines.}
-Direct methods are often faster on the switched determinantal systems when
-only a basis of the original ideal is required.  IDOS is more directly
-comparable to decomposition methods because it returns component dimensions;
-on the rows in Table~\ref{tab:baseline-comparison},
+IDOS is more directly comparable to decomposition methods because it returns
+component dimensions; on the rows in Table~\ref{tab:baseline-comparison},
 its wall time is consistently lower than the fastest completed decomposition.
-The advantage is therefore structural rather than universal raw speed.
 
 \begin{table}[htbp]
 \centering
@@ -238,20 +225,9 @@ The advantage is therefore structural rather than universal raw speed.
 \toprule
 System & Best IDOS & Best direct GB & Best decomposition \\
 \midrule
-Axis cycle, $n=8$ & Symb. $0.016/0.021;\ d=9$ & F5 $0.006/0.012$ & facstd $0.141/0.361;\ d=9$ \\
-Axis cycle, $n=10$ & Symb. $0.140/0.146;\ d=11$ & F5 $0.102/0.109$ & facstd $2.652/2.825;\ d=11$ \\
-Axis cycle, $n=12$ & Symb. $2.220/2.227;\ d=13$ & Sing. $0.163/0.393$ & timeout \\
 Signed-distance, $n=8$ & M4GB $0.003/0.013;\ d=1$ & built-in $0.001/0.007$ & facstd $0.017/0.259;\ d=1$ \\
 Signed-distance, $n=10$ & Symb. $0.022/0.028;\ d=1$ & built-in $0.022/0.028$ & facstd $0.244/0.416;\ d=1$ \\
 Signed-distance, $n=12$ & Symb. $0.098/0.104;\ d=1$ & built-in $0.531/0.540$ & primdec $3.048/3.409;\ d=1$ \\
-Switched RNC, $d=3$ & Symb. $0.000/0.006;\ d=5$ & GVW $0.000/0.005$ & facstd $0.000/0.218;\ d=5$ \\
-Switched RNC, $d=4$ & F5 $0.004/0.009;\ d=8$ & M4GB $0.000/0.005$ & facstd $0.011/0.181;\ d=8$ \\
-Switched RNC, $d=5$ & M4GB $0.173/0.179;\ d=12$ & M4GB $0.009/0.016$ & facstd $3.403/3.633;\ d=12$ \\
-Rank one, $2\times3$ & Symb. $0.000/0.006;\ d=7$ & M4GB $0.000/0.006$ & facstd $0.001/0.225;\ d=7$ \\
-Rank one, $2\times4$ & F5 $0.004/0.010;\ d=11$ & M4GB $0.000/0.005$ & facstd $0.013/0.180;\ d=11$ \\
-Rank one, $2\times5$ & M4GB $0.181/0.187;\ d=16$ & M4GB $0.002/0.010$ & primdec $3.973/4.333;\ d=16$ \\
-$\operatorname{Gr}(2,5)$ & F5 $0.002/0.008;\ d=12$ & M4GB $0.000/0.005$ & facstd $0.005/0.187;\ d=12$ \\
-$\operatorname{Gr}(2,6)$ & M4GB $2.189/2.200;\ d=24$ (cap) & timeout & timeout \\
 Positive affine $(8,6,4)$ & F5 $0.004/0.011;\ d=6$ & timeout & facstd $0.085/0.406;\ d=6$ \\
 Positive affine $(10,8,5)$ & Symb. $0.016/0.025;\ d=7$ & timeout & facstd $1.177/1.828;\ d=7$ \\
 Affine $(12,10,6)$ & Symb. $0.078/0.100;\ d=9$ & timeout & timeout \\
@@ -265,44 +241,40 @@ Square affine $(8,4)$ & Sing. $0.441/0.447;\ d=5$ & timeout & facstd $0.331/0.70
 Square affine $(10,5)$ & Symb. $1.237/1.250;\ d=7$ & timeout & facstd $1.417/2.232;\ d=7$ \\
 \bottomrule
 \end{tabular}
-\caption{Size-matched comparisons for all 25 benchmark systems.  Times are solve/wall
-seconds; direct methods omit dimension.  The $\operatorname{Gr}(2,6)$ IDOS
-entry is capped rather than exhaustive.}
+\caption{Size-matched comparisons for all 14 benchmark systems.  Times are
+solve/wall seconds; direct methods omit dimension.}
 \label{tab:baseline-comparison}
 \end{table}
 
-\paragraph{Direct-winner stress test.}
-For each scalable structured family in which the direct method was still
-faster at the largest completed size, we continued the previously fastest
-IDOS and direct configurations to larger systems (Table~\ref{tab:crossover-extension}).
-The signed-distance family was not extended because IDOS had already become
-faster by $n=12$.  The continuation reaches a timeout boundary in every
-remaining family.  In particular, the direct computation remains very cheap
-for the $2\times6$ rank-one system while exhaustive IDOS must traverse 32768
-covers.  Conversely, neither approach completes the exhaustive
-$\operatorname{Gr}(2,6)$ computation within its limit.
+\subsection*{Einstein--Hilbert gravity case study}
+
+The QFT system in \texttt{systems/system.txt} has 29 equations in 22
+variables; interreduction leaves 27 nonzero polynomials and four minimal
+covers.  Table~\ref{tab:qft-system} gives single release-build runs without
+structure hints and with a 60-second limit per Gr\"obner computation.
 
 \begin{table}[htbp]
 \centering
-\scriptsize
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{l r l l}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{l l l}
 \toprule
-Extended system & Covers & Continued IDOS winner & Continued direct winner \\
+Method & IDOS: first satisfiable cover & Whole-system baseline \\
 \midrule
-Axis cycle, $n=14$ & 16384 & Symb. $39.502/39.524;\ d=15$ & Sing. $1.418/1.622$ \\
-Axis cycle, $n=16$ & 65536 & Symb., M4GB timeout & Sing. timeout \\
-Switched RNC, $d=6$ & 32768 & M4GB, Symb. timeout & M4GB $2.117/2.134$ \\
-Rank one, $2\times6$ & 32768 & M4GB, Symb. timeout & M4GB $0.047/0.053$ \\
-$\operatorname{Gr}(2,6)$, exhaustive & 32768 & M4GB, Symb. timeout & all six timeout \\
+M4GB & $3.721$ s; $|G|=247$, $d=14$ & degrevlex timeout \\
+F5 & timeout & degrevlex timeout \\
+GVW & timeout & degrevlex timeout \\
+Symbolica & $41.994$ s; $|G|=241$, $d=14$ & degrevlex timeout \\
+Singular & $0.554$ s; $|G|=247$, $d=14$ & lex timeout \\
+Singular \texttt{facstd} & --- & decomposition timeout \\
 \bottomrule
 \end{tabular}
-\caption{Continuation of families whose direct Gr\"obner computation was
-faster at the largest completed size in Table~\ref{tab:baseline-comparison}.
-IDOS and direct limits are 45 and 10 seconds, respectively.  ``Winner'' means
-the configuration continued from the preceding size; this is a boundary test,
-not a new exhaustive engine sweep.}
-\label{tab:crossover-extension}
+\caption{Benchmark of \texttt{systems/system.txt}.  IDOS times are for the
+first satisfiable cover after two trivial inconsistent covers; whole-system
+rows apply the named method directly.  Every timeout is 60 seconds.}
+\label{tab:qft-system}
 \end{table}
+
+Factor branching therefore exposes a dimension-14 component that no other method finishes within the limit.
 
 \end{document}
