@@ -145,13 +145,15 @@ def gated_katsura(output: Path, order: int) -> Instance:
     )
 
 
-def random_dense_quadratics(variables: int, seed: int) -> list[str]:
+def random_dense_quadratics(
+    variables: int, seed: int, *, count: int | None = None
+) -> list[str]:
     if variables < 2:
         raise ValueError("dense quadratic systems require at least two variables")
     generator = random.Random(seed)
     names = [f"r{index}" for index in range(variables)]
     polynomials = []
-    for _ in range(variables):
+    for _ in range(variables if count is None else count):
         terms = []
         for index, left in enumerate(names):
             for right in names[index:]:
@@ -189,6 +191,77 @@ def gated_random_dense_quadratic(
         description=(
             "A selector gates a seeded generic dense quadratic complete intersection. "
             "IDOS exhausts the common hyperplane and full residual-system covers."
+        ),
+    )
+
+
+def overlapping_random_multiples(
+    output: Path,
+    variables: int,
+    factor_pool: int,
+    factors_per_equation: int,
+    seed: int,
+) -> Instance:
+    if (
+        variables < 3
+        or factor_pool <= factors_per_equation
+        or factors_per_equation < 2
+    ):
+        raise ValueError(
+            "require at least three variables and 2 <= factors per equation < pool"
+        )
+    generator = random.Random(seed)
+    for _ in range(100):
+        groups = [
+            tuple(sorted(generator.sample(range(factor_pool), factors_per_equation)))
+            for _ in range(variables)
+        ]
+        used = set(itertools.chain.from_iterable(groups))
+        common = set(groups[0]).intersection(*groups[1:])
+        if len(set(groups)) == variables and len(used) == factor_pool and not common:
+            break
+    else:
+        raise ValueError("could not generate a covering non-universal factor pattern")
+
+    covers: list[tuple[int, ...]] = []
+    for size in range(1, factor_pool + 1):
+        for candidate in itertools.combinations(range(factor_pool), size):
+            chosen = set(candidate)
+            if any(set(cover).issubset(chosen) for cover in covers):
+                continue
+            if all(chosen.intersection(group) for group in groups):
+                covers.append(candidate)
+
+    factors = random_dense_quadratics(variables, seed + 1, count=factor_pool)
+    polynomials = [
+        "*".join(f"({factors[index]})" for index in group) for group in groups
+    ]
+    path = output / (
+        f"overlapping_random_multiples_n{variables}_p{factor_pool}"
+        f"_k{factors_per_equation}_seed{seed}.txt"
+    )
+    write_system(path, polynomials)
+    return Instance(
+        suite="positive-dimensional",
+        name=path.stem,
+        path=path.name,
+        variables=variables,
+        equations=variables,
+        idos_args=[
+            "--no-interreduce",
+            "--max-covers",
+            str(len(covers)),
+            "--gb",
+            "symbolica",
+        ],
+        description=(
+            f"Each equation is the product of {factors_per_equation} factors "
+            f"selected from a pool of {factor_pool} seeded dense quadratics; "
+            "factors overlap between equations but none divides every equation."
+        ),
+        expected_largest_component=(
+            f"The {len(covers)} minimal covers contain between "
+            f"{min(map(len, covers))} and {max(map(len, covers))} random quadratics."
         ),
     )
 
@@ -299,6 +372,9 @@ def generate_matrix(output: Path) -> list[Instance]:
     output.mkdir(parents=True, exist_ok=True)
     instances = [
         *(signed_distance_cycle(output, size) for size in (8, 10, 12)),
+        overlapping_random_multiples(output, 4, 6, 2, 31415),
+        overlapping_random_multiples(output, 6, 8, 3, 31415),
+        overlapping_random_multiples(output, 8, 10, 3, 31415),
         affine_factor_hypergraph(
             output,
             8,
@@ -600,6 +676,9 @@ MATRIX_REQUIRED_COVERS = {
     "signed_distance_cycle_n8": 8,
     "signed_distance_cycle_n10": 8,
     "signed_distance_cycle_n12": 32,
+    "overlapping_random_multiples_n4_p6_k2_seed31415": 4,
+    "overlapping_random_multiples_n6_p8_k3_seed31415": 16,
+    "overlapping_random_multiples_n8_p10_k3_seed31415": 28,
     "affine_factor_hypergraph_n8_m6_k4_seed42": 63,
     "affine_factor_hypergraph_n10_m8_k5_seed42": 239,
     "affine_factor_hypergraph_n12_m10_k6_seed42": 833,

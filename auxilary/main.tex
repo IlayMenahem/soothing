@@ -58,7 +58,7 @@ In this document we therefore look for a weaker object: a Gr\"obner basis for a 
             \If{$HS \cup F$ is satisfiable}
                 \State Add the solution to $S$
             \Else
-                \State Extract a minimal unsatisfiable core $U$ from $HS \cup F$
+                \State $U \gets \Call{GBCoreIterativeRefinement}{HS \cup F}$ as in Section 5 of \cite{sun2016}
                 \State $C \gets C \cup \{U\}$
             \EndIf
         \EndFor
@@ -93,25 +93,6 @@ In this document we therefore look for a weaker object: a Gr\"obner basis for a 
 \end{algorithmic}
 \end{algorithm}
 
-\begin{algorithm}
-\caption{Extracting a minimal unsatisfiable core}
-\label{alg:extracting a minimal unsatisfiable core}
-\begin{algorithmic}[1]
-    \Require A set of constraints $F$ that is unsatisfiable.
-
-    \State Initialize $U = F$
-    \For{each constraint $f \in F$}
-        \State $U' \gets U \setminus \{f\}$
-        \State Check whether $U'$ is unsatisfiable
-        \If{$U'$ is unsatisfiable}
-            \State $U \gets U'$
-        \EndIf
-    \EndFor
-
-    \Return $U$
-
-\end{algorithmic}
-\end{algorithm}
 
 The order of iteration over the minimal hitting sets and the structure hints should heuristically prioritize the easier to check sets first.
 
@@ -126,9 +107,12 @@ The order of iteration over the minimal hitting sets and the structure hints sho
 \textbf{Order of iteration over the minimal hitting sets}: the order is from the simplest to the most complex to check for satisfiability. As a heuristic for this cost we use the rule more factors $\Rightarrow$ more complex to check, and more hints $\Rightarrow$ easier to check.
 
 \subsection*{Finding the unsatisfiable cores}
-To check if a set of polynomials $F$ is satisfiable, we compute its reduced Gr\"obner basis $G$ with respect to a degrevlex order, using a signiture based algorithm such as F5, M4GB, or GVW.
+To check if a set of polynomials $F$ is satisfiable, we compute its reduced Gr\"obner basis $G$ with respect to a degrevlex order, using a signature-based algorithm such as F5, M4GB, or GVW.
 
 \textbf{unsatisfiable core} is a subset $U \subseteq F$ of factors with no common zero. We detect this from the reduced Gr\"obner basis of $U$, which equals $\{1\}$ exactly when $1 \in \langle U \rangle$.
+
+For an inconsistent cover, we shrink the certificate with the iterative
+GB-Core refinement algorithm of Sun et al.~\cite[Section~5]{sun2016}.
 
 If we were to select an hitting set $F$ that is contained in a previously found satisfiable hitting set $F'$, then $V(F) \supseteq V(F') \neq \emptyset$ and $F$ is also satisfiable. This is the dual of the unsatisfiable core property, and can be used to prune the search space in a similar way.
 
@@ -152,12 +136,14 @@ covers and how the inner Gr\"obner engine affects performance.
 
 \subsection*{Benchmark systems}
 
-The benchmark has 14 systems from five families
+The benchmark has 17 systems from six families
 (Table~\ref{tab:benchmark-families}).  In the structured suite, covers encode
 geometric choices such as signed edge lengths or selected affine factors.  In
 the hard-residual suite, a common selector gates a Cyclic, Katsura, or
 dense-quadratic system, so IDOS must solve both the selector hyperplane and a
-nonlinear residual cover.
+nonlinear residual cover.  The overlapping-random-multiple suite tests repeated
+nonlinear factors directly: each equation contains a random subset of a pool of
+seeded dense quadratics, with overlap but no factor common to every equation.
 
 \begin{table}[t]
 \centering
@@ -170,13 +156,14 @@ nonlinear residual cover.
 Family & Tested sizes & Variables/equations and required covers \\
 \midrule
 Signed-distance cycle & $n=8,10,12$ & $(8,8),(10,10),(12,12)$; $8,8,32$ covers after interreduction \\
+Overlapping random multiples & $(n,p,k)=$\newline $(4,6,2),(6,8,3),$\newline $(8,10,3)$, seed 31415 & $(n,n)$; $4,16,28$ covers without interreduction \\
 Positive affine hypergraph & $(n,m,k)=$\newline $(8,6,4),(10,8,5),$\newline $(12,10,6)$ & $63,239,833$ covers \\
 Gated Cyclic & orders $5,6$ & $(6,5),(7,6)$; two covers \\
 Gated Katsura and dense quadratics & Katsura $6,7$; dense $n=5,6$ & $(8,7),(9,8),(6,5),(7,6)$; two covers \\
 Square affine hypergraph & $(n,k)=(8,4),(10,5)$, seed 42 & $(8,8),(10,10)$; $31,304$ covers \\
 \bottomrule
 \end{tabular}
-\caption{The 14 nontrivial systems used in the experiments.  A pair in the
+\caption{The 17 nontrivial systems used in the experiments.  A pair in the
 third column gives (number of variables, number of equations).}
 \label{tab:benchmark-families}
 \end{table}
@@ -185,7 +172,11 @@ third column gives (number of variables, number of equations).}
 
 The matrix contains 15 algorithms: IDOS with M4GB, F5, GVW, Symbolica, or
 Singular; six direct whole-ideal Gr\"obner methods; and four decomposition or
-numerical methods from Singular, Macaulay2, and HomotopyContinuation.jl.
+numerical methods from Singular, Macaulay2, and HomotopyContinuation.jl.  For
+the three overlapping-random-multiple systems, IDOS passes
+\texttt{--no-interreduce}, preserving the generated factor-incidence pattern
+instead of replacing the input by an interreduced basis; all direct and
+decomposition baselines are also measured on the original systems.
 Structured and hard-residual IDOS runs use 45- and 20-second limits,
 respectively; other methods use 10 seconds.  Entries report solve/wall seconds
 and, when applicable, the largest component dimension.  Every
@@ -193,22 +184,21 @@ system--algorithm pair was run; failures are recorded as timeouts.  The full
 matrix is stored in
 \texttt{results/idos\_engine\_comparison.md}.
 
-Each entry is a single run.  Because the measurements combine earlier
-single-worker runs with an eight-worker completion sweep, solve times are more
-comparable than wall times; publication timings should be repeated with one
-worker.
+Each entry is a single run.  The overlapping-random-multiple measurements are
+fresh single-worker runs; the other rows retain their earlier measurement
+settings.
 
 \subsection*{Results}
 
 \paragraph{Scaling.}
-Symbolica processes the 833-cover positive affine system in $0.100$ wall
+Symbolica processes the 833-cover positive affine system in $0.092$ wall
 seconds.  Completed IDOS runs agree on the largest dimension throughout the
 matrix.
 
 \paragraph{Inner engine.}
-Symbolica is strongest on the square affine $(10,5)$ system ($1.250$
+Symbolica is strongest on the square affine $(10,5)$ system ($1.188$
 seconds).  Singular dominates the larger nonlinear residuals: gated Cyclic-6
-takes $0.046$ seconds with Singular, compared with $2.695$ for GVW and $6.574$
+takes $0.063$ seconds with Singular, compared with $2.289$ for GVW and $5.947$
 for F5, while M4GB and Symbolica are partial.  Thus no inner engine dominates
 both regimes.
 
@@ -225,23 +215,26 @@ its wall time is consistently lower than the fastest completed decomposition.
 \toprule
 System & Best IDOS & Best direct GB & Best decomposition \\
 \midrule
-Signed-distance, $n=8$ & M4GB $0.003/0.013;\ d=1$ & built-in $0.001/0.007$ & facstd $0.017/0.259;\ d=1$ \\
-Signed-distance, $n=10$ & Symb. $0.022/0.028;\ d=1$ & built-in $0.022/0.028$ & facstd $0.244/0.416;\ d=1$ \\
-Signed-distance, $n=12$ & Symb. $0.098/0.104;\ d=1$ & built-in $0.531/0.540$ & primdec $3.048/3.409;\ d=1$ \\
-Positive affine $(8,6,4)$ & F5 $0.004/0.011;\ d=6$ & timeout & facstd $0.085/0.406;\ d=6$ \\
-Positive affine $(10,8,5)$ & Symb. $0.016/0.025;\ d=7$ & timeout & facstd $1.177/1.828;\ d=7$ \\
-Affine $(12,10,6)$ & Symb. $0.078/0.100;\ d=9$ & timeout & timeout \\
-Gated Cyclic-5 & Symb. $0.004/0.010;\ d=5$ & built-in $0.004/0.009$ & facstd $0.005/0.189;\ d=5$ \\
-Gated Cyclic-6 & Sing. $0.041/0.046;\ d=6$ & Sing. $0.144/0.438$ & M2 $2.966/2.676;\ d=6$ \\
-Gated Katsura-6 & Sing. $0.046/0.052;\ d=7$ & GVW $0.295/0.304$ & facstd $0.057/0.281;\ d=7$ \\
-Gated Katsura-7 & Sing. $0.283/0.290;\ d=8$ & GVW $3.658/3.665$ & timeout \\
-Gated dense, $n=5$ & Sing. $0.023/0.029;\ d=5$ & M4GB $0.202/0.209$ & facstd $0.016/0.255;\ d=5$ \\
-Gated dense, $n=6$ & Sing. $0.541/0.547;\ d=6$ & M4GB $5.673/5.682$ & facstd $0.616/0.869;\ d=6$ \\
-Square affine $(8,4)$ & Sing. $0.441/0.447;\ d=5$ & timeout & facstd $0.331/0.701;\ d=5$ \\
-Square affine $(10,5)$ & Symb. $1.237/1.250;\ d=7$ & timeout & facstd $1.417/2.232;\ d=7$ \\
+Signed-distance, $n=8$ & M4GB $0.003/0.008;\ d=1$ & built-in $0.001/0.007$ & facstd $0.017/0.259;\ d=1$ \\
+Signed-distance, $n=10$ & Symb. $0.020/0.026;\ d=1$ & built-in $0.022/0.028$ & facstd $0.244/0.416;\ d=1$ \\
+Signed-distance, $n=12$ & Symb. $0.088/0.094;\ d=1$ & built-in $0.531/0.540$ & primdec $3.048/3.409;\ d=1$ \\
+Overlapping $(4,6,2)$ & F5 $0.005/0.012;\ d=2$ & built-in $0.408/0.413$ & facstd $0.047/0.266;\ d=2$ \\
+Overlapping $(6,8,3)$ & F5 $0.100/0.128;\ d=3$ & timeout & timeout \\
+Overlapping $(8,10,3)$ & Sing. $2.829/2.926;\ d=5$ & timeout & timeout \\
+Positive affine $(8,6,4)$ & F5 $0.003/0.008;\ d=6$ & timeout & facstd $0.085/0.406;\ d=6$ \\
+Positive affine $(10,8,5)$ & F5 $0.014/0.022;\ d=7$ & timeout & facstd $1.177/1.828;\ d=7$ \\
+Affine $(12,10,6)$ & F5 $0.071/0.091;\ d=9$ & timeout & timeout \\
+Gated Cyclic-5 & Symb. $0.004/0.009;\ d=5$ & built-in $0.004/0.009$ & facstd $0.005/0.189;\ d=5$ \\
+Gated Cyclic-6 & Sing. $0.057/0.063;\ d=6$ & Sing. $0.144/0.438$ & M2 $2.966/2.676;\ d=6$ \\
+Gated Katsura-6 & Sing. $0.044/0.050;\ d=7$ & GVW $0.295/0.304$ & facstd $0.057/0.281;\ d=7$ \\
+Gated Katsura-7 & Sing. $0.292/0.298;\ d=8$ & GVW $3.658/3.665$ & timeout \\
+Gated dense, $n=5$ & Sing. $0.025/0.031;\ d=5$ & M4GB $0.202/0.209$ & facstd $0.016/0.255;\ d=5$ \\
+Gated dense, $n=6$ & Sing. $0.534/0.540;\ d=6$ & M4GB $5.673/5.682$ & facstd $0.616/0.869;\ d=6$ \\
+Square affine $(8,4)$ & Sing. $0.675/0.682;\ d=5$ & timeout & facstd $0.331/0.701;\ d=5$ \\
+Square affine $(10,5)$ & Symb. $1.176/1.188;\ d=7$ & timeout & facstd $1.417/2.232;\ d=7$ \\
 \bottomrule
 \end{tabular}
-\caption{Size-matched comparisons for all 14 benchmark systems.  Times are
+\caption{Size-matched comparisons for all 17 benchmark systems.  Times are
 solve/wall seconds; direct methods omit dimension.}
 \label{tab:baseline-comparison}
 \end{table}
@@ -276,5 +269,20 @@ rows apply the named method directly.  Every timeout is 60 seconds.}
 \end{table}
 
 Factor branching therefore exposes a dimension-14 component that no other method finishes within the limit.
+
+\subsection*{Experimental conclusions}
+As we saw IDOS preforms much better than the other methods on systems that, the polynomials have a small number of minimal hitting sets of factors that are satisfiable or unsatisfiable but don't share an unsatisfiable core.
+This is assuming that the hitting sets are simpler to check for satisfiability than the whole system, which is reasonable since the whole system is usually more complex than the factors.
+IDOS also works well if we want to find a limited number of solutions, since we can stop the search after finding that number of solutions.
+
+\begin{thebibliography}{1}
+\bibitem{sun2016}
+X.~Sun, I.~Ilioaea, P.~Kalla, and F.~Enescu,
+\newblock ``Finding Unsatisfiable Cores of a Set of Polynomials using the
+Gr\"obner Basis Algorithm,''
+\newblock in \emph{Principles and Practice of Constraint Programming (CP)},
+LNCS 9892, pp.~859--875, 2016.
+\newblock \url{https://my.ece.utah.edu/~kalla/papers/cp2016-paper-55.pdf}.
+\end{thebibliography}
 
 \end{document}
