@@ -1,8 +1,7 @@
 \section{Method}
 
 % some background on the method
-
-% the algorithm pseudocode
+Our method breaks down the computation of ...
 
 \begin{algorithm}
 \caption{Branching}
@@ -15,7 +14,6 @@
 
     \State Initialize $C \gets \emptyset$ an unsatisfiable cores set
     \State Initialize $S \gets \emptyset$ a solutions set
-    \State Initialize $T \gets \emptyset$ a timeout set
 
     \For{Each minimal hitting set $HS$ of $C_1, \ldots, C_m$}
         \If{$HS$ contains an unsatisfiable core from $C$}
@@ -25,15 +23,12 @@
         \State Check if $HS$ is satisfiable, and check if it is unsatisfiable
         \If{$HS$ is satisfiable}
             \State Add the solution to $S$
-        \ElsIf{$HS$ is unsatisfiable}
-            \State $U \gets \Call{GBCoreIterativeRefinement}{HS}$ as in Section 5 of \cite{sun2016}
-            \State $C \gets C \cup \{U\}$
         \Else
-            \State Add $HS$ to $T$
+            \State $C \gets C \cup \{\Call{GBCoreIterativeRefinement}{HS}\}$ as in Section 5 of \cite{sun2016}
         \EndIf
     \EndFor
 
-    \Return $S$, $C$, $T$
+    \Return $S$, $C$
 
 \end{algorithmic}
 \end{algorithm}
@@ -47,4 +42,16 @@
     \label{fig:branching_flowchart}
 \end{figure}
 
-% A figure of minimal hitting set of factors
+\paragraph*{Order of iteration:} The order of iteration over the hitting sets is from the simplest to the most complex to check for satisfiability.
+As a heuristic for this cost we use the rule more constraint factors, the more complex to check.
+
+\paragraph*{Lazy iteration:} The algorithm iterates over the hitting sets in a lazy manner, skipping hitting sets that contain a learned unsatisfiable core.
+
+%% Factor merging to reduce the number of minimal hitting sets to iterate over
+
+% Theoretical analysis of the method
+
+%% If for every hitting set of factors we can find a solution or tell that it is unsatisfiable
+%% then we can find all solutions of the system of polynomials
+
+%% Complexity analysis: The worst case complexity is better, ...

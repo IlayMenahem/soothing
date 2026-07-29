@@ -40,8 +40,7 @@
 \node[blue box, right=12mm of prep] (init) {%
     \textcolor{blue}{\bfseries Initialization}\\[3pt]
     Unsatisfiable cores $C \leftarrow$ empty set\\
-    Solutions $S \leftarrow$ empty set\\
-    Timeouts $T \leftarrow$ empty set};
+    Solutions $S \leftarrow$ empty set};
 
 % ---- loop over minimal hitting sets ----
 \node[loop box] (loop) at ($(init.south)+(-20mm,-16mm)$) {%
@@ -57,30 +56,26 @@
 % ---- solve ----
 \node[blue box, below=9mm of learned] (solve) {%
     \textcolor{blue}{\bfseries Check satisfiability of $HS$}\\[3pt]
-    \tikz{\node[blue subbox] {Gr\"obner basis computation under a time budget};}};
+    \tikz{\node[blue subbox] {Gr\"obner basis computation};}};
 
-% ---- three outcome branches ----
-\node[red box] (unsat) at ($(solve.south)+(-52mm,-20mm)$) {%
+% ---- two outcome branches ----
+\node[red box] (unsat) at ($(solve.south)+(-34mm,-20mm)$) {%
     \textcolor{red}{\bfseries Unsatisfiable}\\[3pt]
     \tikz{\node[red subbox] {$U \leftarrow$ minimal unsat core of $HS$\\
         by iterative refinement,\\ learn it: $C \leftarrow C \cup \{U\}$};}};
 
-\node[gray box] (timeout) at ($(solve.south)+(0,-20mm)$) {%
-    \textcolor{black!65}{\bfseries Undecided}\\[3pt]
-    \tikz{\node[gray subbox] {Add $HS$ to $T$};}};
-
-\node[green box] (sat) at ($(solve.south)+(52mm,-20mm)$) {%
+\node[green box] (sat) at ($(solve.south)+(34mm,-20mm)$) {%
     \textcolor{green!45!black}{\bfseries Satisfiable}\\[3pt]
     \tikz{\node[green subbox] {Add the solution to $S$};}};
 
 % ---- bottom rail ----
 \coordinate (raill) at ($(unsat.south)+(0,-8mm)$);
-\coordinate (railm) at (raill -| timeout.south);
+\coordinate (railm) at (raill -| solve.south);
 \coordinate (railr) at (raill -| sat.south);
 
 % ---- return ----
 \node[return box] (return) at ($(railm)+(0,-14mm)$)
-    {\textcolor{violet}{\bfseries Return $S$, $C$, and $T$}};
+    {\textcolor{violet}{\bfseries Return $S$ and $C$}};
 
 % ---- arrows: top pipeline ----
 \draw[arr] (input) -- (prep);
@@ -92,12 +87,10 @@
 \draw[arr] (learned.east) -- node[above] {Yes} (prune.west);
 \draw[arr] (learned.south) -- node[right] {No} (solve.north);
 \draw[arr, rounded corners=5pt] (solve.south) |- (unsat.east);
-\draw[arr] (solve.south) -- (timeout.north);
 \draw[arr, rounded corners=5pt] (solve.south) |- (sat.west);
 
 % ---- bottom rail into return ----
 \draw[line width=1pt] (unsat.south) -- (raill) -- (railr) -- (sat.south);
-\draw[line width=1pt] (timeout.south) -- (railm);
 \draw[arr] (railm) -- node[right] {all $HS$ tried} (return);
 
 % ---- feedback: next hitting set ----
