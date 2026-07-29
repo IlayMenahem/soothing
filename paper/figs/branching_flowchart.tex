@@ -1,0 +1,110 @@
+\begin{tikzpicture}[
+    font=\small,
+    every node/.style={align=center},
+    blue box/.style={draw=blue!70!cyan, line width=1pt, rounded corners=6pt,
+        fill=blue!50!cyan!4, inner sep=7pt},
+    blue subbox/.style={draw=blue!60!cyan, line width=.6pt, rounded corners=3pt,
+        fill=blue!50!cyan!10, inner sep=4pt, font=\footnotesize},
+    loop box/.style={draw=orange!85!black, line width=1pt, rounded corners=6pt,
+        fill=yellow!40!orange!12, inner sep=7pt},
+    decision/.style={draw=green!55!black, line width=1pt, diamond, aspect=1.8,
+        fill=green!60!teal!8, inner sep=1pt},
+    green box/.style={draw=green!55!black, line width=1pt, rounded corners=6pt,
+        fill=green!60!teal!4, inner sep=7pt},
+    green subbox/.style={draw=green!55!black, line width=.6pt, rounded corners=3pt,
+        fill=white, inner sep=4pt, font=\footnotesize},
+    red box/.style={draw=red!70, line width=1pt, rounded corners=6pt,
+        fill=red!4, inner sep=7pt},
+    red subbox/.style={draw=red!70, line width=.6pt, rounded corners=3pt,
+        fill=white, inner sep=4pt, font=\footnotesize},
+    gray box/.style={draw=black!55, line width=1pt, rounded corners=6pt,
+        fill=black!4, inner sep=7pt},
+    gray subbox/.style={draw=black!55, line width=.6pt, rounded corners=3pt,
+        fill=white, inner sep=4pt, font=\footnotesize},
+    return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
+        fill=violet!6, inner sep=7pt},
+    arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
+]
+
+% ---- top row: input -> preprocessing -> initialization ----
+\node[blue box] (input) {%
+    \textcolor{blue}{\bfseries Input}\\[3pt]
+    Polynomials $P = \{p_1,\ldots,p_m\}$};
+
+\node[blue box, right=12mm of input] (prep) {%
+    \textcolor{blue}{\bfseries Preprocessing}\\[4pt]
+    \tikz{\node[blue subbox] {Interreduce the polynomials};}
+    \textcolor{blue}{$\boldsymbol{\rightarrow}$}
+    \tikz{\node[blue subbox] {Factor into irreducible factors $C_1,\ldots,C_m$};}};
+
+\node[blue box, right=12mm of prep] (init) {%
+    \textcolor{blue}{\bfseries Initialization}\\[3pt]
+    Unsatisfiable cores $C \leftarrow$ empty set\\
+    Solutions $S \leftarrow$ empty set\\
+    Timeouts $T \leftarrow$ empty set};
+
+% ---- loop over minimal hitting sets ----
+\node[loop box] (loop) at ($(init.south)+(-20mm,-16mm)$) {%
+    \textcolor{orange!75!black}{\bfseries Loop}\\[3pt]
+    Iterate over minimal hitting sets $HS$ of $C_1,\ldots,C_m$};
+
+% ---- unsat-core decision + prune ----
+\node[decision, below=9mm of loop] (learned) {%
+    Does $HS$ contain a\\ learned unsat core\\ from $C$?};
+
+\node[green box, right=14mm of learned] (prune) {Prune / skip};
+
+% ---- solve ----
+\node[blue box, below=9mm of learned] (solve) {%
+    \textcolor{blue}{\bfseries Check satisfiability of $HS$}\\[3pt]
+    \tikz{\node[blue subbox] {Gr\"obner basis computation under a time budget};}};
+
+% ---- three outcome branches ----
+\node[red box] (unsat) at ($(solve.south)+(-52mm,-20mm)$) {%
+    \textcolor{red}{\bfseries Unsatisfiable}\\[3pt]
+    \tikz{\node[red subbox] {$U \leftarrow$ minimal unsat core of $HS$\\
+        by iterative refinement,\\ learn it: $C \leftarrow C \cup \{U\}$};}};
+
+\node[gray box] (timeout) at ($(solve.south)+(0,-20mm)$) {%
+    \textcolor{black!65}{\bfseries Undecided}\\[3pt]
+    \tikz{\node[gray subbox] {Add $HS$ to $T$};}};
+
+\node[green box] (sat) at ($(solve.south)+(52mm,-20mm)$) {%
+    \textcolor{green!45!black}{\bfseries Satisfiable}\\[3pt]
+    \tikz{\node[green subbox] {Add the solution to $S$};}};
+
+% ---- bottom rail ----
+\coordinate (raill) at ($(unsat.south)+(0,-8mm)$);
+\coordinate (railm) at (raill -| timeout.south);
+\coordinate (railr) at (raill -| sat.south);
+
+% ---- return ----
+\node[return box] (return) at ($(railm)+(0,-14mm)$)
+    {\textcolor{violet}{\bfseries Return $S$, $C$, and $T$}};
+
+% ---- arrows: top pipeline ----
+\draw[arr] (input) -- (prep);
+\draw[arr] (prep) -- (init);
+\draw[arr] (init.south) -- (init.south |- loop.north);
+
+% ---- loop body ----
+\draw[arr] (loop.south) -- (learned.north);
+\draw[arr] (learned.east) -- node[above] {Yes} (prune.west);
+\draw[arr] (learned.south) -- node[right] {No} (solve.north);
+\draw[arr, rounded corners=5pt] (solve.south) |- (unsat.east);
+\draw[arr] (solve.south) -- (timeout.north);
+\draw[arr, rounded corners=5pt] (solve.south) |- (sat.west);
+
+% ---- bottom rail into return ----
+\draw[line width=1pt] (unsat.south) -- (raill) -- (railr) -- (sat.south);
+\draw[line width=1pt] (timeout.south) -- (railm);
+\draw[arr] (railm) -- node[right] {all $HS$ tried} (return);
+
+% ---- feedback: next hitting set ----
+\coordinate (fbcol) at ($(sat.east)+(14mm,0)$);
+\draw[arr, rounded corners=5pt]
+    (prune.east) -- (prune.east -| fbcol) |- (loop.east);
+\draw[arr, rounded corners=5pt]
+    (railr) -- node[below] {next $HS$} (railr -| fbcol) |- (loop.east);
+
+\end{tikzpicture}
