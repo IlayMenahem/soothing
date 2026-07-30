@@ -3,83 +3,71 @@
     every node/.style={align=center},
     blue box/.style={draw=blue!70!cyan, line width=1pt, rounded corners=6pt,
         fill=blue!50!cyan!4, inner sep=7pt},
-    blue subbox/.style={draw=blue!60!cyan, line width=.6pt, rounded corners=3pt,
-        fill=blue!50!cyan!10, inner sep=4pt, font=\footnotesize},
     loop box/.style={draw=orange!85!black, line width=1pt, rounded corners=6pt,
         fill=yellow!40!orange!12, inner sep=7pt},
     decision/.style={draw=green!55!black, line width=1pt, diamond, aspect=1.8,
         fill=green!60!teal!8, inner sep=1pt},
     green box/.style={draw=green!55!black, line width=1pt, rounded corners=6pt,
         fill=green!60!teal!4, inner sep=7pt},
-    green subbox/.style={draw=green!55!black, line width=.6pt, rounded corners=3pt,
-        fill=white, inner sep=4pt, font=\footnotesize},
     red box/.style={draw=red!70, line width=1pt, rounded corners=6pt,
         fill=red!4, inner sep=7pt},
-    red subbox/.style={draw=red!70, line width=.6pt, rounded corners=3pt,
-        fill=white, inner sep=4pt, font=\footnotesize},
-    gray box/.style={draw=black!55, line width=1pt, rounded corners=6pt,
-        fill=black!4, inner sep=7pt},
-    gray subbox/.style={draw=black!55, line width=.6pt, rounded corners=3pt,
-        fill=white, inner sep=4pt, font=\footnotesize},
     return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
         fill=violet!6, inner sep=7pt},
     arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
 ]
 
-% ---- top row: input -> preprocessing -> initialization ----
+% ---- top row: input -> factorization -> initialization ----
 \node[blue box] (input) {%
     \textcolor{blue}{\bfseries Input}\\[3pt]
     Polynomials $P = \{p_1,\ldots,p_m\}$};
 
-\node[blue box, right=12mm of input] (prep) {%
-    \textcolor{blue}{\bfseries Preprocessing}\\[4pt]
-    \tikz{\node[blue subbox] {Interreduce the polynomials};}
-    \textcolor{blue}{$\boldsymbol{\rightarrow}$}
-    \tikz{\node[blue subbox] {Factor into irreducible factors $C_1,\ldots,C_m$};}};
+\node[blue box, right=12mm of input] (factors) {%
+    \textcolor{blue}{\bfseries Factorization}\\[3pt]
+    Form the factor sets $C_1,\ldots,C_m$};
 
-\node[blue box, right=12mm of prep] (init) {%
+\node[blue box, right=12mm of factors] (init) {%
     \textcolor{blue}{\bfseries Initialization}\\[3pt]
-    Unsatisfiable cores $C \leftarrow$ empty set\\
-    Solutions $S \leftarrow$ empty set};
+    Learned cores $C \leftarrow \emptyset$\\
+    Solutions $S \leftarrow \emptyset$};
 
 % ---- loop over minimal hitting sets ----
-\node[loop box] (loop) at ($(init.south)+(-20mm,-16mm)$) {%
+\node[loop box] (loop) at ($(init.south)+(-20mm,-8mm)$) {%
     \textcolor{orange!75!black}{\bfseries Loop}\\[3pt]
-    Iterate over minimal hitting sets $HS$ of $C_1,\ldots,C_m$};
+    Consider the next minimal hitting set $HS$\\
+    of $C_1,\ldots,C_m$};
 
 % ---- unsat-core decision + prune ----
-\node[decision, below=9mm of loop] (learned) {%
+\node[decision, below=4mm of loop] (learned) {%
     Does $HS$ contain a\\ learned unsat core\\ from $C$?};
 
 \node[green box, right=14mm of learned] (prune) {Prune / skip};
 
 % ---- solve ----
-\node[blue box, below=9mm of learned] (solve) {%
-    \textcolor{blue}{\bfseries Check satisfiability of $HS$}\\[3pt]
-    \tikz{\node[blue subbox] {Gr\"obner basis computation};}};
+\node[blue box, below=4mm of learned] (solve)
+    {\textcolor{blue}{\bfseries Check satisfiability of $HS$}};
 
 % ---- two outcome branches ----
-\node[red box] (unsat) at ($(solve.south)+(-34mm,-20mm)$) {%
+\node[red box] (unsat) at ($(solve.south)+(-34mm,-14mm)$) {%
     \textcolor{red}{\bfseries Unsatisfiable}\\[3pt]
-    \tikz{\node[red subbox] {$U \leftarrow$ minimal unsat core of $HS$\\
-        by iterative refinement,\\ learn it: $C \leftarrow C \cup \{U\}$};}};
+    Add an unsatisfiable core\\
+    $U \subseteq HS$ to $C$};
 
 \node[green box] (sat) at ($(solve.south)+(34mm,-20mm)$) {%
     \textcolor{green!45!black}{\bfseries Satisfiable}\\[3pt]
-    \tikz{\node[green subbox] {Add the solution to $S$};}};
+    Add the returned solutions to $S$};
 
 % ---- bottom rail ----
-\coordinate (raill) at ($(unsat.south)+(0,-8mm)$);
+\coordinate (raill) at ($(unsat.south)+(0,-3mm)$);
 \coordinate (railm) at (raill -| solve.south);
 \coordinate (railr) at (raill -| sat.south);
 
 % ---- return ----
-\node[return box] (return) at ($(railm)+(0,-14mm)$)
+\node[return box] (return) at ($(railm)+(0,-8mm)$)
     {\textcolor{violet}{\bfseries Return $S$ and $C$}};
 
 % ---- arrows: top pipeline ----
-\draw[arr] (input) -- (prep);
-\draw[arr] (prep) -- (init);
+\draw[arr] (input) -- (factors);
+\draw[arr] (factors) -- (init);
 \draw[arr] (init.south) -- (init.south |- loop.north);
 
 % ---- loop body ----

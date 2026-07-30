@@ -1,7 +1,10 @@
 \section{Method}
 
 % some background on the method
-Let us say we have a very large polynomial system $P$
+Let us say we have a very large polynomial system $P$, we factorize the polynomials in $P$ and get a set of factors $C_1, \ldots, C_m$.
+We iterate over all the minimal hitting sets of $C_1, \ldots, C_m$, and solve the polynomial system corresponding to each minimal hitting set.
+We show that the union of the solution sets our algorithm returns is the full solution set of $P$.
+Additionally, we optimize the order of iteration over the minimal hitting sets, and learn unsatisfiable cores to skip hitting sets that contain them and thus unsolvable.
 
 \begin{algorithm}
 \caption{Branching}
@@ -53,9 +56,8 @@ This allows our method to learn early unsatisfiable cores that are easier to che
 \paragraph*{Lazy iteration:} The algorithm iterates over the hitting sets in a lazy manner, skipping hitting sets that contain a learned unsatisfiable core.
 
 %% Factor merging to reduce the number of minimal hitting sets to iterate over
-\paragraph*{Factor merging:} Under certain conditions, the increased number of minimal hitting sets !!!
-can be more detrimental than the cost of solving and checking satisfiability of minimal hitting sets with larger factors.
-So we !!!
+%% \paragraph*{Factor merging:} Under certain conditions, the increased number of minimal hitting sets can be more detrimental for the overall cost of the algorithm, than the cost of solving and checking satisfiability of hitting sets with larger factors.
+%% So we !!! write about the conditions and the factor merging procedure. !!!
 
 % Theoretical analysis of the method
 \subsection{Theoretical analysis}
