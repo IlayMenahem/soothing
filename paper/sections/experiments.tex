@@ -1,2 +1,101 @@
 \section{Experiments}
 
+\subsection{Setup}
+
+We implemented Algorithm~\ref{alg:Branching} in Rust 1.97.1 and used
+Symbolica 1.5 for polynomial arithmetic over the rationals. A branch can be checked by
+M4GB, F5, GVW, Symbolica's built-in Gr\"obner basis implementation, or
+Singular 4.4.1.  The comparison also includes six direct whole-ideal
+Gr\"obner basis configurations, three decomposition methods from Singular, Macaulay2 1.26.06, and a numerical method from HomotopyContinuation.jl under Julia 1.12.6.
+
+We ran the benchmark on an Apple M4 Pro with 14 CPU cores and 24 GB of memory.
+Every table entry is a single run. Every method received 60 seconds per system.
+
+For branching, $T$ is end-to-end wall time and $F$ is the time from the start
+of the factor-cover search to its first satisfiable cover.  Factorization and
+input processing are therefore included in $T$ but not in $F$.
+The complete measurements are stored in the appendix.
+
+\subsection{Baseline systems}
+
+The baseline has 17 generated systems in six families. Signed-distance cycles and
+affine-factor hypergraphs test many inexpensive covers.  The overlapping
+random multiples use seeded dense quadratic factors that recur across
+equations, with no factor shared by every equation.  In the gated systems, a
+single selector multiplies every equation of a Cyclic, Katsura, or dense
+quadratic system.  This produces one easy selector cover and one nonlinear
+residual cover.
+
+\begin{table}[htbp]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l l l}
+\hline
+Family & Tested sizes & Variables/equations; covers \\
+\hline
+Signed-distance cycle & $n=8,10,12$ & $8/8,10/10,12/12$; $8,8,32$ \\
+Overlapping random multiples & $(n,p,k)=(4,6,2),(6,8,3),(8,10,3)$ & $n/n$; $4,16,28$ \\
+Positive affine hypergraph & $(n,m,k)=(8,6,4),(10,8,5),(12,10,6)$ & $n/m$; $63,239,833$ \\
+Gated Cyclic & orders $5,6$ & $6/5,7/6$; $2,2$ \\
+Gated Katsura and dense quadratics & Katsura $6,7$; dense $n=5,6$ & $8/7,9/8,6/5,7/6$; $2$ each \\
+Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $31,304$ \\
+\hline
+\end{tabular}%
+}
+\caption{The generated systems used for the baseline benchmark.  The
+overlapping random multiples use seed 31415; both affine families use seed
+42.}
+\label{tab:benchmark-families}
+\end{table}
+
+The overlapping-random-multiple runs disable interreduction so that the
+generated factor-incidence pattern reaches the cover enumerator unchanged.
+All other branching runs use interreduction.  Table~\ref{tab:baseline-comparison}
+selects the fastest completed branching backend and the fastest completed
+method in each baseline class.  A branching entry gives $T/F$ in seconds;
+the other entries give total wall time.  ``Timeout'' means that every tested
+method in that class timed out.
+
+\begin{table}[htbp]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l l l l}
+\hline
+System & Best branching $T/F$ & Best direct GB & Best decomposition \\
+\hline
+Signed distance, $n=8$ & Symb. $0.008/0.000$ & built-in $0.008$ & facstd $0.190$ \\
+Signed distance, $n=10$ & Symb. $0.025/0.002$ & built-in $0.029$ & facstd $0.430$ \\
+Signed distance, $n=12$ & Symb. $0.087/0.002$ & built-in $0.472$ & primdec $3.056$ \\
+Overlapping $(4,6,2)$ & F5 $0.008/0.000$ & built-in $0.413$ & facstd $0.265$ \\
+Overlapping $(6,8,3)$ & F5 $0.132/0.001$ & timeout & timeout \\
+Overlapping $(8,10,3)$ & Singular $2.931/0.010$ & timeout & timeout \\
+Positive affine $(8,6,4)$ & F5 $0.008/0.000$ & timeout & facstd $0.368$ \\
+Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & timeout & facstd $1.836$ \\
+Positive affine $(12,10,6)$ & F5 $0.067/0.000$ & timeout & facstd $53.318$ \\
+Gated Cyclic-5 & Symb. $0.009/0.000$ & built-in $0.008$ & facstd $0.181$ \\
+Gated Cyclic-6 & Singular $0.045/0.008$ & Singular $0.309$ & M2 $2.620$ \\
+Gated Katsura-6 & Singular $0.049/0.008$ & GVW $0.226$ & facstd $0.233$ \\
+Gated Katsura-7 & Singular $0.283/0.008$ & GVW $3.176$ & facstd $0.539$ \\
+Gated dense, $n=5$ & Singular $0.029/0.008$ & M4GB $0.171$ & facstd $0.198$ \\
+Gated dense, $n=6$ & Singular $0.546/0.008$ & M4GB $4.736$ & facstd $0.755$ \\
+Square affine $(8,4)$ & Singular $0.470/0.023$ & timeout & facstd $0.601$ \\
+Square affine $(10,5)$ & Symb. $1.174/0.000$ & timeout & facstd $2.141$ \\
+\hline
+\end{tabular}%
+}
+\caption{Best completed result in each method class.  Branching entries show
+wall time and first-solution latency; baseline entries show wall time.  All
+times are in seconds.}
+\label{tab:baseline-comparison}
+\end{table}
+
+% add analysis of the results
+
+\subsection{Physical Systems}
+% explanation of the physical systems, and the reason to use the general pipeline for solving them.
+
+% Performance table of the pipeline by the internal subsolver (i.e F4, F5, etc.)

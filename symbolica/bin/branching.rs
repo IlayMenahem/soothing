@@ -155,6 +155,7 @@ struct Component {
 struct SearchResult {
     components: Vec<Component>,
     cores: Vec<Core>,
+    first_solution: Option<Duration>,
     total_covers: usize,
     considered: usize,
     solved: usize,
@@ -180,6 +181,7 @@ fn run_search(
     let started = Instant::now();
     let mut components = Vec::new();
     let mut cores: Vec<Core> = Vec::new();
+    let mut first_solution = None;
     let mut considered = 0;
     let mut solved = 0;
     let mut inconsistent = 0;
@@ -214,6 +216,7 @@ fn run_search(
         let cover_started = Instant::now();
         match evaluate_cover(candidate.clone(), timeout, options.gb_backend) {
             Outcome::Consistent(basis) => {
+                first_solution.get_or_insert_with(|| started.elapsed());
                 solved += 1;
                 let dimension = solution_dimension(&basis.elements, nvars);
                 let dimension_label =
@@ -264,6 +267,7 @@ fn run_search(
     SearchResult {
         components,
         cores,
+        first_solution,
         total_covers: covers.len(),
         considered,
         solved,
@@ -330,6 +334,11 @@ fn main() {
     let result = run_search(&options, &factors, &covers, nvars);
 
     if options.summary {
+        let first_solution = result
+            .first_solution
+            .map_or_else(|| "unknown".to_string(), |value| {
+                format!("{:.6}", value.as_secs_f64())
+            });
         let largest_dimension = result
             .components
             .iter()
@@ -337,7 +346,7 @@ fn main() {
             .max()
             .map_or_else(|| "unknown".to_string(), |value| value.to_string());
         println!(
-            "BRANCHING_SUMMARY total={} considered={} satisfiable={} unsatisfiable={} core_pruned={} timeouts={} complete={} largest_dimension={} elapsed_secs={:.6}",
+            "BRANCHING_SUMMARY total={} considered={} satisfiable={} unsatisfiable={} core_pruned={} timeouts={} complete={} largest_dimension={} first_solution_secs={} elapsed_secs={:.6}",
             result.total_covers,
             result.considered,
             result.solved,
@@ -346,6 +355,7 @@ fn main() {
             result.timeouts,
             result.complete(),
             largest_dimension,
+            first_solution,
             result.elapsed.as_secs_f64()
         );
     } else {
@@ -421,6 +431,7 @@ mod tests {
         assert_eq!(covers.len(), 2);
         assert_eq!(result.considered, 2);
         assert_eq!(result.solved, 2);
+        assert!(result.first_solution.is_some());
         assert!(result.complete());
     }
 
