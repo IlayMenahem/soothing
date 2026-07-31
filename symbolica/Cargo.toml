@@ -17,6 +17,10 @@ path = "bin/sig_groebner.rs"
 name = "idos"
 path = "bin/idos.rs"
 
+[[bin]]
+name = "branching"
+path = "bin/branching.rs"
+
 [dependencies]
 rayon = "1.10"
 regex = "1"

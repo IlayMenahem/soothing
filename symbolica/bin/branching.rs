@@ -1,0 +1,443 @@
+//! Factor-branching solver corresponding to Algorithm `Branching` in
+//! `paper/sections/method.tex`.
+//!
+//! The input generators are optionally interreduced and factored. Their
+//! minimal hitting sets are visited lazily in fewest-factors-first order. Each
+//! hitting set is checked by a selectable Gröbner backend; inconsistent sets
+//! yield iteratively refined GB-Cores that prune later supersets.
+//!
+//! Usage: `branching [path]` — default path: `systems/system.txt`.
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use symbolica::domains::rational::Q;
+use symbolica::LicenseManager;
+
+use polynomial_cdcl::cover::{
+    build_factor_index, decode_cover, minimal_covers, ordered_cover_masks,
+};
+use polynomial_cdcl::gb_core::iteratively_refined_unsat_core;
+use polynomial_cdcl::gb_search::{
+    evaluate_cover, polynomial_set_contains, solution_dimension, ComputedBasis, Core, GbBackend,
+    Outcome,
+};
+use polynomial_cdcl::{
+    default_systems_dir_from_manifest, interreduce_polys,
+    load_mathematica_system_from_path_with_var_names, polynomials_from_loaded,
+    try_factor_groups_from_polys, LoadedMathematicaSystem, PolyExtLex,
+};
+
+#[derive(Debug)]
+struct CliOptions {
+    path: PathBuf,
+    interreduce: bool,
+    max_covers: usize,
+    timeout_ms: u64,
+    gb_backend: GbBackend,
+    summary: bool,
+}
+
+fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
+    let mut path: Option<PathBuf> = None;
+    let mut interreduce = true;
+    let mut max_covers = usize::MAX;
+    let mut timeout_ms = 5_000;
+    let mut gb_backend = GbBackend::M4gb;
+    let mut summary = false;
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--no-interreduce" => interreduce = false,
+            "--max-covers" => {
+                max_covers = args
+                    .next()
+                    .ok_or_else(|| "--max-covers requires a value".to_string())?
+                    .parse()
+                    .map_err(|error| format!("invalid --max-covers: {error}"))?;
+            }
+            "--timeout" => {
+                timeout_ms = args
+                    .next()
+                    .ok_or_else(|| "--timeout requires a value".to_string())?
+                    .parse()
+                    .map_err(|error| format!("invalid --timeout: {error}"))?;
+            }
+            "--gb" => {
+                let value = args.next().ok_or_else(|| {
+                    "--gb requires one of: m4gb, f5, gvw, symbolica, singular-gb".to_string()
+                })?;
+                gb_backend = GbBackend::parse(&value).ok_or_else(|| {
+                    format!(
+                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, or singular-gb"
+                    )
+                })?;
+            }
+            "--summary" => summary = true,
+            _ if arg.starts_with("--") => return Err(format!("unknown option {arg:?}")),
+            _ if path.is_some() => return Err(format!("unexpected positional argument {arg:?}")),
+            _ => path = Some(PathBuf::from(arg)),
+        }
+    }
+    Ok(CliOptions {
+        path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
+        interreduce,
+        max_covers,
+        timeout_ms,
+        gb_backend,
+        summary,
+    })
+}
+
+fn die(message: impl std::fmt::Display, code: i32) -> ! {
+    eprintln!("{message}");
+    std::process::exit(code)
+}
+
+fn load_system(path: &Path) -> LoadedMathematicaSystem {
+    let loaded = load_mathematica_system_from_path_with_var_names(path)
+        .unwrap_or_else(|error| die(format!("load error: {error}"), 1));
+    println!(
+        "Parsed: {} equations, {} variables (loader order)",
+        loaded.system.equations.len(),
+        loaded.var_names.len()
+    );
+    loaded
+}
+
+fn prepare_polynomials(loaded: &LoadedMathematicaSystem, interreduce: bool) -> Vec<PolyExtLex> {
+    let started = Instant::now();
+    let polynomials = polynomials_from_loaded(loaded, &Q).unwrap_or_else(|error| die(error, 1));
+    let polynomials = if interreduce {
+        interreduce_polys(polynomials)
+    } else {
+        polynomials
+    };
+    println!(
+        "  {} polynomial(s), interreduction {}, elapsed {:?}",
+        polynomials
+            .iter()
+            .filter(|polynomial| !polynomial.is_zero())
+            .count(),
+        if interreduce { "enabled" } else { "disabled" },
+        started.elapsed()
+    );
+    polynomials
+}
+
+fn factor_covers(polynomials: Vec<PolyExtLex>) -> (Vec<PolyExtLex>, Vec<u64>) {
+    let groups = try_factor_groups_from_polys(polynomials)
+        .unwrap_or_else(|error| die(format!("factorization error: {error}"), 1));
+    let (factors, index_groups) = build_factor_index(&groups);
+    let covers = minimal_covers(&index_groups, factors.len()).unwrap_or_else(|| {
+        die(
+            "too many distinct factors (>= 64) for the bitmask enumerator",
+            1,
+        )
+    });
+    let covers = ordered_cover_masks(&covers);
+    println!(
+        "  {} factor group(s), {} distinct factor(s), {} minimal hitting set(s)",
+        groups.len(),
+        factors.len(),
+        covers.len()
+    );
+    (factors, covers)
+}
+
+struct Component {
+    cover_index: usize,
+    cover_mask: u64,
+    dimension: Option<usize>,
+    basis: ComputedBasis,
+}
+
+struct SearchResult {
+    components: Vec<Component>,
+    cores: Vec<Core>,
+    total_covers: usize,
+    considered: usize,
+    solved: usize,
+    inconsistent: usize,
+    core_pruned: usize,
+    timeouts: usize,
+    elapsed: Duration,
+}
+
+impl SearchResult {
+    fn complete(&self) -> bool {
+        self.considered == self.total_covers && self.timeouts == 0
+    }
+}
+
+fn run_search(
+    options: &CliOptions,
+    factors: &[PolyExtLex],
+    covers: &[u64],
+    nvars: usize,
+) -> SearchResult {
+    let timeout = Duration::from_millis(options.timeout_ms);
+    let started = Instant::now();
+    let mut components = Vec::new();
+    let mut cores: Vec<Core> = Vec::new();
+    let mut considered = 0;
+    let mut solved = 0;
+    let mut inconsistent = 0;
+    let mut core_pruned = 0;
+    let mut timeouts = 0;
+
+    println!(
+        "\nBranching over {} minimal hitting set(s), fewest-factors-first, {}ms/cover timeout, {} Groebner backend",
+        covers.len(),
+        options.timeout_ms,
+        options.gb_backend.label()
+    );
+    for (cover_index, &cover_mask) in covers.iter().enumerate() {
+        if considered >= options.max_covers {
+            break;
+        }
+        considered += 1;
+        let candidate = decode_cover(factors, cover_mask);
+
+        if cores
+            .iter()
+            .any(|core| polynomial_set_contains(&candidate, core))
+        {
+            core_pruned += 1;
+            println!(
+                "  cover #{cover_index}: core-pruned ({} factor(s))",
+                candidate.len()
+            );
+            continue;
+        }
+
+        let cover_started = Instant::now();
+        match evaluate_cover(candidate.clone(), timeout, options.gb_backend) {
+            Outcome::Consistent(basis) => {
+                solved += 1;
+                let dimension = solution_dimension(&basis.elements, nvars);
+                let dimension_label =
+                    dimension.map_or_else(|| "?".to_string(), |value| value.to_string());
+                println!(
+                    "  cover #{cover_index}: satisfiable ({} factor(s), {} basis element(s), dimension {dimension_label}, elapsed {:?})",
+                    candidate.len(),
+                    basis.elements.len(),
+                    cover_started.elapsed()
+                );
+                components.push(Component {
+                    cover_index,
+                    cover_mask,
+                    dimension,
+                    basis,
+                });
+            }
+            Outcome::Inconsistent => {
+                let core_started = Instant::now();
+                let core = iteratively_refined_unsat_core(&candidate, timeout);
+                println!(
+                    "  cover #{cover_index}: unsatisfiable; learned a {}-factor core (solve {:?}, refinement {:?})",
+                    core.len(),
+                    cover_started.elapsed(),
+                    core_started.elapsed()
+                );
+                cores.push(core);
+                inconsistent += 1;
+            }
+            Outcome::Timeout => {
+                println!(
+                    "  cover #{cover_index}: timed out ({} factor(s), elapsed {:?})",
+                    candidate.len(),
+                    cover_started.elapsed()
+                );
+                timeouts += 1;
+            }
+            Outcome::BackendError(error) => die(
+                format!(
+                    "{} Groebner backend error: {error}",
+                    options.gb_backend.label()
+                ),
+                1,
+            ),
+        }
+    }
+
+    SearchResult {
+        components,
+        cores,
+        total_covers: covers.len(),
+        considered,
+        solved,
+        inconsistent,
+        core_pruned,
+        timeouts,
+        elapsed: started.elapsed(),
+    }
+}
+
+fn report_results(result: &SearchResult, factors: &[PolyExtLex]) {
+    println!(
+        "\n  {} of {} cover(s) considered: {} satisfiable, {} unsatisfiable, {} core-pruned, {} timeout(s), complete={}, elapsed {:?}",
+        result.considered,
+        result.total_covers,
+        result.solved,
+        result.inconsistent,
+        result.core_pruned,
+        result.timeouts,
+        result.complete(),
+        result.elapsed
+    );
+    for component in &result.components {
+        let dimension = component
+            .dimension
+            .map_or_else(|| "?".to_string(), |value| value.to_string());
+        println!(
+            "  component from cover #{}: {} factor(s), {} basis element(s), dimension {dimension}",
+            component.cover_index,
+            component.cover_mask.count_ones(),
+            component.basis.elements.len()
+        );
+        let selected = decode_cover(factors, component.cover_mask);
+        for polynomial in selected {
+            println!("\tfactor: {polynomial}");
+        }
+        if component.basis.leading_monomials_only {
+            println!("\tleading monomials of the external basis:");
+        }
+        for (index, polynomial) in component.basis.elements.iter().enumerate() {
+            println!("\tg{index} = {polynomial}");
+        }
+    }
+    if !result.cores.is_empty() {
+        println!(
+            "  learned {} iteratively refined unsatisfiable core(s)",
+            result.cores.len()
+        );
+    }
+}
+
+fn main() {
+    let key = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
+    LicenseManager::set_license_key(key).unwrap();
+
+    let options = parse_args(std::env::args().skip(1)).unwrap_or_else(|error| die(error, 2));
+    println!("Loading {}", options.path.display());
+    let loaded = load_system(&options.path);
+    let polynomials = prepare_polynomials(&loaded, options.interreduce);
+    let nvars = polynomials
+        .first()
+        .map_or(loaded.var_names.len(), PolyExtLex::nvars);
+    let (factors, covers) = factor_covers(polynomials);
+    let result = run_search(&options, &factors, &covers, nvars);
+
+    if options.summary {
+        let largest_dimension = result
+            .components
+            .iter()
+            .filter_map(|component| component.dimension)
+            .max()
+            .map_or_else(|| "unknown".to_string(), |value| value.to_string());
+        println!(
+            "BRANCHING_SUMMARY total={} considered={} satisfiable={} unsatisfiable={} core_pruned={} timeouts={} complete={} largest_dimension={} elapsed_secs={:.6}",
+            result.total_covers,
+            result.considered,
+            result.solved,
+            result.inconsistent,
+            result.core_pruned,
+            result.timeouts,
+            result.complete(),
+            largest_dimension,
+            result.elapsed.as_secs_f64()
+        );
+    } else {
+        report_results(&result, &factors);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Once;
+
+    use polynomial_cdcl::load_mathematica_system_from_str_with_var_names;
+
+    static LICENSE: Once = Once::new();
+
+    fn activate_license() {
+        LICENSE.call_once(|| {
+            let _ = LicenseManager::set_license_key(
+                "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21",
+            );
+        });
+    }
+
+    fn test_options() -> CliOptions {
+        CliOptions {
+            path: PathBuf::from("unused"),
+            interreduce: false,
+            max_covers: usize::MAX,
+            timeout_ms: 5_000,
+            gb_backend: GbBackend::Symbolica,
+            summary: true,
+        }
+    }
+
+    #[test]
+    fn parse_args_matches_idos_style() {
+        let options = parse_args(
+            [
+                "input.txt",
+                "--no-interreduce",
+                "--max-covers",
+                "17",
+                "--timeout",
+                "250",
+                "--gb",
+                "gvw",
+                "--summary",
+            ]
+            .into_iter()
+            .map(String::from),
+        )
+        .expect("arguments");
+
+        assert_eq!(options.path, PathBuf::from("input.txt"));
+        assert!(!options.interreduce);
+        assert_eq!(options.max_covers, 17);
+        assert_eq!(options.timeout_ms, 250);
+        assert_eq!(options.gb_backend, GbBackend::Gvw);
+        assert!(options.summary);
+    }
+
+    #[test]
+    fn branches_over_all_minimal_hitting_sets() {
+        activate_license();
+        let loaded = load_mathematica_system_from_str_with_var_names("{x*(x - 1) == 0, x*y == 0}")
+            .expect("load");
+        let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
+        let (factors, covers) = factor_covers(polynomials);
+
+        let result = run_search(&test_options(), &factors, &covers, 2);
+
+        assert_eq!(covers.len(), 2);
+        assert_eq!(result.considered, 2);
+        assert_eq!(result.solved, 2);
+        assert!(result.complete());
+    }
+
+    #[test]
+    fn learned_core_prunes_a_later_superset() {
+        activate_license();
+        let loaded =
+            load_mathematica_system_from_str_with_var_names("{x == 0, x - 1 == 0, y*z == 0}")
+                .expect("load");
+        let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
+        let (factors, covers) = factor_covers(polynomials);
+
+        let result = run_search(&test_options(), &factors, &covers, 3);
+
+        assert_eq!(result.inconsistent, 1);
+        assert_eq!(result.core_pruned, 1);
+        assert!(result.cores.iter().all(|core| !core.is_empty()));
+        assert!(result.complete());
+    }
+}
