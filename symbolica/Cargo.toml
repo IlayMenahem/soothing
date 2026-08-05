@@ -21,6 +21,10 @@ path = "bin/idos.rs"
 name = "branching"
 path = "bin/branching.rs"
 
+[[bin]]
+name = "variable_zeroing"
+path = "bin/variable_zeroing.rs"
+
 [dependencies]
 rayon = "1.10"
 regex = "1"

@@ -12,6 +12,7 @@ pub mod sig_groebner;
 pub mod sparse;
 pub mod system;
 pub mod var_id;
+pub mod variable_zeroing;
 
 pub use atom_util::{parse_expression, substitute_symbol};
 pub use factor_prep::{
@@ -30,3 +31,7 @@ pub use sig_groebner::{
 };
 pub use system::PolynomialSystem;
 pub use var_id::VarId;
+pub use variable_zeroing::{
+    ProjectedComponent, SplitDecision, UnresolvedBranch, UnresolvedReason, VariableZeroingOptions,
+    VariableZeroingNodeResult, VariableZeroingResult, ZeroingVariable, solve_by_zeroing,
+};

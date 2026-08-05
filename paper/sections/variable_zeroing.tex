@@ -1,9 +1,56 @@
-\section{Variable Zeroing}
+\section{Branching with variable zeroing}
 
 % Motivation for variable zeroing
+There are methods !!!Add citations!!! in the literature of algorithmic algebraic geometry that assume the value of a variable is zero, and then solve the resulting system.
 
 %% Figure representing variable zeroing
 
+% Explaining the method with variable zeroing
+The following method takes the algorithm~\ref{alg:Branching} and allows for the solver to time out.
+If the solver times out, the method chooses a variable, and tries to solve the system using algorithm~\ref{alg:Branching} once assuming the variable is zero, and once assuming the variable is non-zero.
+The branching procedure is then applied recursively either until every branch is resolved, or until the computation resources are exhausted.
+In the experiments section~\ref{sec:experiments}, we show that recursive branching~\ref{alg:ZeroingBranching} utilizes the computation resources better than the original branching method~\ref{alg:Branching}.
+
 % Pseudocode for the method with variable zeroing
+\begin{algorithm}
+\footnotesize
+\caption{Recursive branching with variable zeroing}
+\label{alg:ZeroingBranching}
+\begin{algorithmic}[1]
+    \Require A polynomial system $P$, a set of variables $X$, and a timeout $\tau$.
+    \Function{ZeroingBranching}{$P,X,\tau$}
+        \State $C \gets \emptyset$ \Comment{One global unsatisfiable-core set}
+        \State \Return $\Call{SolveByZeroing}{P,X,\tau,C}$
+    \EndFunction
+    \Function{SolveByZeroing}{$P,X,\tau,C$}
+        \State $(S,T) \gets \Call{BranchingWithTimeout}{P,\tau,C}$
+        \Comment{Algorithm~\ref{alg:Branching}; $C$ is shared and updated}
+        \State $U \gets \emptyset$ \Comment{Branches left unresolved}
+
+        \ForAll{$Q \in T$}
+            \If{$X=\emptyset$}
+                \State $U \gets U\cup\{Q\}$
+                \State \textbf{continue}
+            \EndIf
+
+            \State $x \gets \Call{ChooseVariable}{Q,X}$
+            \State $(S_0, U_0, C) \gets \Call{SolveByZeroing}{Q\cup\{x\}, X\setminus\{x\}, \tau,C}$
+            \State $(S_1, U_1, C) \gets \Call{SolveByZeroing}{Q\cup\{1-xz\}, X\setminus\{x\}, \tau,C}$
+            \Comment{$z$ is fresh}
+
+            \State $S \gets S\cup S_0\cup S_1$
+            \State $U \gets U\cup U_0\cup U_1$
+        \EndFor
+
+        \State \Return $(S, U, C)$
+    \EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+Solutions of a $Q_1$ branch are projected onto the original variables, so the fresh variables do not appear in the output.
 
 % A flow chart of the outer loop of the method with variable zeroing
+
+\subsection{Choice of variable for zeroing}
+
+\subsection{Theoretical analysis of variable zeroing}
