@@ -15,9 +15,10 @@ In the experiments section~\ref{sec:experiments}, we show that recursive branchi
 \caption{Recursive branching with variable zeroing}
 \label{alg:ZeroingBranching}
 \begin{algorithmic}[1]
-    \Require A polynomial system $P$, a set of variables $X$, and a timeout $\tau$.
-    \Function{ZeroingBranching}{$P,X,\tau$}
+    \Require A polynomial system $P$, and a timeout $\tau$.
+    \Function{ZeroingBranching}{$P, \tau$}
         \State $C \gets \emptyset$ \Comment{One global unsatisfiable-core set}
+        \State $X \gets \Call{Variables}{P}$ \Comment{All variables of $P$}
         \State \Return $\Call{SolveByZeroing}{P,X,\tau,C}$
     \EndFunction
     \Function{SolveByZeroing}{$P,X,\tau,C$}
@@ -59,14 +60,29 @@ node.  Its outgoing edges give the zero and nonzero cases.
     \label{fig:variable_zeroing_tree}
 \end{figure}
 
-\subsection{Choice of variable for zeroing}
+\subsection{Choice of variable for splitting}
 
-% examplify the importance of the choice of variable for zeroing
+The choice of variable for splitting effects the efficiency of the algorithm.
+Every split creates at least two new covers to check.
+If a variable barely occurs in the current cover, both recursive calls may repeat most of the same work.
+A variable that occurs in many generators is a more promising choice: setting it to zero removes all terms containing it at once, while in the nonzero branch the algorithm can use the $1 - xz$.
 
-% specify the heuristics for choosing a variable for zeroing
+For each candidate variable $x$ that is still available on the current branch, define
+\begin{align*}
+    g_Q(x) &= \#\{q\in Q : x\text{ occurs in }q\},\\
+    t_Q(x) &= \#\{(q,m) : q\in Q,\ m\text{ is a term of }q \deg_x(m) > 0\},\\
+    e_Q(x) &= \sum_{q\in Q}\ \sum_{\substack{m\text{ a term of }q \deg_x(m) > 0}} \deg_x(m).
+\end{align*}
+Its score is the triple
+\[
+    h_Q(x)=\bigl(g_Q(x),t_Q(x),e_Q(x)\bigr),
+\]
+and scores are compared lexicographically.
 
 \subsection{Theoretical analysis of variable zeroing}
 
 % Showing soundness and completeness of the method with variable zeroing
 
-%
+% Inference of a timeout evaluation result from its children evaluations' results
+% if all its children are unsatisfiable, then the evaluation is unsatisfiable
+% otherwise the evaluation is a union of the satisfiable children evaluations' results
