@@ -3,8 +3,6 @@
 % Motivation for variable zeroing
 There are methods !!!Add citations!!! in the literature of algorithmic algebraic geometry that assume the value of a variable is zero, and then solve the resulting system.
 
-%% Figure representing variable zeroing
-
 % Explaining the method with variable zeroing
 The following method takes the algorithm~\ref{alg:Branching} and allows for the solver to time out.
 If the solver times out, the method chooses a variable, and tries to solve the system using algorithm~\ref{alg:Branching} once assuming the variable is zero, and once assuming the variable is non-zero.
@@ -49,8 +47,26 @@ In the experiments section~\ref{sec:experiments}, we show that recursive branchi
 
 Solutions of a $Q_1$ branch are projected onto the original variables, so the fresh variables do not appear in the output.
 
-% A flow chart of the outer loop of the method with variable zeroing
+The run on \texttt{systems/system.txt}, with a five-second timeout for each
+cover, produces the recursion tree in Figure~\ref{fig:variable_zeroing_tree}.
+The variable chosen after a timeout is written inside the corresponding cover
+node.  Its outgoing edges give the zero and nonzero cases.
+
+\begin{figure}[htbp]
+    \centering
+    \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_tree.tex}}
+    \caption{Recursion tree for \texttt{systems/system.txt}.  Each cover is shown separately.}
+    \label{fig:variable_zeroing_tree}
+\end{figure}
 
 \subsection{Choice of variable for zeroing}
 
+% examplify the importance of the choice of variable for zeroing
+
+% specify the heuristics for choosing a variable for zeroing
+
 \subsection{Theoretical analysis of variable zeroing}
+
+% Showing soundness and completeness of the method with variable zeroing
+
+%
