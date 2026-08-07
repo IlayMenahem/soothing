@@ -104,7 +104,7 @@
 \draw[branch] (c15z) -- (c19.north);
 \draw[branch] (c15.south) -- node[edge label,sloped,above] {$\ne 0$} (c20.north);
 
-\node[empty branch] (empty1) at (-2.8,-7.05) {no covers};
+\node[empty branch] (empty1) at (-2.8,-7.05) {\vzPruned\ no covers};
 \node[timeout cover] (c11) at (0.2,-7.05)
     {\vzTimeout\\[-1pt]$\mathit{xr}$};
 \draw[branch] (c10.south) -- node[edge label,sloped,above] {$=0$} (empty1.north);
@@ -133,7 +133,7 @@
 \draw[branch] (c11z) -- (c13.north);
 \draw[branch] (c11.south) -- node[edge label,sloped,above] {$\ne 0$} (c14.north);
 
-\node[empty branch] (empty2) at (11.0,-8.95) {no covers};
+\node[empty branch] (empty2) at (11.0,-8.95) {\vzPruned\ no covers};
 \node[cover] (c26) at (13.6,-8.95) {\vzInconsistent};
 \draw[branch] (c25.south) -- node[edge label,sloped,above] {$=0$} (empty2.north);
 \draw[branch] (c25.south) -- node[edge label,sloped,above] {$\ne 0$} (c26.north);
