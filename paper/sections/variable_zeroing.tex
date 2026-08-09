@@ -48,6 +48,9 @@ In the experiments section~\ref{sec:experiments}, we show that recursive branchi
 
 Solutions of a $Q_1$ branch are projected onto the original variables, so the fresh variables do not appear in the output.
 
+The addition of $x$ or $1 - xz$ eases the computation of a Groebner basis with weighted variable orders such as grevlex and degrevlex.
+This is because $x$ and $1 - xz$ are very low orders, and interreduction with them lowers the orders of the generators.
+
 The run on \texttt{systems/system.txt}, with a five-second timeout for each
 cover, produces the recursion tree in Figure~\ref{fig:variable_zeroing_tree}.
 The variable chosen after a timeout is written inside the corresponding cover
@@ -56,7 +59,7 @@ node.  Its outgoing edges give the zero and nonzero cases.
 \begin{figure}[htbp]
     \centering
     \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_tree.tex}}
-    \caption{Recursion tree for \texttt{systems/system.txt}.  Each cover is shown separately.}
+    \caption{Recursion tree for \texttt{systems/system.txt}. Each cover is shown separately; $\varnothing$ marks a branch that produces no covers.}
     \label{fig:variable_zeroing_tree}
 \end{figure}
 
