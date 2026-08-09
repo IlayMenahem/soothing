@@ -56,10 +56,13 @@ operator. Both Macaulay2 columns are included below.
 | `affine_factor_hypergraph_n12_m10_k6_seed42` | 12 | 10 | 833/833 |
 | `gated_cyclic_5` | 6 | 5 | 2/2 |
 | `gated_cyclic_6` | 7 | 6 | 2/2 |
+| `gated_cyclic_7` | 8 | 7 | 2/2 |
 | `gated_katsura_6` | 8 | 7 | 2/2 |
 | `gated_katsura_7` | 9 | 8 | 2/2 |
+| `gated_katsura_8` | 10 | 9 | 2/2 |
 | `gated_random_dense_quadratic_n5_seed137` | 6 | 5 | 2/2 |
 | `gated_random_dense_quadratic_n6_seed137` | 7 | 6 | 2/2 |
+| `gated_random_dense_quadratic_n7_seed137` | 8 | 7 | 2/2 |
 | `affine_factor_hypergraph_n8_k4_seed42` | 8 | 8 | 31/31 |
 | `affine_factor_hypergraph_n10_k5_seed42` | 10 | 10 | 304/304 |
 
@@ -83,10 +86,13 @@ factors reach factor-cover enumeration unchanged.
 | `affine_factor_hypergraph_n12_m10_k6_seed42` | 0.075/0.095; d=9 | 0.071/0.091; d=9 | 0.101/0.121; d=9 | 0.071/0.092; d=9 | 6.509/6.532; d=9 |
 | `gated_cyclic_5` | 0.005/0.010; d=5 | 0.005/0.010; d=5 | 0.005/0.010; d=5 | 0.004/0.009; d=5 | 0.016/0.022; d=5 |
 | `gated_cyclic_6` | P 1/2; 20.006/20.013; d=6 | 5.926/5.947; d=6 | 2.272/2.289; d=6 | P 1/2; 20.004/20.011; d=6 | 0.057/0.063; d=6 |
+| `gated_cyclic_7` | P 1/2; 20.008/20.658; d=7 | P 1/2; 20.017/20.194; d=7 | P 1/2; 20.015/20.773; d=7 | P 1/2; 20.003/20.012; d=7 | P 1/2; 20.028/20.037; d=7 |
 | `gated_katsura_6` | 0.361/0.367; d=7 | 0.484/0.490; d=7 | 1.344/1.351; d=7 | 2.560/2.567; d=7 | 0.044/0.050; d=7 |
 | `gated_katsura_7` | 4.500/4.507; d=8 | 15.319/15.338; d=8 | P 1/2; 20.006/20.022; d=8 | P 1/2; 20.003/20.009; d=8 | 0.292/0.298; d=8 |
+| `gated_katsura_8` | P 1/2; 20.004/20.011; d=9 | P 1/2; 20.006/20.037; d=9 | P 1/2; 20.006/20.025; d=9 | P 1/2; 20.006/20.014; d=9 | 2.579/2.585; d=9 |
 | `gated_random_dense_quadratic_n5_seed137` | 0.170/0.176; d=5 | 0.066/0.072; d=5 | 0.192/0.198; d=5 | 0.198/0.204; d=5 | 0.025/0.031; d=5 |
 | `gated_random_dense_quadratic_n6_seed137` | 4.731/4.737; d=6 | 3.198/3.205; d=6 | 7.491/7.499; d=6 | P 1/2; 20.005/20.012; d=6 | 0.534/0.540; d=6 |
+| `gated_random_dense_quadratic_n7_seed137` | P 1/2; 20.005/20.012; d=7 | P 1/2; 20.011/20.032; d=7 | P 1/2; 20.003/20.011; d=7 | P 1/2; 20.003/20.009; d=7 | P 1/2; 20.022/20.030; d=7 |
 | `affine_factor_hypergraph_n8_k4_seed42` | 15.034/15.043; d=5 | TO 20.000/22.000 | TO 20.000/22.000 | 3.109/3.118; d=5 | 0.675/0.682; d=5 |
 | `affine_factor_hypergraph_n10_k5_seed42` | 15.050/15.065; d=7 | TO 20.000/22.000 | TO 20.000/22.000 | 1.176/1.188; d=7 | 2.556/2.567; d=7 |
 
@@ -112,10 +118,13 @@ dimension. These measurements used a 60-second timeout.
 | `affine_factor_hypergraph_n12_m10_k6_seed42` | TO 60.000/60.021 | TO 60.000/60.022 | TO 60.000/60.038 | TO 60.000/60.380 | TO 60.000/62.000 | TO 60.000/62.000 |
 | `gated_cyclic_5` | 0.007/0.012 | 0.274/0.279 | 0.005/0.009 | 0.004/0.008 | 0.002/0.183 | 0.005/0.480 |
 | `gated_cyclic_6` | TO 60.000/60.012 | TO 60.000/60.009 | 1.727/1.738 | TO 60.000/60.014 | 0.138/0.309 | 0.574/0.917 |
+| `gated_cyclic_7` | TO 60.000/60.292 | TO 60.000/60.012 | TO 60.000/61.175 | TO 60.000/60.020 | TO 60.000/60.329 | TO 60.000/60.217 |
 | `gated_katsura_6` | 0.431/0.436 | 44.956/44.961 | 0.220/0.226 | 5.272/5.277 | 14.264/14.430 | TO 60.000/60.175 |
 | `gated_katsura_7` | 5.159/5.165 | TO 60.000/60.014 | 3.170/3.176 | TO 60.000/60.016 | TO 60.000/60.190 | TO 60.000/60.181 |
+| `gated_katsura_8` | TO 60.000/60.020 | TO 60.000/60.016 | TO 60.000/60.017 | TO 60.000/60.019 | TO 60.000/60.244 | TO 60.000/60.189 |
 | `gated_random_dense_quadratic_n5_seed137` | 0.165/0.171 | 8.878/8.884 | 0.173/0.179 | 0.194/0.200 | 0.327/0.529 | TO 60.000/60.187 |
 | `gated_random_dense_quadratic_n6_seed137` | 4.730/4.736 | TO 60.000/60.011 | 6.748/6.755 | 17.467/17.472 | TO 60.000/60.203 | TO 60.000/60.204 |
+| `gated_random_dense_quadratic_n7_seed137` | TO 60.000/60.013 | TO 60.000/60.012 | TO 60.000/60.028 | TO 60.000/60.011 | TO 60.000/60.228 | TO 60.000/60.233 |
 | `affine_factor_hypergraph_n8_k4_seed42` | TO 60.000/60.013 | TO 60.000/60.012 | TO 60.000/60.601 | TO 60.000/60.018 | TO 60.000/60.401 | TO 60.000/60.319 |
 | `affine_factor_hypergraph_n10_k5_seed42` | TO 60.000/60.014 | TO 60.000/60.011 | TO 60.000/60.039 | TO 60.000/60.034 | TO 60.000/60.776 | TO 60.000/60.785 |
 
@@ -136,10 +145,13 @@ These methods report maximum component dimension when they complete.
 | `affine_factor_hypergraph_n12_m10_k6_seed42` | 50.737/53.318; d=9 | TO 60.000/62.000 | TO 60.000/62.000 | TO 60.000/62.000 |
 | `gated_cyclic_5` | 0.004/0.181; d=5 | 0.154/0.337; d=5 | 0.409/0.709; d=5 | 32.765/35.054; d=5 |
 | `gated_cyclic_6` | 2.553/2.729; d=6 | TO 60.000/60.171 | 2.908/2.620; d=6 | 35.041/37.314; d=6 |
+| `gated_cyclic_7` | TO 60.000/60.179 | TO 60.000/60.177 | TO 60.000/60.184 | 51.125/58.287; d=7 |
 | `gated_katsura_6` | 0.052/0.233; d=7 | TO 60.000/60.173 | TO 60.000/60.174 | 29.276/31.532; d=7 |
 | `gated_katsura_7` | 0.360/0.539; d=8 | TO 60.000/60.181 | TO 60.000/60.174 | 29.724/31.980; d=8 |
+| `gated_katsura_8` | 3.404/3.596; d=9 | TO 60.000/60.202 | TO 60.000/60.200 | 31.957/34.264; d=9 |
 | `gated_random_dense_quadratic_n5_seed137` | 0.013/0.198; d=5 | TO 60.000/60.184 | TO 60.000/60.185 | 27.015/29.289; d=5 |
 | `gated_random_dense_quadratic_n6_seed137` | 0.551/0.755; d=6 | TO 60.000/60.198 | TO 60.000/60.198 | 27.764/30.053; d=6 |
+| `gated_random_dense_quadratic_n7_seed137` | 48.584/48.820; d=7 | TO 60.000/60.227 | TO 60.000/60.238 | 29.853/32.261; d=7 |
 | `affine_factor_hypergraph_n8_k4_seed42` | 0.289/0.601; d=5 | TO 60.000/60.306 | TO 60.000/60.311 | TO 60.000/60.317 |
 | `affine_factor_hypergraph_n10_k5_seed42` | 1.356/2.141; d=7 | TO 60.000/60.775 | TO 60.000/60.793 | TO 60.000/60.787 |
 
@@ -157,11 +169,18 @@ These methods report maximum component dimension when they complete.
 - Singular is strongest on hard nonlinear residual covers. It is the only
   tuned IDOS engine here to complete gated Cyclic-6, and it is 16.1x faster
   than m4gb on Katsura-7 and 9.1x faster on the dense quadratic at `n=6`.
+- The larger gated rows expose the residual-cover scaling hidden by their easy
+  selector components. All six direct Groebner methods time out on Cyclic-7,
+  Katsura-8, and dense `n=7`. Under the uniform 60-second branching protocol,
+  Singular completes Katsura-8 in 2.657 seconds and dense `n=7` in 42.020
+  seconds, while no branching backend completes Cyclic-7. The selector cover
+  is nevertheless found within 0.052 seconds by the fastest completed or
+  partial branching run on each new system.
 - Every system-by-algorithm cell in the selected matrix has now been measured;
   unsuccessful cells are recorded explicitly as timeouts rather than omissions.
-- Macaulay2 decomposition completes 5 of the 17 selected systems within
+- Macaulay2 decomposition completes 5 of the 20 selected systems within
   60 seconds. It agrees with the reported maximum dimensions on every completed
-  row; the remaining 12 rows time out rather than failing at startup.
+  row; the remaining 15 rows time out rather than failing at startup.
 
 ## Reproduction
 
@@ -169,7 +188,7 @@ These methods report maximum component dimension when they complete.
 python3 scripts/benchmark_idos.py --no-build --timeout 60 --jobs 1 --rerun-all
 ```
 
-The benchmark generates all 17 systems once and writes only this report.
+The benchmark generates all 20 systems once and writes only this report.
 By default it runs `NR` cells and checkpoints every completed cell; use
 `--rerun-all` to replace all measurements or `--only METHOD` to restrict the
 queue. It applies 45-second IDOS limits to structured systems, 20-second IDOS

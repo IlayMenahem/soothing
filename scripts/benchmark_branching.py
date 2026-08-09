@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate and run the factor-branching benchmark matrix.
 
-The benchmark reuses the 17 synthetic systems from ``benchmark_idos.py`` and
+The benchmark reuses the 20 synthetic systems from ``benchmark_idos.py`` and
 does not load any of the physics systems under ``systems/``. Results are
 checkpointed atomically in a Markdown matrix, so interrupted runs can resume.
 
@@ -134,7 +134,7 @@ def initial_report(instances: list[Instance]) -> list[str]:
         "# Factor-branching benchmark matrix",
         "",
         "This report contains fresh measurements of `symbolica/bin/branching.rs`",
-        "on the 17 generated algebraic benchmark systems. No physics system is",
+        f"on the {len(instances)} generated algebraic benchmark systems. No physics system is",
         "included. Each cell records solver-reported total search time / wall time",
         "in seconds, followed by first-solution latency and the largest component",
         "dimension. `P a/b` denotes a partial run,",

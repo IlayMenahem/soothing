@@ -19,7 +19,7 @@ The complete measurements are stored in the appendix.
 
 \subsection{Baseline systems}
 
-The baseline has 17 generated systems in six families. Signed-distance cycles and
+The baseline has 20 generated systems in six families. Signed-distance cycles and
 affine-factor hypergraphs test many inexpensive covers.  The overlapping
 random multiples use seeded dense quadratic factors that recur across
 equations, with no factor shared by every equation.  In the gated systems, a
@@ -39,8 +39,8 @@ Family & Tested sizes & Variables/equations; covers \\
 Signed-distance cycle & $n=8,10,12$ & $8/8,10/10,12/12$; $8,8,32$ \\
 Overlapping random multiples & $(n,p,k)=(4,6,2),(6,8,3),(8,10,3)$ & $n/n$; $4,16,28$ \\
 Positive affine hypergraph & $(n,m,k)=(8,6,4),(10,8,5),(12,10,6)$ & $n/m$; $63,239,833$ \\
-Gated Cyclic & orders $5,6$ & $6/5,7/6$; $2,2$ \\
-Gated Katsura and dense quadratics & Katsura $6,7$; dense $n=5,6$ & $8/7,9/8,6/5,7/6$; $2$ each \\
+Gated Cyclic & orders $5,6,7$ & $6/5,7/6,8/7$; $2$ each \\
+Gated Katsura and dense quadratics & Katsura $6,7,8$; dense $n=5,6,7$ & $8/7,9/8,10/9,6/5,7/6,8/7$; $2$ each \\
 Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $31,304$ \\
 \hline
 \end{tabular}%
@@ -66,7 +66,7 @@ method in that class timed out.
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{l l l l}
 \hline
-System & Best branching $T/F$ & Best direct GB & Best decomposition \\
+System & Best branching $T/F$ & Best direct GB & Best decomposition/numerical \\
 \hline
 Signed distance, $n=8$ & Symb. $0.008/0.000$ & built-in $0.008$ & facstd $0.190$ \\
 Signed distance, $n=10$ & Symb. $0.025/0.002$ & built-in $0.029$ & facstd $0.430$ \\
@@ -79,10 +79,13 @@ Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & timeout & facstd $1.836$ \\
 Positive affine $(12,10,6)$ & F5 $0.067/0.000$ & timeout & facstd $53.318$ \\
 Gated Cyclic-5 & Symb. $0.009/0.000$ & built-in $0.008$ & facstd $0.181$ \\
 Gated Cyclic-6 & Singular $0.045/0.008$ & Singular $0.309$ & M2 $2.620$ \\
+Gated Cyclic-7 & timeout & timeout & Homotopy $58.287$ \\
 Gated Katsura-6 & Singular $0.049/0.008$ & GVW $0.226$ & facstd $0.233$ \\
 Gated Katsura-7 & Singular $0.283/0.008$ & GVW $3.176$ & facstd $0.539$ \\
+Gated Katsura-8 & Singular $2.657/0.052$ & timeout & facstd $3.596$ \\
 Gated dense, $n=5$ & Singular $0.029/0.008$ & M4GB $0.171$ & facstd $0.198$ \\
 Gated dense, $n=6$ & Singular $0.546/0.008$ & M4GB $4.736$ & facstd $0.755$ \\
+Gated dense, $n=7$ & Singular $42.020/0.017$ & timeout & Homotopy $32.261$ \\
 Square affine $(8,4)$ & Singular $0.470/0.023$ & timeout & facstd $0.601$ \\
 Square affine $(10,5)$ & Symb. $1.174/0.000$ & timeout & facstd $2.141$ \\
 \hline
@@ -94,7 +97,17 @@ times are in seconds.}
 \label{tab:baseline-comparison}
 \end{table}
 
-% add analysis of the results
+The larger gated systems expose the cost of the nonlinear residual cover that
+is hidden by the easy selector cover.  At Cyclic-7, every branching backend
+finds the selector component immediately but fails to exhaust both covers in
+60 seconds; all direct Gr\"obner methods also time out, while the numerical
+method completes in $58.287$ seconds.  For Katsura-8, branching with Singular
+still completes in $2.657$ seconds, compared with $3.596$ seconds for facstd,
+and every direct method times out.  Dense $n=7$ is harder: branching with
+Singular takes $42.020$ seconds and HomotopyContinuation.jl takes $32.261$
+seconds, while all direct methods time out.  Despite this increase in total
+work, branching finds the first satisfiable selector cover within $0.052$
+seconds on every larger gated system.
 
 \subsection{Physical Systems}
 % explanation of the physical systems, and the reason to use the general pipeline for solving them.
