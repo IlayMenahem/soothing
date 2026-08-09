@@ -59,35 +59,35 @@ method in each baseline class.  A branching entry gives $T/F$ in seconds;
 the other entries give total wall time.  ``Timeout'' means that every tested
 method in that class timed out.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{l l l l}
+\begin{tabular}{l l l l l}
 \hline
-System & Best branching $T/F$ & Best direct GB & Best decomposition/numerical \\
+System & Best branching $T/F$ & Best direct GB & Best decomposition & Numerical \\
 \hline
-Signed distance, $n=8$ & Symb. $0.008/0.000$ & built-in $0.008$ & facstd $0.190$ \\
-Signed distance, $n=10$ & Symb. $0.025/0.002$ & built-in $0.029$ & facstd $0.430$ \\
-Signed distance, $n=12$ & Symb. $0.087/0.002$ & built-in $0.472$ & primdec $3.056$ \\
-Overlapping $(4,6,2)$ & F5 $0.008/0.000$ & built-in $0.413$ & facstd $0.265$ \\
-Overlapping $(6,8,3)$ & F5 $0.132/0.001$ & timeout & timeout \\
-Overlapping $(8,10,3)$ & Singular $2.931/0.010$ & timeout & timeout \\
-Positive affine $(8,6,4)$ & F5 $0.008/0.000$ & timeout & facstd $0.368$ \\
-Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & timeout & facstd $1.836$ \\
-Positive affine $(12,10,6)$ & F5 $0.067/0.000$ & timeout & facstd $53.318$ \\
-Gated Cyclic-5 & Symb. $0.009/0.000$ & built-in $0.008$ & facstd $0.181$ \\
-Gated Cyclic-6 & Singular $0.045/0.008$ & Singular $0.309$ & M2 $2.620$ \\
-Gated Cyclic-7 & timeout & timeout & Homotopy $58.287$ \\
-Gated Katsura-6 & Singular $0.049/0.008$ & GVW $0.226$ & facstd $0.233$ \\
-Gated Katsura-7 & Singular $0.283/0.008$ & GVW $3.176$ & facstd $0.539$ \\
-Gated Katsura-8 & Singular $2.657/0.052$ & timeout & facstd $3.596$ \\
-Gated dense, $n=5$ & Singular $0.029/0.008$ & M4GB $0.171$ & facstd $0.198$ \\
-Gated dense, $n=6$ & Singular $0.546/0.008$ & M4GB $4.736$ & facstd $0.755$ \\
-Gated dense, $n=7$ & Singular $42.020/0.017$ & timeout & Homotopy $32.261$ \\
-Square affine $(8,4)$ & Singular $0.470/0.023$ & timeout & facstd $0.601$ \\
-Square affine $(10,5)$ & Symb. $1.174/0.000$ & timeout & facstd $2.141$ \\
+Signed distance, $n=8$ & Symb. $0.008/0.000$ & built-in $0.008$ & facstd $0.190$ & $32.410$ \\
+Signed distance, $n=10$ & Symb. $0.025/0.002$ & built-in $0.029$ & facstd $0.430$ & $29.944$ \\
+Signed distance, $n=12$ & Symb. $0.087/0.002$ & built-in $0.472$ & primdec $3.056$ & $36.880$ \\
+Overlapping $(4,6,2)$ & F5 $0.008/0.000$ & built-in $0.413$ & facstd $0.265$ & $30.069$ \\
+Overlapping $(6,8,3)$ & F5 $0.132/0.001$ & timeout & timeout & timeout \\
+Overlapping $(8,10,3)$ & Singular $2.931/0.010$ & timeout & timeout & timeout \\
+Positive affine $(8,6,4)$ & F5 $0.008/0.000$ & timeout & facstd $0.368$ & $50.934$ \\
+Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & timeout & facstd $1.836$ & timeout \\
+Positive affine $(12,10,6)$ & F5 $0.067/0.000$ & timeout & facstd $53.318$ & timeout \\
+Gated Cyclic-5 & Symb. $0.009/0.000$ & built-in $0.008$ & facstd $0.181$ & $35.054$ \\
+Gated Cyclic-6 & Singular $0.045/0.008$ & Singular $0.309$ & M2 $2.620$ & $37.314$ \\
+Gated Cyclic-7 & timeout & timeout & timeout & $58.287$ \\
+Gated Katsura-6 & Singular $0.049/0.008$ & GVW $0.226$ & facstd $0.233$ & $31.532$ \\
+Gated Katsura-7 & Singular $0.283/0.008$ & GVW $3.176$ & facstd $0.539$ & $31.980$ \\
+Gated Katsura-8 & Singular $2.657/0.052$ & timeout & facstd $3.596$ & $34.264$ \\
+Gated dense, $n=5$ & Singular $0.029/0.008$ & M4GB $0.171$ & facstd $0.198$ & $29.289$ \\
+Gated dense, $n=6$ & Singular $0.546/0.008$ & M4GB $4.736$ & facstd $0.755$ & $30.053$ \\
+Gated dense, $n=7$ & Singular $42.020/0.017$ & timeout & facstd $48.820$ & $32.261$ \\
+Square affine $(8,4)$ & Singular $0.470/0.023$ & timeout & facstd $0.601$ & timeout \\
+Square affine $(10,5)$ & Symb. $1.174/0.000$ & timeout & facstd $2.141$ & timeout \\
 \hline
 \end{tabular}%
 }
