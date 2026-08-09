@@ -1,7 +1,7 @@
 \section{Branching with variable zeroing}
 
 % Motivation for variable zeroing
-There are methods !!!Add citations!!! in the literature of algorithmic algebraic geometry that assume the value of a variable is zero, and then solve the resulting system.
+There are methods (!!!Add citations!!!) in the literature of algorithmic algebraic geometry that assume the value of a variable is zero, and then solve the resulting system.
 
 % Explaining the method with variable zeroing
 The following method takes the algorithm~\ref{alg:Branching} and allows for the solver to time out.
@@ -183,6 +183,6 @@ Now to show the run always terminates in finite time.
     Thus the algorithm terminates in finite time.
 \end{proof}
 
-% Inference of a timeout evaluation result from its children evaluations' results
-% if all its children are unsatisfiable, then the evaluation is unsatisfiable
-% otherwise the evaluation is a union of the satisfiable children evaluations' results
+We can infer the solutions of the hitting set the solver timed out on from its children's solutions.
+If all children are unsatisfiable, then so is the timeout evaluation.
+Otherwise its solution is the union of the children's solutions.
