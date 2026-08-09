@@ -81,7 +81,104 @@ and scores are compared lexicographically.
 
 \subsection{Theoretical analysis of variable zeroing}
 
-% Showing soundness and completeness of the method with variable zeroing
+Let $Y$ be the set of variables in the input system, and let $\pi_Y$ denote
+projection onto those coordinates. For any system $Q$ encountered during the
+recursion, write
+\[
+    V_Y(Q)=\pi_Y(V(Q)).
+\]
+This projection removes the inverse variables introduced along the path to
+$Q$.
+
+We use the following contract for \textsc{BranchingWithTimeout}. If a call on
+$Q$ returns a set of solutions $S_Q$ and a set of unresolved branches $T_Q$,
+then
+\begin{equation}
+\label{eq:timeout-decomposition}
+    V_Y(Q)=S_Q\cup\bigcup_{R\in T_Q}V_Y(R).
+\end{equation}
+Here and below, solver output is identified with the subset of
+$\overline{K}^{Y}$ that it represents. Equation~\eqref{eq:timeout-decomposition}
+is the usual branching invariant: a timeout moves an unprocessed branch to
+$T_Q$ instead of discarding it. We also assume, as in
+Theorem~\ref{thm:branching-correctness}, that every learned unsatisfiable core
+is certified.
+
+\begin{lemma}[Correctness of a zeroing split]
+\label{lem:zeroing-split}
+Let $x\in Y$, and let $z$ be a variable that does not occur in $Q$. Then
+\[
+    V_Y(Q)=V_Y(Q\cup\{x\})\cup V_Y(Q\cup\{1-xz\}).
+\]
+\end{lemma}
+
+\begin{proof}
+Take $a\in V_Y(Q)$ and choose a point $\widetilde a\in V(Q)$ with
+$\pi_Y(\widetilde a)=a$. If $\widetilde a_x=0$, then
+$a\in V_Y(Q\cup\{x\})$. If $\widetilde a_x\neq 0$, extend $\widetilde a$ by
+setting $z=\widetilde a_x^{-1}$. The resulting point satisfies $1-xz=0$, so
+$a\in V_Y(Q\cup\{1-xz\})$. This proves the forward inclusion. The reverse
+inclusion follows because each child system contains every polynomial in
+$Q$.
+\end{proof}
+
+\begin{theorem}[Variable zeroing]
+\label{thm:zeroing-correctness}
+Suppose Algorithm~\ref{alg:ZeroingBranching} returns $(S,U,C)$ on input $P$.
+Then
+\[
+    V(P)=S\cup\bigcup_{R\in U}V_Y(R).
+\]
+In particular, if $U=\emptyset$, then $S=V(P)$.
+\end{theorem}
+
+\begin{proof}
+We prove that by showing that every call $\operatorname{SolveByZeroing}(Q,X,\tau,C)$ returning $(S',U',C')$ satisfies
+\begin{equation}
+\label{eq:zeroing-invariant}
+    V_Y(Q)=S'\cup\bigcup_{R\in U'}V_Y(R).
+\end{equation}
+The proof is by induction on $|X|$.
+
+If $X=\emptyset$, the procedure cannot split an unresolved branch.
+It returns the solutions found by \textnormal{\textsc{BranchingWithTimeout}} and places every branch in $T_Q$ into $U'$.
+Thus, Equation~\eqref{eq:zeroing-invariant} is exactly Equation~\eqref{eq:timeout-decomposition}.
+
+Now suppose $X\neq\emptyset$ and that the claim holds whenever fewer
+variables are available. Let $(S_Q,T_Q)$ be the result of
+\textnormal{\textsc{BranchingWithTimeout}} on $Q$. For each $R\in T_Q$, the
+procedure chooses some $x\in X$ and recursively processes
+\[
+    R_0=R\cup\{x\}
+    \qquad\text{and}\qquad
+    R_1=R\cup\{1-xz\},
+\]
+where $z$ is fresh. Both calls use the smaller set $X\setminus\{x\}$.
+Lemma~\ref{lem:zeroing-split} gives
+\[
+    V_Y(R)=V_Y(R_0)\cup V_Y(R_1).
+\]
+Substituting these decompositions into
+Equation~\eqref{eq:timeout-decomposition} shows that its right-hand side is
+the union of $S'$ and the varieties indexed by $U'$. This is
+Equation~\eqref{eq:zeroing-invariant}.
+
+Apply the claim to the initial call with $Q=P$. Since $P$ contains no inverse
+variables, $V_Y(P)=V(P)$, which proves the stated identity. If $U$ is empty,
+the union over $U$ is empty and hence $S=V(P)$.
+\end{proof}
+
+Now to show the run always terminates in finite time.
+\begin{theorem}
+    \label{thm:zeroing-termination}
+    Zeroing-Branching~\ref{alg:ZeroingBranching} terminates in finite time.
+\end{theorem}
+\begin{proof}
+    The depth of the recursion tree is at most $|X|$ since for each call an unused variable is required and removed.
+    The branching factor is bounded by the number of hitting sets of factors which is finite.
+    The tree size is finite, and due to the timeout each hitting set is evaluated in finite time.
+    Thus the algorithm terminates in finite time.
+\end{proof}
 
 % Inference of a timeout evaluation result from its children evaluations' results
 % if all its children are unsatisfiable, then the evaluation is unsatisfiable

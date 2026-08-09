@@ -46,15 +46,10 @@ Additionally, we optimize the order of iteration over the minimal hitting sets, 
     \label{fig:branching_flowchart}
 \end{figure}
 
-\subsection{Iteration over minimal hitting sets}
-
-There are some additional details to consider so the iteration over the minimal hitting sets is efficient.
-
-\paragraph*{Order of iteration:} The order of iteration over the hitting sets is from the simplest to the most complex to check for satisfiability.
+Let us consider an additional detail so the iteration over the minimal hitting sets is efficient.
+The order of iteration over the hitting sets, should be from the simplest to the most complex to check for satisfiability.
 As a heuristic for this cost we use the rule more constraint factors, the more complex to check.
 This allows our method to learn early unsatisfiable cores that are easier to check and prune the search space.
-
-\paragraph*{Lazy iteration:} The algorithm iterates over the hitting sets in a lazy manner, skipping hitting sets that contain a learned unsatisfiable core.
 
 %% Factor merging to reduce the number of minimal hitting sets to iterate over
 %% \paragraph*{Factor merging:} Under certain conditions, the increased number of minimal hitting sets can be more detrimental for the overall cost of the algorithm, than the cost of solving and checking satisfiability of hitting sets with larger factors.
