@@ -20,7 +20,7 @@ reductions are organized. F4 replaces individual polynomial reductions with
 sparse linear algebra, while F5 uses signatures to avoid many reductions to
 zero \cite{faugere1999f4,faugere2002f5}. Primary-decomposition algorithms use
 Gr\"obner bases and factorization to separate components
-\cite{gianni1988primary}. 
+\cite{gianni1988primary}.
 % emphasize that numerical usually gives a particular solution
 Numerical algebraic geometry takes a different route:
 homotopy continuation and witness sets provide numerical descriptions of
@@ -33,7 +33,7 @@ Mayr and Meyer proved exponential
 space lower bounds for ideal-membership problems arising from polynomial
 ideals \cite{mayr1982complexity}. On concrete inputs, the term order, reduction
 strategy, and pair-selection rule can change the amount of intermediate work
-substantially. 
+substantially.
 % we want to mention recent works in a sentence that emphasizes that the field is still active
 Recent learning-based work has concentrated on these choices.
 Peifer et al.\ trained a reinforcement-learning policy for pair selection in
@@ -71,11 +71,11 @@ The union of their zero sets is exactly the zero set of the original input, so
 the split does not discard solutions or rely on a genericity assumption.
 
 % see what of the below is needed above - most of it goes to later sections
-An inconsistent branch also provides information about later branches. We extract an
-unsatisfiable core from its Gr\"obner-basis certificate, following the refinement
-procedure of Sun et al.\ \cite{sun2016}. Every later hitting set that contains
-this core is inconsistent and can be skipped. Conflict-driven clause learning
-uses the analogous pruning rule in Boolean satisfiability
+An inconsistent branch can also provide information about later branches. If
+the branch solver returns a certified unsatisfiable core, every later hitting
+set containing that core can be skipped. The method does not require a
+particular branch solver or core-extraction procedure. Conflict-driven clause learning uses the analogous
+pruning rule in Boolean satisfiability
 \cite{marques1999grasp,marques2009cdcl}. In our setting, the learned objects are
 sets of polynomial factors, and unsatisfiability is certified algebraically.
 
@@ -90,9 +90,9 @@ parent zero set.
 
 % keep things we're proud of, like nontrivial proofs
 We prove that the factor decomposition, core pruning, and zero/nonzero splits
-preserve the complete solution set. The implementation accepts several
-Gr\"obner-basis engines as branch solvers. We compare it with direct
-Gr\"obner-basis computation, symbolic decomposition, and numerical homotopy on
+preserve the complete solution set for any branch solver satisfying the stated
+conditions.
+We compare the resulting implementation with direct Gr\"obner-basis computation, symbolic decomposition, and numerical homotopy on
 generated benchmarks. We then apply it to two systems from quantum field theory
 for which the standard methods in our comparison do not complete. The output is
 an exact collection of branch descriptions for the full solution set, including

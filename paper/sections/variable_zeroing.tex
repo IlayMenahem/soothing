@@ -1,13 +1,11 @@
 \section{Branching with variable zeroing}
+\label{sec:variable-zeroing}
 
-% Motivation for variable zeroing
-There are methods (!!!Add citations!!!) in the literature of algorithmic algebraic geometry that assume the value of a variable is zero, and then solve the resulting system.
-
-% Explaining the method with variable zeroing
-The following method takes the algorithm~\ref{alg:Branching} and allows for the solver to time out.
-If the solver times out, the method chooses a variable, and tries to solve the system using algorithm~\ref{alg:Branching} once assuming the variable is zero, and once assuming the variable is non-zero.
-The branching procedure is then applied recursively either until every branch is resolved, or until the computation resources are exhausted.
-In the experiments section~\ref{sec:experiments}, we show that recursive branching~\ref{alg:ZeroingBranching} utilizes the computation resources better than the original branching method~\ref{alg:Branching}.
+Algorithm~\ref{alg:ZeroingBranching} handles timeouts from the branch solver.
+After a timeout, it chooses a variable $x$ and replaces the unresolved branch
+with two children, one with the additional constraint $x = 0$ and another with $x\neq 0$.
+It then applies Algorithm~\ref{alg:Branching} recursively to both children. The recursion stops when all branches are resolved, no splitting variables remain, or the computation budget is exhausted.
+This construction does not depend on the choice of branch solver.
 
 % Pseudocode for the method with variable zeroing
 \begin{algorithm}
@@ -48,8 +46,11 @@ In the experiments section~\ref{sec:experiments}, we show that recursive branchi
 
 Solutions of a $Q_1$ branch are projected onto the original variables, so the fresh variables do not appear in the output.
 
-The addition of $x$ or $1 - xz$ eases the computation of a Groebner basis with weighted variable orders such as grevlex and degrevlex.
-This is because $x$ and $1 - xz$ are very low orders, and interreduction with them lowers the orders of the generators.
+In the zero branch, the solver can substitute $x=0$ directly. In the nonzero
+branch, $1-xz=0$ records that $x$ is invertible. Interreduction with either
+equation may simplify the remaining generators. The effect depends on the
+branch solver. Section~\ref{sec:experiments} describes the Gr\"obner-basis
+solvers used in our experiments.
 
 The run on \texttt{systems/system.txt}, with a five-second timeout for each
 cover, produces the recursion tree in Figure~\ref{fig:variable_zeroing_tree}.

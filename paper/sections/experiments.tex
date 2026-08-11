@@ -4,10 +4,14 @@
 \subsection{Setup}
 
 We implemented Algorithm~\ref{alg:Branching} in Rust 1.97.1 and used
-Symbolica 1.5 for polynomial arithmetic over the rationals. A branch can be checked by
-M4GB, F5, GVW, Symbolica's built-in Gr\"obner basis implementation, or
-Singular 4.4.1.  The comparison also includes six direct whole-ideal
-Gr\"obner basis configurations, three decomposition methods from Singular, Macaulay2 1.26.06, and a numerical method from HomotopyContinuation.jl under Julia 1.12.6.
+Symbolica 1.5 for polynomial arithmetic over the rationals. In all experiments,
+we solve the branches with a Gr\"obner-basis computation. The available
+implementations are M4GB, F5, GVW, F4, and Singular 4.4.1. 
+A basis containing $1$ certifies that the branch is unsatisfiable. 
+We obtain an unsatisfiable core by iterative refinement as in Section 5 of \cite{sun2016}. The comparison also includes six direct whole-ideal
+Gr\"obner-basis configurations, three decomposition methods from Singular,
+Macaulay2 1.26.06, and a numerical method from HomotopyContinuation.jl under
+Julia 1.12.6.
 
 We ran the benchmark on an Apple M4 Pro with 14 CPU cores and 24 GB of memory.
 Every table entry is a single run. Every method received 60 seconds per system.

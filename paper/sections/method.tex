@@ -1,17 +1,23 @@
 \section{Method}
 \label{sec:method}
 
-% some background on the method
-Let us say we have a very large polynomial system $P$, we factorize the polynomials in $P$ and get a set of factors $C_1, \ldots, C_m$.
-We iterate over all the minimal hitting sets of $C_1, \ldots, C_m$, and solve the polynomial system corresponding to each minimal hitting set.
-We show that the union of the solution sets our algorithm returns is the full solution set of $P$.
-Additionally, we optimize the order of iteration over the minimal hitting sets, and learn unsatisfiable cores to skip hitting sets that contain them and thus unsolvable.
+Algorithm~\ref{alg:Branching} uses a branch solver as a subroutine. Given a
+polynomial system $P$, it factors each polynomial to obtain
+$C_1,\ldots,C_m$ and enumerates the minimal hitting sets of these factor sets.
+Each hitting set is itself a smaller polynomial system. For a hitting set $H$,
+the branch solver must either describe $V(H)$ exactly or certify that
+$V(H)=\emptyset$. It may also return a certified unsatisfiable core
+$U\subseteq H$; any later hitting set containing $U$ can be skipped.
+
+The union of the solution sets of the satisfiable branches is $V(P)$. We order
+the hitting sets by an estimate of the cost of solving them and skip those that
+contain a previously learned core.
 
 \begin{algorithm}
 \caption{Branching}
 \label{alg:Branching}
 \begin{algorithmic}[1]
-    \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$.
+    \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$ and an exact branch solver $\mathcal{B}$.
 
     \State Interreduce the polynomials \Comment{Optional}
     \State Initialize $C_1, \ldots, C_m$ as the sets of factors of $p_1, \ldots, p_m$
@@ -24,11 +30,13 @@ Additionally, we optimize the order of iteration over the minimal hitting sets, 
             \State \textbf{continue}
         \EndIf
 
-        \State Check whether $HS$ is satisfiable
-        \If{$HS$ is satisfiable}
-            \State Add the solutions returned for $HS$ to $S$
+        \State Use $\mathcal{B}$ to solve $HS$
+        \If{$\mathcal{B}$ returns a representation of $V(HS)$}
+            \State Add the returned representation to $S$
         \Else
-            \State $C \gets C \cup \{\Call{GBCoreIterativeRefinement}{HS}\}$ as in Section 5 of \cite{sun2016}
+            \If{$\mathcal{B}$ returns a certified unsatisfiable core}
+                \State Add the core to $C$
+            \EndIf
         \EndIf
     \EndFor
 
@@ -46,10 +54,10 @@ Additionally, we optimize the order of iteration over the minimal hitting sets, 
     \label{fig:branching_flowchart}
 \end{figure}
 
-Let us consider an additional detail so the iteration over the minimal hitting sets is efficient.
-The order of iteration over the hitting sets, should be from the simplest to the most complex to check for satisfiability.
-As a heuristic for this cost we use the rule more constraint factors, the more complex to check.
-This allows our method to learn early unsatisfiable cores that are easier to check and prune the search space.
+The order of the minimal hitting sets affects running time but not correctness.
+We use the number of factors in a hitting set as an estimate of its cost and
+process smaller sets first. An unsatisfiable core found in a small set may then
+prune larger sets before they reach the solver.
 
 %% Factor merging to reduce the number of minimal hitting sets to iterate over
 %% \paragraph*{Factor merging:} Under certain conditions, the increased number of minimal hitting sets can be more detrimental for the overall cost of the algorithm, than the cost of solving and checking satisfiability of hitting sets with larger factors.
@@ -158,8 +166,9 @@ Soundness does not require $U$ to be minimal. A smaller core is useful only
 because more later branches may contain it.
 
 For the following result, assume that the branch solver terminates on every
-unpruned branch $H$. If $H$ is satisfiable, it returns exactly $V(H)$. If $H$
-is unsatisfiable, it returns a certified core $U\subseteq H$.
+unpruned branch $H$. It either returns $V(H)$ exactly or certifies that
+$V(H)=\emptyset$. Any core used for pruning must be a certified subset
+$U\subseteq H$.
 
 \begin{theorem}
 \label{thm:branching-correctness}
