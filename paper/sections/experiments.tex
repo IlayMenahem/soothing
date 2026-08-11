@@ -2,6 +2,7 @@
 \label{sec:experiments}
 
 \subsection{Setup}
+\label{subsec:experimental-setup}
 
 We implemented Algorithm~\ref{alg:Branching} in Rust 1.97.1 and used
 Symbolica 1.5 for polynomial arithmetic over the rationals. In all experiments,
@@ -22,6 +23,7 @@ input processing are therefore included in $T$ but not in $F$.
 The complete measurements are stored in the appendix.
 
 \subsection{Baseline systems}
+\label{subsec:baseline-systems}
 
 The baseline has 20 generated systems in six families. Signed-distance cycles and
 affine-factor hypergraphs test many inexpensive covers.  The overlapping
@@ -114,6 +116,7 @@ work, branching finds the first satisfiable selector cover within $0.052$
 seconds on every larger gated system.
 
 \subsection{Physical Systems}
+\label{subsec:physical-systems}
 % explanation of the physical systems, and the reason to use the general pipeline for solving them.
 
 % Performance table of the pipeline by the internal subsolver (i.e F4, F5, etc.)
