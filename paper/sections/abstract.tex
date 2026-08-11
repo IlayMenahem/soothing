@@ -1,20 +1,33 @@
 \begin{abstract}
 
+Polynomial systems are a fundamental language for describing algebraic and geometric problems across mathematics and its applications.
+Beyond finding individual solutions, one often seeks global properties of the solution space,
+such as its dimension and irreducible components,
+or structural properties and decompositions of the underlying polynomial ideal.
 % [solving large sets of polynomial equations is important for problems in X Y Z]
-Computing a Gr\"obner basis of a polynomial ideal is a fundamental problem in algebraic geometry.
+% Solving a large set of polynomial equations is a fundamental problem in algebraic geometry and a pratical problem in many applications.
+% Computing a Gr\"obner basis of a polynomial ideal is a fundamental problem in algebraic geometry.
 % [many of those problems are still inaccessible \ldots]
-For ideals with many variables and polynomials of high degree, this computation can become intractable.
+For large polynomial systems with many variables and high degrees,
+determining these global properties can become intractable.
 % [leading approaches include X Y Z]
 % [benchmark relative to other methods]
-Leading approaches combine variants of Buchberger's algorithm with syzygy and decomposition techniques.
+Leading approaches include variants of Buchberger's algorithm with syzygy, decomposition techniques, resultants, and XXX,
+as well as numerical methods such as homotopy continuation.
 % [however, these approaches are limited by \ldots]
-However, these approaches can fail on practical problems and even on slight perturbations of standard benchmarks.
+However, even the most modern approaches still often fail on practical problems and on slight perturbations of standard benchmarks.
 % [broadest strongest claim] and [we demonstrate it on X Y]
-We introduce a framework for Gr\"obner-basis computation and use it to compute bases for two systems arising from research in quantum field theory for which, no other standard method has succeeded.
+Here we introduce a framework that enables exact algebraic analysis of polynomial systems beyond the reach of existing methods.
+%Here we introduce a framework for Gr\"obner-basis computation and use it
+We use this framework to compute bases for two systems arising from research in quantum field theory
+for which, no other standard method has succeeded.
 % [more specifics about the method]
 The framework divides the computation into smaller subproblems that existing methods can solve.
 It also draws on conflict-driven clause learning (CDCL) to reduce the number of subproblems.
 % [outlook sentence on what would this contribute to in the figure / extensions for future work]
-Several heuristics in the framework remain to be optimized, and further ideas from CDCL may also apply.
-
+At a later stage, we construct a decision tree guided by domain-informed hypotheses to efficiently enumerate candidate solutions.
+%Several heuristics in the framework remain to be optimized, and further ideas from CDCL may also apply.
+Together, these ideas offer a path toward the exact analysis of previously inaccessible polynomial systems.
 \end{abstract}
+
+% update to include mentions of other important achievements including proofs if nontrivial

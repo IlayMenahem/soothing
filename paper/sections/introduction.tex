@@ -1,12 +1,99 @@
 \section{Introduction}
 
-% [challenges in symbolic computation that require solving polynomial problems]
-% [recognized since hallmark historical problems - early successes and key papers, and limitations]
-% [methods over the years including Groebner, and limitations]
-% [also recent attempts and developments, including AI use]
+Systems of multivariate polynomial equations appear whenever a symbolic model
+contains nonlinear algebraic constraints. Applications include robotics,
+coding theory, optimization, statistics, and physics
+\cite{sturmfels2002solving}. In many of these problems, an isolated solution is
+not enough. One needs the dimension of the solution set, its irreducible
+components, or exact relations that hold on every solution. These are questions
+about the variety and its defining ideal, rather than about a single point
+\cite{cox2015ideals,kreuzer2000computational}.
 
-% [highlight situations where finding a solution is not hard, but finding the family of solutions is required]
-% [when is this important - examples]
-% [gap - what are the limitations for this kind of problem]
+% (minor) consider giving another example here, of where a particular solution is less interesting than the general family
 
-% [here we ...]
+Elimination by resultants provided an early systematic way to attack polynomial
+systems, but the introduction of Gr\"obner bases gave a common algorithmic
+framework for elimination, ideal membership, dimension, and related tasks.
+Buchberger developed this framework in his 1965 thesis
+\cite{buchberger2006thesis}. Later algorithms changed how the expensive
+reductions are organized. F4 replaces individual polynomial reductions with
+sparse linear algebra, while F5 uses signatures to avoid many reductions to
+zero \cite{faugere1999f4,faugere2002f5}. Primary-decomposition algorithms use
+Gr\"obner bases and factorization to separate components
+\cite{gianni1988primary}. 
+% emphasize that numerical usually gives a particular solution
+Numerical algebraic geometry takes a different route:
+homotopy continuation and witness sets provide numerical descriptions of
+isolated roots and positive-dimensional components
+\cite{sommese2001numerical,sommese2005numerical}.
+
+% transition unclear - probably delete
+Worst-case complexity remains a limitation despite these algorithmic changes.
+Mayr and Meyer proved exponential
+space lower bounds for ideal-membership problems arising from polynomial
+ideals \cite{mayr1982complexity}. On concrete inputs, the term order, reduction
+strategy, and pair-selection rule can change the amount of intermediate work
+substantially. 
+% we want to mention recent works in a sentence that emphasizes that the field is still active
+Recent learning-based work has concentrated on these choices.
+Peifer et al.\ trained a reinforcement-learning policy for pair selection in
+Buchberger's algorithm \cite{peifer2020learning}. Kera et al.\ trained
+transformers to compute Gr\"obner bases for a restricted class of
+zero-dimensional radical ideals \cite{kera2024learning}. Both results concern
+controlled input distributions; a large, general ideal still requires an
+exact symbolic computation.
+
+% combine the key things from here into the above
+Finding one root and describing the full zero set are different computational
+goals. A single root does not determine whether
+the system has a curve of solutions, several components, or additional isolated
+points. Numerical irreducible decomposition was developed in part to handle
+such positive-dimensional and mixed-dimensional sets
+\cite{sommese2001numerical}. When the desired output is exact, however, the
+calculation still has to recover ideal-level information. A direct
+Gr\"obner-basis calculation treats the full generating set at once, even when
+the equations already display a useful factor structure.
+
+% What's the gap?
+% Despite a lot of progress... many problems with polynomial equations remain inaccessible, including ones of particular relecance in quantum field theory and more.
+% There are also many situations of interest where ceratin domain-... assumptions can be used to ...
+
+% Here we (expand on the abstract)
+
+% go into the more technical description here
+Our method starts with that factor structure. Many equations in our target
+systems factor. If
+$p_i=\prod_j f_{ij}$, then every solution of $p_i=0$ makes at least one factor
+$f_{ij}$ vanish. Selecting factors that meet every equation gives a hitting set
+of the factor family. It is enough to enumerate the minimal hitting sets, and
+each one defines a smaller polynomial system. We solve these systems separately.
+The union of their zero sets is exactly the zero set of the original input, so
+the split does not discard solutions or rely on a genericity assumption.
+
+% see what of the below is needed above - most of it goes to later sections
+An inconsistent branch also provides information about later branches. We extract an
+unsatisfiable core from its Gr\"obner-basis certificate, following the refinement
+procedure of Sun et al.\ \cite{sun2016}. Every later hitting set that contains
+this core is inconsistent and can be skipped. Conflict-driven clause learning
+uses the analogous pruning rule in Boolean satisfiability
+\cite{marques1999grasp,marques2009cdcl}. In our setting, the learned objects are
+sets of polynomial factors, and unsatisfiability is certified algebraically.
+
+Some factor branches can still be too expensive for the chosen subsolver. After
+a timeout, we build a second decision tree by splitting a selected variable into
+the cases $x=0$ and $x\neq 0$. We encode the second case exactly by adjoining
+$1-xz=0$ with a fresh variable $z$. A domain expert may have a good reason to
+expect that a particular variable vanishes.
+That expectation controls which split we try first, but it is not an assumption:
+both children remain in the tree, and their projected solution sets recover the
+parent zero set.
+
+% keep things we're proud of, like nontrivial proofs
+We prove that the factor decomposition, core pruning, and zero/nonzero splits
+preserve the complete solution set. The implementation accepts several
+Gr\"obner-basis engines as branch solvers. We compare it with direct
+Gr\"obner-basis computation, symbolic decomposition, and numerical homotopy on
+generated benchmarks. We then apply it to two systems from quantum field theory
+for which the standard methods in our comparison do not complete. The output is
+an exact collection of branch descriptions for the full solution set, including
+positive-dimensional families.
