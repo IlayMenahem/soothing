@@ -96,18 +96,18 @@ recursion, write
 This projection removes the inverse variables introduced along the path to
 $Q$.
 
-We use the following contract for \textsc{BranchingWithTimeout}. If a call on
-$Q$ returns a collection of solution-set representations $S_Q$ and a set of
-unresolved branches $T_Q$,
-then
+We use the following contract for \textsc{BranchingWithTimeout}. On input $Q$,
+it returns a collection $S_Q$ of solution-set representations and a set $T_Q$
+of unresolved branches such that
 \begin{equation}
 \label{eq:timeout-decomposition}
     V_Y(Q)=\operatorname{Sol}(S_Q)\cup\bigcup_{R\in T_Q}V_Y(R).
 \end{equation}
-Here and below, $\operatorname{Sol}(S_Q)$ denotes the subset of
-$\overline{K}^{Y}$ represented by the solver output. Equation~\eqref{eq:timeout-decomposition}
-is the usual branching invariant: a timeout moves an unprocessed branch to
-$T_Q$ instead of discarding it. We also assume, as in
+As defined in Section~\ref{sec:method}, $\operatorname{Sol}(S_Q)$ is the union
+of the sets represented by $S_Q$, projected here onto the coordinates in $Y$.
+Equation~\eqref{eq:timeout-decomposition} is the usual branching invariant: a
+timeout moves an unprocessed branch to $T_Q$ instead of discarding it. We also
+assume, as in
 Theorem~\ref{thm:branching-correctness}, that every learned UNSAT core
 is certified.
 
@@ -140,7 +140,8 @@ In particular, if $U=\emptyset$, then $\operatorname{Sol}(S)=V(P)$.
 \end{theorem}
 
 \begin{proof}
-We prove that by showing that every call $\operatorname{SolveByZeroing}(Q,X,\tau,C)$ returning $(S',U',C')$ satisfies
+We prove the stronger claim that every call
+$\operatorname{SolveByZeroing}(Q,X,\tau,C)$ returning $(S',U',C')$ satisfies
 \begin{equation}
 \label{eq:zeroing-invariant}
     V_Y(Q)=\operatorname{Sol}(S')\cup\bigcup_{R\in U'}V_Y(R).
@@ -148,8 +149,10 @@ We prove that by showing that every call $\operatorname{SolveByZeroing}(Q,X,\tau
 The proof is by induction on $|X|$.
 
 If $X=\emptyset$, the procedure cannot split an unresolved branch.
-It returns the solution-set representations found by \textnormal{\textsc{BranchingWithTimeout}} and places every branch in $T_Q$ into $U'$.
-Thus, Equation~\eqref{eq:zeroing-invariant} is exactly Equation~\eqref{eq:timeout-decomposition}.
+It returns the representations found by
+\textnormal{\textsc{BranchingWithTimeout}} and places every branch in $T_Q$
+into $U'$. Thus, Equation~\eqref{eq:zeroing-invariant} is exactly
+Equation~\eqref{eq:timeout-decomposition}.
 
 Now suppose $X\neq\emptyset$ and that the claim holds whenever fewer
 variables are available. Let $(S_Q,T_Q)$ be the result of
@@ -166,8 +169,7 @@ Lemma~\ref{lem:zeroing-split} gives
     V_Y(R)=V_Y(R_0)\cup V_Y(R_1).
 \]
 Substituting these decompositions into
-Equation~\eqref{eq:timeout-decomposition} shows that its right-hand side is
-the union of the sets represented by $S'$ and the varieties indexed by $U'$. This is
+Equation~\eqref{eq:timeout-decomposition} gives
 Equation~\eqref{eq:zeroing-invariant}.
 
 Apply the claim to the initial call with $Q=P$. Since $P$ contains no inverse

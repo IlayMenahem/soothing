@@ -9,11 +9,11 @@ the branch solver must either describe $V(H)$ exactly or certify that
 $V(H)=\emptyset$. It may also return a certified UNSAT core
 $U\subseteq H$; any later hitting set containing $U$ can be skipped.
 
-The union of the solution sets represented by the satisfiable branches is
-$V(P)$. For a collection $S$ of solution-set representations, write
-$\operatorname{Sol}(S)$ for the union of the sets they represent. We order
-the hitting sets by an estimate of the cost of solving them and skip those that
-contain a previously learned core.
+The branch solver returns a representation of the solution set of each
+satisfiable branch. If $S$ is a collection of such representations, let
+$\operatorname{Sol}(S)$ denote the union of the represented sets. The algorithm
+returns $S$ with $\operatorname{Sol}(S)=V(P)$.
+It processes the hitting sets in estimated order of cost and skips any set that contains a learned core.
 
 \begin{algorithm}
 \caption{Branching}
@@ -27,13 +27,13 @@ contain a previously learned core.
     \State Initialize $C \gets \emptyset$ an UNSAT-core set
     \State Initialize $S \gets \emptyset$ a set of solution-set representations
 
-    \For{Each minimal hitting set $HS$ of $C_1, \ldots, C_m$}
-        \If{$HS$ contains an UNSAT core from $C$}
+    \For{Each minimal hitting set $H$ of $C_1, \ldots, C_m$}
+        \If{$H$ contains an UNSAT core from $C$}
             \State \textbf{continue}
         \EndIf
 
-        \State Use $\mathcal{B}$ to solve $HS$
-        \If{$\mathcal{B}$ returns a representation of $V(HS)$}
+        \State Use $\mathcal{B}$ to solve $H$
+        \If{$\mathcal{B}$ returns a representation of $V(H)$}
             \State Add the returned representation to $S$
         \Else
             \If{$\mathcal{B}$ returns a certified UNSAT core}
@@ -196,17 +196,17 @@ can add a solution missing from this union. Thus the initial branch collection
 represents exactly $V(P')$.
 
 \paragraph*{Loop invariant.}
-Let $R$ be the set of branches that have not yet been processed, and let $S$
-be the collection of solution-set representations accumulated so far. At the start of the loop,
+Let $R$ be the set of unprocessed branches and $S$ the collection of
+solution-set representations returned so far. At the start of the loop,
 \[
     \operatorname{Sol}(S)\subseteq V(P')
     \qquad\text{and}\qquad
     V(P')\subseteq \operatorname{Sol}(S)\cup\bigcup_{H\in R}V(H).
 \]
 The first inclusion is the soundness invariant. The second is the completeness
-invariant: every solution not yet represented by $S$ remains in a pending branch. Both
-hold initially because $S=\emptyset$, $R=\mathcal H$, and the branch
-decomposition holds.
+invariant: every solution outside $\operatorname{Sol}(S)$ remains in a pending
+branch. Both hold initially because $S=\emptyset$, $R=\mathcal H$, and the
+branch decomposition holds.
 
 \paragraph*{Core pruning.}
 Suppose the algorithm skips $H$ because it contains a learned core $U$.
@@ -214,9 +214,10 @@ Lemma~\ref{lem:core-pruning} gives $V(H)=\emptyset$. Removing $H$ from $R$
 therefore leaves the completeness invariant unchanged, so soundness is unchanged as well.
 
 \paragraph*{Branch solving.}
-If $H$ is satisfiable, the solver adds a representation of exactly $V(H)$ to $S$. Since
+If $H$ is satisfiable, the solver adds to $S$ a representation of $V(H)$. Since
 $V(H)\subseteq V(P')$, the soundness invariant is preserved. Moving $V(H)$
-from the pending union into $S$ also preserves the completeness invariant. If
+from the pending union into $\operatorname{Sol}(S)$ also preserves the
+completeness invariant. If
 $H$ is UNSAT, then $V(H)=\emptyset$, so removing it from $R$ preserves
 both invariants.
 
@@ -227,5 +228,5 @@ $\operatorname{Sol}(S)\subseteq V(P')$. Hence
 $\operatorname{Sol}(S)=V(P')=V(P)$.
 \end{proof}
 
-Note that the theoretical analysis does not require the field $K$ to be algebraically closed.
-This is due to if there is no solution over the algebraic closure, then there is no solution over the field itself.
+The theoretical analysis does not require $K$ to be algebraically closed. If a
+system has no solution over the algebraic closure, it has no solution over $K$.
