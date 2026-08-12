@@ -103,17 +103,7 @@ times are in seconds.}
 \label{tab:baseline-comparison}
 \end{table}
 
-The larger gated systems expose the cost of the nonlinear residual cover that
-is hidden by the easy selector cover.  At Cyclic-7, every branching backend
-finds the selector cover immediately but fails to exhaust both covers in
-60 seconds; all direct Gr\"obner methods also time out, while the numerical
-method completes in $58.287$ seconds.  For Katsura-8, branching with Singular
-still completes in $2.657$ seconds, compared with $3.596$ seconds for facstd,
-and every direct method times out.  Dense $n=7$ is harder: branching with
-Singular takes $42.020$ seconds and HomotopyContinuation.jl takes $32.261$
-seconds, while all direct methods time out.  Despite this increase in total
-work, branching finds the first satisfiable selector cover within $0.052$
-seconds on every larger gated system.
+% Result analysis
 
 \subsection{Physical Systems}
 \label{subsec:physical-systems}
