@@ -6,10 +6,12 @@ polynomial system $P$, it factors each polynomial to obtain
 $C_1,\ldots,C_m$ and enumerates the minimal hitting sets of these factor sets.
 Each hitting set is itself a smaller polynomial system. For a hitting set $H$,
 the branch solver must either describe $V(H)$ exactly or certify that
-$V(H)=\emptyset$. It may also return a certified unsatisfiable core
+$V(H)=\emptyset$. It may also return a certified UNSAT core
 $U\subseteq H$; any later hitting set containing $U$ can be skipped.
 
-The union of the solution sets of the satisfiable branches is $V(P)$. We order
+The union of the solution sets represented by the satisfiable branches is
+$V(P)$. For a collection $S$ of solution-set representations, write
+$\operatorname{Sol}(S)$ for the union of the sets they represent. We order
 the hitting sets by an estimate of the cost of solving them and skip those that
 contain a previously learned core.
 
@@ -22,11 +24,11 @@ contain a previously learned core.
     \State Interreduce the polynomials \Comment{Optional}
     \State Initialize $C_1, \ldots, C_m$ as the sets of factors of $p_1, \ldots, p_m$
 
-    \State Initialize $C \gets \emptyset$ an unsatisfiable cores set
-    \State Initialize $S \gets \emptyset$ a solutions set
+    \State Initialize $C \gets \emptyset$ an UNSAT-core set
+    \State Initialize $S \gets \emptyset$ a set of solution-set representations
 
     \For{Each minimal hitting set $HS$ of $C_1, \ldots, C_m$}
-        \If{$HS$ contains an unsatisfiable core from $C$}
+        \If{$HS$ contains an UNSAT core from $C$}
             \State \textbf{continue}
         \EndIf
 
@@ -34,7 +36,7 @@ contain a previously learned core.
         \If{$\mathcal{B}$ returns a representation of $V(HS)$}
             \State Add the returned representation to $S$
         \Else
-            \If{$\mathcal{B}$ returns a certified unsatisfiable core}
+            \If{$\mathcal{B}$ returns a certified UNSAT core}
                 \State Add the core to $C$
             \EndIf
         \EndIf
@@ -56,7 +58,7 @@ contain a previously learned core.
 
 The order of the minimal hitting sets affects running time but not correctness.
 We use the number of factors in a hitting set as an estimate of its cost and
-process smaller sets first. An unsatisfiable core found in a small set may then
+process smaller sets first. An UNSAT core found in a small set may then
 prune larger sets before they reach the solver.
 
 %% Factor merging to reduce the number of minimal hitting sets to iterate over
@@ -92,7 +94,7 @@ applies at every step of a sequential interreduction.
 \end{proof}
 
 A zero generator imposes no constraint and can be discarded. A nonzero
-constant makes the ideal the unit ideal, so the input system is unsatisfiable.
+constant makes the ideal the unit ideal, so the input system is UNSAT.
 
 \begin{lemma}[Sufficiency of minimal hitting sets]
 \label{lem:minimal-hitting-suffices}
@@ -154,12 +156,12 @@ $\sqrt{\langle H\rangle}$, which gives the stated equality.
 
 \begin{lemma}
 \label{lem:core-pruning}
-Let $U$ be an unsatisfiable core. If $U \subseteq H$, then $V(H)=\emptyset$.
+Let $U$ be an UNSAT core. If $U \subseteq H$, then $V(H)=\emptyset$.
 \end{lemma}
 
 \begin{proof}
 Since every point in $V(H)$ must satisfy every polynomial in $U$, we have
-$V(H) \subseteq V(U)$. The core $U$ is unsatisfiable, so $V(U)=\emptyset$ and
+$V(H) \subseteq V(U)$. The core $U$ is UNSAT, so $V(U)=\emptyset$ and
 therefore $V(H)=\emptyset$.
 \end{proof}
 
@@ -195,14 +197,14 @@ represents exactly $V(P')$.
 
 \paragraph*{Loop invariant.}
 Let $R$ be the set of branches that have not yet been processed, and let $S$
-be the solution set accumulated so far. At the start of the loop,
+be the collection of solution-set representations accumulated so far. At the start of the loop,
 \[
-    S\subseteq V(P')
+    \operatorname{Sol}(S)\subseteq V(P')
     \qquad\text{and}\qquad
-    V(P')\subseteq S\cup\bigcup_{H\in R}V(H).
+    V(P')\subseteq \operatorname{Sol}(S)\cup\bigcup_{H\in R}V(H).
 \]
 The first inclusion is the soundness invariant. The second is the completeness
-invariant: every solution not yet in $S$ remains in a pending branch. Both
+invariant: every solution not yet represented by $S$ remains in a pending branch. Both
 hold initially because $S=\emptyset$, $R=\mathcal H$, and the branch
 decomposition holds.
 
@@ -212,16 +214,17 @@ Lemma~\ref{lem:core-pruning} gives $V(H)=\emptyset$. Removing $H$ from $R$
 therefore leaves the completeness invariant unchanged, so soundness is unchanged as well.
 
 \paragraph*{Branch solving.}
-If $H$ is satisfiable, the solver adds exactly $V(H)$ to $S$. Since
+If $H$ is satisfiable, the solver adds a representation of exactly $V(H)$ to $S$. Since
 $V(H)\subseteq V(P')$, the soundness invariant is preserved. Moving $V(H)$
 from the pending union into $S$ also preserves the completeness invariant. If
-$H$ is unsatisfiable, then $V(H)=\emptyset$, so removing it from $R$ preserves
+$H$ is UNSAT, then $V(H)=\emptyset$, so removing it from $R$ preserves
 both invariants.
 
 \paragraph*{Return.}
 When the loop ends, $R=\emptyset$. The completeness invariant gives
-$V(P')\subseteq S$, while the soundness invariant gives $S\subseteq V(P')$.
-Hence $S=V(P')=V(P)$.
+$V(P')\subseteq \operatorname{Sol}(S)$, while the soundness invariant gives
+$\operatorname{Sol}(S)\subseteq V(P')$. Hence
+$\operatorname{Sol}(S)=V(P')=V(P)$.
 \end{proof}
 
 Note that the theoretical analysis does not require the field $K$ to be algebraically closed.

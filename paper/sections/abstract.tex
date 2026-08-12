@@ -11,8 +11,8 @@ Leading approaches include variants of Buchberger's algorithm with syzygy, decom
 However, even the most modern approaches still often fail on practical problems or slight perturbations of standard benchmarks.
 % [broadest strongest claim] and [we demonstrate it on X Y]
 Here we introduce a framework that divides a polynomial system into simpler branches.
-It assumes only that the branch solver describes satisfiable branches and certifies unsatisfiable ones.
-If the solver also returns an unsatisfiable core, the framework uses it to prune later branches, following the same basic idea as conflict-driven clause learning (CDCL).
+It assumes only that the branch solver describes satisfiable branches and certifies unsatisfiable (UNSAT) ones.
+If the solver also returns an UNSAT core, the framework uses it to prune later branches, following the same basic idea as conflict-driven clause learning (CDCL).
 In our experiments, we use Gr\"obner-basis solvers and apply the method to two systems arising from research in quantum field theory for which no standard method in our comparison succeeds.
 % [outlook sentence on what would this contribute to in the figure / extensions for future work]
 At a later stage, we construct a decision tree guided by domain-informed hypotheses to efficiently enumerate candidate solutions. % Currently the "domain informed hypotheses" claim isn't backed up in the paper.

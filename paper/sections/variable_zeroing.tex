@@ -15,7 +15,7 @@ This construction does not depend on the choice of branch solver.
 \begin{algorithmic}[1]
     \Require A polynomial system $P$, and a timeout $\tau$.
     \Function{ZeroingBranching}{$P, \tau$}
-        \State $C \gets \emptyset$ \Comment{One global unsatisfiable-core set}
+        \State $C \gets \emptyset$ \Comment{One global UNSAT-core set}
         \State $X \gets \Call{Variables}{P}$ \Comment{All variables of $P$}
         \State \Return $\Call{SolveByZeroing}{P,X,\tau,C}$
     \EndFunction
@@ -44,7 +44,7 @@ This construction does not depend on the choice of branch solver.
 \end{algorithmic}
 \end{algorithm}
 
-Solutions of a $Q_1$ branch are projected onto the original variables, so the fresh variables do not appear in the output.
+Solutions of the nonzero branch are projected onto the original variables, so the fresh variables do not appear in the output.
 
 In the zero branch, the solver can substitute $x=0$ directly. In the nonzero
 branch, $1-xz=0$ records that $x$ is invertible. Interreduction with either
@@ -53,14 +53,14 @@ branch solver. Section~\ref{sec:experiments} describes the Gr\"obner-basis
 solvers used in our experiments.
 
 The run on \texttt{systems/system.txt}, with a five-second timeout for each
-cover, produces the recursion tree in Figure~\ref{fig:variable_zeroing_tree}.
-The variable chosen after a timeout is written inside the corresponding cover
+hitting set, produces the recursion tree in Figure~\ref{fig:variable_zeroing_tree}.
+The variable chosen after a timeout is written inside the corresponding hitting-set
 node.  Its outgoing edges give the zero and nonzero cases.
 
 \begin{figure}[htbp]
     \centering
     \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_tree.tex}}
-    \caption{Recursion tree for \texttt{systems/system.txt}. Each cover is shown separately; $\varnothing$ marks a branch that produces no covers.}
+    \caption{Recursion tree for \texttt{systems/system.txt}. Each hitting set is shown separately; $\varnothing$ marks a branch that produces no hitting sets.}
     \label{fig:variable_zeroing_tree}
 \end{figure}
 
@@ -68,8 +68,8 @@ node.  Its outgoing edges give the zero and nonzero cases.
 \label{subsec:zeroing-variable-choice}
 
 The choice of variable for splitting effects the efficiency of the algorithm.
-Every split creates at least two new covers to check.
-If a variable barely occurs in the current cover, both recursive calls may repeat most of the same work.
+Every split creates at least two new hitting sets to check.
+If a variable barely occurs in the current hitting set, both recursive calls may repeat most of the same work.
 A variable that occurs in many generators is a more promising choice: setting it to zero removes all terms containing it at once, while in the nonzero branch the algorithm can use the $1 - xz$.
 
 For each candidate variable $x$ that is still available on the current branch, define
@@ -97,17 +97,18 @@ This projection removes the inverse variables introduced along the path to
 $Q$.
 
 We use the following contract for \textsc{BranchingWithTimeout}. If a call on
-$Q$ returns a set of solutions $S_Q$ and a set of unresolved branches $T_Q$,
+$Q$ returns a collection of solution-set representations $S_Q$ and a set of
+unresolved branches $T_Q$,
 then
 \begin{equation}
 \label{eq:timeout-decomposition}
-    V_Y(Q)=S_Q\cup\bigcup_{R\in T_Q}V_Y(R).
+    V_Y(Q)=\operatorname{Sol}(S_Q)\cup\bigcup_{R\in T_Q}V_Y(R).
 \end{equation}
-Here and below, solver output is identified with the subset of
-$\overline{K}^{Y}$ that it represents. Equation~\eqref{eq:timeout-decomposition}
+Here and below, $\operatorname{Sol}(S_Q)$ denotes the subset of
+$\overline{K}^{Y}$ represented by the solver output. Equation~\eqref{eq:timeout-decomposition}
 is the usual branching invariant: a timeout moves an unprocessed branch to
 $T_Q$ instead of discarding it. We also assume, as in
-Theorem~\ref{thm:branching-correctness}, that every learned unsatisfiable core
+Theorem~\ref{thm:branching-correctness}, that every learned UNSAT core
 is certified.
 
 \begin{lemma}[Correctness of a zeroing split]
@@ -133,21 +134,21 @@ $Q$.
 Suppose Algorithm~\ref{alg:ZeroingBranching} returns $(S,U,C)$ on input $P$.
 Then
 \[
-    V(P)=S\cup\bigcup_{R\in U}V_Y(R).
+    V(P)=\operatorname{Sol}(S)\cup\bigcup_{R\in U}V_Y(R).
 \]
-In particular, if $U=\emptyset$, then $S=V(P)$.
+In particular, if $U=\emptyset$, then $\operatorname{Sol}(S)=V(P)$.
 \end{theorem}
 
 \begin{proof}
 We prove that by showing that every call $\operatorname{SolveByZeroing}(Q,X,\tau,C)$ returning $(S',U',C')$ satisfies
 \begin{equation}
 \label{eq:zeroing-invariant}
-    V_Y(Q)=S'\cup\bigcup_{R\in U'}V_Y(R).
+    V_Y(Q)=\operatorname{Sol}(S')\cup\bigcup_{R\in U'}V_Y(R).
 \end{equation}
 The proof is by induction on $|X|$.
 
 If $X=\emptyset$, the procedure cannot split an unresolved branch.
-It returns the solutions found by \textnormal{\textsc{BranchingWithTimeout}} and places every branch in $T_Q$ into $U'$.
+It returns the solution-set representations found by \textnormal{\textsc{BranchingWithTimeout}} and places every branch in $T_Q$ into $U'$.
 Thus, Equation~\eqref{eq:zeroing-invariant} is exactly Equation~\eqref{eq:timeout-decomposition}.
 
 Now suppose $X\neq\emptyset$ and that the claim holds whenever fewer
@@ -166,12 +167,12 @@ Lemma~\ref{lem:zeroing-split} gives
 \]
 Substituting these decompositions into
 Equation~\eqref{eq:timeout-decomposition} shows that its right-hand side is
-the union of $S'$ and the varieties indexed by $U'$. This is
+the union of the sets represented by $S'$ and the varieties indexed by $U'$. This is
 Equation~\eqref{eq:zeroing-invariant}.
 
 Apply the claim to the initial call with $Q=P$. Since $P$ contains no inverse
 variables, $V_Y(P)=V(P)$, which proves the stated identity. If $U$ is empty,
-the union over $U$ is empty and hence $S=V(P)$.
+the union over $U$ is empty and hence $\operatorname{Sol}(S)=V(P)$.
 \end{proof}
 
 Now to show the run always terminates in finite time.
@@ -186,6 +187,6 @@ Now to show the run always terminates in finite time.
     Thus the algorithm terminates in finite time.
 \end{proof}
 
-We can infer the solutions of the hitting set the solver timed out on from its children's solutions.
-If all children are unsatisfiable, then so is the timeout evaluation.
-Otherwise its solution is the union of the children's solutions.
+We can infer a solution-set representation for the hitting set on which the solver timed out from its children's representations.
+If all children are UNSAT, then so is the result of the timeout evaluation.
+Otherwise it represents the union of the sets represented by its children.

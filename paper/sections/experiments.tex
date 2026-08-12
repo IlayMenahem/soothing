@@ -7,9 +7,9 @@
 We implemented Algorithm~\ref{alg:Branching} in Rust 1.97.1 and used
 Symbolica 1.5 for polynomial arithmetic over the rationals. In all experiments,
 we solve the branches with a Gr\"obner-basis computation. The available
-implementations are M4GB, F5, GVW, F4, and Singular 4.4.1. 
-A basis containing $1$ certifies that the branch is unsatisfiable. 
-We obtain an unsatisfiable core by iterative refinement as in Section 5 of \cite{sun2016}. The comparison also includes six direct whole-ideal
+implementations are M4GB, F5, GVW, F4, and Singular 4.4.1.
+A basis containing $1$ certifies that the branch is UNSAT.
+We obtain an UNSAT core by iterative refinement as in Section 5 of \cite{sun2016}. The comparison also includes six direct whole-ideal
 Gr\"obner-basis configurations, three decomposition methods from Singular,
 Macaulay2 1.26.06, and a numerical method from HomotopyContinuation.jl under
 Julia 1.12.6.
@@ -18,7 +18,7 @@ We ran the benchmark on an Apple M4 Pro with 14 CPU cores and 24 GB of memory.
 Every table entry is a single run. Every method received 60 seconds per system.
 
 For branching, $T$ is end-to-end wall time and $F$ is the time from the start
-of the factor-cover search to its first satisfiable cover.  Factorization and
+of the minimal-hitting-set search to its first satisfiable hitting set.  Factorization and
 input processing are therefore included in $T$ but not in $F$.
 The complete measurements are stored in the appendix.
 
@@ -26,7 +26,7 @@ The complete measurements are stored in the appendix.
 \label{subsec:baseline-systems}
 
 The baseline has 20 generated systems in six families. Signed-distance cycles and
-affine-factor hypergraphs test many inexpensive covers.  The overlapping
+affine-factor hypergraphs test many inexpensive hitting sets.  The overlapping
 random multiples use seeded dense quadratic factors that recur across
 equations, with no factor shared by every equation.  In the gated systems, a
 single selector multiplies every equation of a Cyclic, Katsura, or dense
@@ -40,7 +40,7 @@ residual cover.
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{l l l}
 \hline
-Family & Tested sizes & Variables/equations; covers \\
+Family & Tested sizes & Variables/equations; hitting sets \\
 \hline
 Signed-distance cycle & $n=8,10,12$ & $8/8,10/10,12/12$; $8,8,32$ \\
 Overlapping random multiples & $(n,p,k)=(4,6,2),(6,8,3),(8,10,3)$ & $n/n$; $4,16,28$ \\
@@ -58,7 +58,7 @@ overlapping random multiples use seed 31415; both affine families use seed
 \end{table}
 
 The overlapping-random-multiple runs disable interreduction so that the
-generated factor-incidence pattern reaches the cover enumerator unchanged.
+generated factor-incidence pattern reaches the hitting-set enumerator unchanged.
 All other branching runs use interreduction.  Table~\ref{tab:baseline-comparison}
 selects the fastest completed branching backend and the fastest completed
 method in each baseline class.  A branching entry gives $T/F$ in seconds;
@@ -105,7 +105,7 @@ times are in seconds.}
 
 The larger gated systems expose the cost of the nonlinear residual cover that
 is hidden by the easy selector cover.  At Cyclic-7, every branching backend
-finds the selector component immediately but fails to exhaust both covers in
+finds the selector cover immediately but fails to exhaust both covers in
 60 seconds; all direct Gr\"obner methods also time out, while the numerical
 method completes in $58.287$ seconds.  For Katsura-8, branching with Singular
 still completes in $2.657$ seconds, compared with $3.596$ seconds for facstd,
