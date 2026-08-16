@@ -14,12 +14,22 @@ Gr\"obner-basis configurations, three decomposition methods from Singular,
 Macaulay2 1.26.06, and a numerical method from HomotopyContinuation.jl under
 Julia 1.12.6.
 
-We ran the benchmark on an Apple M4 Pro with 14 CPU cores and 24 GB of memory.
-Every table entry is a single run. Every method received 60 seconds per system.
+For Algorithm~\ref{alg:ZeroingBranching}, we test M4GB, F5, GVW, Symbolica,
+and Singular as branch solvers, disable UNSAT-core learning, and impose a
+three-second limit on each cover computation.  We selected this cutoff by
+trying one, two, three, and five seconds on the hard gated systems.  Three
+seconds is the smallest tested value that lets Singular complete the Katsura-8
+residual (about 2.6 seconds); five seconds completes no additional hard system
+and only delays the subsequent splits.
 
-For branching, $T$ is end-to-end wall time and $F$ is the time from the start
-of the minimal-hitting-set search to its first satisfiable hitting set.  Factorization and
-input processing are therefore included in $T$ but not in $F$.
+We ran the benchmark on an Apple M4 Pro with 14 CPU cores and 24 GB of memory.
+Every table entry is a single run. Every method received 60 seconds per system;
+the three-second zeroing limit is an inner, per-cover limit within that budget.
+
+For branching and variable zeroing, $T$ is end-to-end wall time and $F$ is the
+time from the start of the minimal-hitting-set search to its first satisfiable
+hitting set.  Factorization and input processing are therefore included in
+$T$ but not in $F$.
 The complete measurements are stored in the appendix.
 
 \subsection{Baseline systems}
@@ -60,46 +70,50 @@ overlapping random multiples use seed 31415; both affine families use seed
 The overlapping-random-multiple runs disable interreduction so that the
 generated factor-incidence pattern reaches the hitting-set enumerator unchanged.
 All other branching runs use interreduction.  Table~\ref{tab:baseline-comparison}
-selects the fastest completed branching backend and the fastest completed
-method in each baseline class.  A branching entry gives $T/F$ in seconds;
+selects the fastest completed branching backend, the fastest completed
+zeroing backend observed, and the fastest completed method in each baseline
+class.  A branching or zeroing entry gives $T/F$ in seconds;
 the other entries give total wall time.  ``Timeout'' means that every tested
-method in that class timed out.
+method in that class timed out.  ``Partial'' means that zeroing returned at
+least one unresolved branch, and ``error'' records a failed run rather than a
+mathematical conclusion.
 
 \begin{table}[H]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{l l l l l}
+\begin{tabular}{l l l l l l}
 \hline
-System & Best branching $T/F$ & Best direct GB & Best decomposition & Numerical \\
+System & Best branching $T/F$ & Selected zeroing $T/F$ & Best direct GB & Best decomposition & Numerical \\
 \hline
-Signed distance, $n=8$ & Symb. $0.008/0.000$ & Symb. $0.008$ & facstd $0.190$ & $32.410$ \\
-Signed distance, $n=10$ & Symb. $0.025/0.002$ & Symb. $0.029$ & facstd $0.430$ & $29.944$ \\
-Signed distance, $n=12$ & Symb. $0.087/0.002$ & Symb. $0.472$ & primdec $3.056$ & $36.880$ \\
-Overlapping $(4,6,2)$ & F5 $0.008/0.000$ & Symb. $0.413$ & facstd $0.265$ & $30.069$ \\
-Overlapping $(6,8,3)$ & F5 $0.132/0.001$ & timeout & timeout & timeout \\
-Overlapping $(8,10,3)$ & Singular $2.931/0.010$ & timeout & timeout & timeout \\
-Positive affine $(8,6,4)$ & F5 $0.008/0.000$ & timeout & facstd $0.368$ & $50.934$ \\
-Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & timeout & facstd $1.836$ & timeout \\
-Positive affine $(12,10,6)$ & F5 $0.067/0.000$ & timeout & facstd $53.318$ & timeout \\
-Gated Cyclic-5 & Symb. $0.009/0.000$ & Symb. $0.008$ & facstd $0.181$ & $35.054$ \\
-Gated Cyclic-6 & Singular $0.045/0.008$ & Singular $0.309$ & M2 $2.620$ & $37.314$ \\
-Gated Cyclic-7 & timeout & timeout & timeout & $58.287$ \\
-Gated Katsura-6 & Singular $0.049/0.008$ & GVW $0.226$ & facstd $0.233$ & $31.532$ \\
-Gated Katsura-7 & Singular $0.283/0.008$ & GVW $3.176$ & facstd $0.539$ & $31.980$ \\
-Gated Katsura-8 & Singular $2.657/0.052$ & timeout & facstd $3.596$ & $34.264$ \\
-Gated dense, $n=5$ & Singular $0.029/0.008$ & M4GB $0.171$ & facstd $0.198$ & $29.289$ \\
-Gated dense, $n=6$ & Singular $0.546/0.008$ & M4GB $4.736$ & facstd $0.755$ & $30.053$ \\
-Gated dense, $n=7$ & Singular $42.020/0.017$ & timeout & facstd $48.820$ & $32.261$ \\
-Square affine $(8,4)$ & Singular $0.470/0.023$ & timeout & facstd $0.601$ & timeout \\
-Square affine $(10,5)$ & Symb. $1.174/0.000$ & timeout & facstd $2.141$ & timeout \\
+Signed distance, $n=8$ & Symb. $0.008/0.000$ & Symb. $0.008/0.001$ & Symb. $0.008$ & facstd $0.190$ & $32.410$ \\
+Signed distance, $n=10$ & Symb. $0.025/0.002$ & Symb. $0.025/0.002$ & Symb. $0.029$ & facstd $0.430$ & $29.944$ \\
+Signed distance, $n=12$ & Symb. $0.087/0.002$ & Symb. $0.091/0.003$ & Symb. $0.472$ & primdec $3.056$ & $36.880$ \\
+Overlapping $(4,6,2)$ & F5 $0.008/0.000$ & F5 $0.009/0.001$ & Symb. $0.413$ & facstd $0.265$ & $30.069$ \\
+Overlapping $(6,8,3)$ & F5 $0.132/0.001$ & F5 $0.132/0.021$ & timeout & timeout & timeout \\
+Overlapping $(8,10,3)$ & Singular $2.931/0.010$ & Singular $2.892/0.152$ & timeout & timeout & timeout \\
+Positive affine $(8,6,4)$ & F5 $0.008/0.000$ & Singular $0.181/0.012$ & timeout & facstd $0.368$ & $50.934$ \\
+Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & Symb. $0.060/0.007$ & timeout & facstd $1.836$ & timeout \\
+Positive affine $(12,10,6)$ & F5 $0.067/0.000$ & Singular $9.600/0.078$ & timeout & facstd $53.318$ & timeout \\
+Gated Cyclic-5 & Symb. $0.009/0.000$ & Symb. $0.011/0.001$ & Symb. $0.008$ & facstd $0.181$ & $35.054$ \\
+Gated Cyclic-6 & Singular $0.045/0.008$ & Singular $0.043/0.009$ & Singular $0.309$ & M2 $2.620$ & $37.314$ \\
+Gated Cyclic-7 & timeout & Singular partial $24.118/0.009$ & timeout & timeout & $58.287$ \\
+Gated Katsura-6 & Singular $0.049/0.008$ & Singular $0.049/0.009$ & GVW $0.226$ & facstd $0.233$ & $31.532$ \\
+Gated Katsura-7 & Singular $0.283/0.008$ & Singular $0.284/0.009$ & GVW $3.176$ & facstd $0.539$ & $31.980$ \\
+Gated Katsura-8 & Singular $2.657/0.052$ & Singular $2.588/0.009$ & timeout & facstd $3.596$ & $34.264$ \\
+Gated dense, $n=5$ & Singular $0.029/0.008$ & Singular $0.029/0.008$ & M4GB $0.171$ & facstd $0.198$ & $29.289$ \\
+Gated dense, $n=6$ & Singular $0.546/0.008$ & Singular $0.535/0.008$ & M4GB $4.736$ & facstd $0.755$ & $30.053$ \\
+Gated dense, $n=7$ & Singular $42.020/0.017$ & error & timeout & facstd $48.820$ & $32.261$ \\
+Square affine $(8,4)$ & Singular $0.470/0.023$ & Singular $0.445/0.012$ & timeout & facstd $0.601$ & timeout \\
+Square affine $(10,5)$ & Symb. $1.174/0.000$ & Symb. $1.326/0.015$ & timeout & facstd $2.141$ & timeout \\
 \hline
 \end{tabular}%
 }
-\caption{Best completed result in each method class.  Branching entries show
-wall time and first-solution latency; baseline entries show wall time.  All
-times are in seconds.}
+\caption{Best completed baseline results and the fastest completed zeroing
+backend observed.  Branching and zeroing entries show wall time and
+first-solution latency; baseline entries show wall time.  All times are in
+seconds.}
 \label{tab:baseline-comparison}
 \end{table}
 

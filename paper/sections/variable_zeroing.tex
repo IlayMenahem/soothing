@@ -44,6 +44,13 @@ This construction does not depend on the choice of branch solver.
 \end{algorithmic}
 \end{algorithm}
 
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_flowchart.tex}}
+    \caption{Flowchart of the recursive variable-zeroing procedure of Algorithm~\ref{alg:ZeroingBranching}.}
+    \label{fig:variable_zeroing_flowchart}
+\end{figure}
+
 Solutions of the nonzero branch are projected onto the original variables, so the fresh variables do not appear in the output.
 
 In the zero branch, the solver can substitute $x=0$ directly. In the nonzero

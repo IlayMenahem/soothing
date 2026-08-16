@@ -1,8 +1,11 @@
 //! CLI for recursive factor branching with variable zeroing.
 //!
-//! Usage: `variable_zeroing [path]` (default: `systems/system.txt`).
+//! Usage: `variable_zeroing [path] [--no-unsat-core-search]` (default:
+//! `systems/system.txt`).
 
-use std::path::PathBuf;
+use std::collections::{BTreeMap, HashMap};
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use symbolica::LicenseManager;
@@ -11,9 +14,9 @@ use symbolica::poly::PolyVariable;
 
 use polynomial_cdcl::gb_search::GbBackend;
 use polynomial_cdcl::{
-    VariableZeroingNodeResult, VariableZeroingOptions, ZeroingVariable,
-    default_systems_dir_from_manifest, load_mathematica_system_from_path_with_var_names,
-    polynomials_from_loaded, solve_by_zeroing,
+    VariableZeroingCoverOutcome, VariableZeroingNodeResult, VariableZeroingOptions,
+    ZeroingVariable, default_systems_dir_from_manifest,
+    load_mathematica_system_from_path_with_var_names, polynomials_from_loaded, solve_by_zeroing,
 };
 
 #[derive(Debug)]
@@ -21,12 +24,15 @@ struct CliOptions {
     path: PathBuf,
     interreduce: bool,
     timeout_ms: u64,
+    max_runtime_ms: Option<u64>,
     gb_backend: GbBackend,
+    unsat_core_search: bool,
     max_nodes: usize,
     max_evaluations: usize,
     max_depth: usize,
     variable_names: Vec<String>,
     summary: bool,
+    plot: Option<PathBuf>,
 }
 
 fn parse_usize(args: &mut impl Iterator<Item = String>, option: &str) -> Result<usize, String> {
@@ -40,18 +46,24 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut path = None;
     let mut interreduce = true;
     let mut timeout_ms = 5_000;
+    let mut max_runtime_ms = None;
     let mut gb_backend = GbBackend::M4gb;
+    let mut unsat_core_search = true;
     let mut max_nodes = usize::MAX;
     let mut max_evaluations = usize::MAX;
     let mut max_depth = usize::MAX;
     let mut variable_names = Vec::new();
     let mut summary = false;
+    let mut plot = None;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--no-interreduce" => interreduce = false,
             "--timeout" => {
                 timeout_ms = parse_usize(&mut args, "--timeout")? as u64;
+            }
+            "--max-runtime" => {
+                max_runtime_ms = Some(parse_usize(&mut args, "--max-runtime")? as u64);
             }
             "--gb" => {
                 let value = args.next().ok_or_else(|| {
@@ -63,6 +75,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     )
                 })?;
             }
+            "--no-unsat-core-search" => unsat_core_search = false,
             "--max-nodes" => max_nodes = parse_usize(&mut args, "--max-nodes")?,
             "--max-covers" | "--max-evaluations" => {
                 max_evaluations = parse_usize(&mut args, "--max-evaluations")?;
@@ -73,6 +86,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     .ok_or_else(|| "--variable requires a name".to_string())?,
             ),
             "--summary" => summary = true,
+            "--plot" => {
+                plot =
+                    Some(PathBuf::from(args.next().ok_or_else(|| {
+                        "--plot requires an output .tex path".to_string()
+                    })?));
+            }
             _ if arg.starts_with("--") => return Err(format!("unknown option {arg:?}")),
             _ if path.is_some() => return Err(format!("unexpected positional argument {arg:?}")),
             _ => path = Some(PathBuf::from(arg)),
@@ -82,12 +101,15 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
         interreduce,
         timeout_ms,
+        max_runtime_ms,
         gb_backend,
+        unsat_core_search,
         max_nodes,
         max_evaluations,
         max_depth,
         variable_names,
         summary,
+        plot,
     })
 }
 
@@ -134,9 +156,16 @@ fn main() {
         load_started.elapsed()
     );
     println!(
-        "Recursive branching: {}ms/cover, {} backend, max nodes {}, max evaluations {}, max depth {}",
+        "Recursive branching: {}ms/cover, {} backend, unsat core search {}, max runtime {}, max nodes {}, max evaluations {}, max depth {}",
         cli.timeout_ms,
         cli.gb_backend.label(),
+        if cli.unsat_core_search {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        cli.max_runtime_ms
+            .map_or_else(|| "unlimited".to_string(), |value| format!("{value}ms")),
         display_limit(cli.max_nodes),
         display_limit(cli.max_evaluations),
         display_limit(cli.max_depth)
@@ -145,7 +174,9 @@ fn main() {
     let options = VariableZeroingOptions {
         interreduce: cli.interreduce,
         timeout: Duration::from_millis(cli.timeout_ms),
+        max_runtime: cli.max_runtime_ms.map(Duration::from_millis),
         gb_backend: cli.gb_backend,
+        unsat_core_search: cli.unsat_core_search,
         max_nodes: cli.max_nodes,
         max_evaluations: cli.max_evaluations,
         max_depth: cli.max_depth,
@@ -153,6 +184,12 @@ fn main() {
     };
     let result = solve_by_zeroing(polynomials, variables, &options)
         .unwrap_or_else(|error| die(format!("variable-zeroing error: {error}"), 1));
+
+    if let Some(path) = &cli.plot {
+        write_tikz_plot(path, &cli.path, &result.nodes)
+            .unwrap_or_else(|error| die(format!("plot error: {error}"), 1));
+        println!("Wrote recursion-tree plot to {}", path.display());
+    }
 
     if !cli.summary {
         for (component_index, component) in result.components.iter().enumerate() {
@@ -230,17 +267,283 @@ fn format_node_summary(node: &VariableZeroingNodeResult) -> String {
             .map(|decision| decision.variable.as_str()),
     );
     format!(
-        "{} zeroed={} nonzero={} covers={} consistent={} inconsistent={} core_pruned={} timeouts={} elapsed_secs={:.6}",
+        "ZEROING_NODE node={} zeroed={} nonzero={} covers={} evaluations={} consistent={} inconsistent={} core_pruned={} timeouts={} splits={} elapsed_secs={:.6}",
         node.node_id,
         zeroed,
         nonzero,
         node.covers,
+        node.evaluations,
         node.consistent,
         node.inconsistent,
         node.core_pruned,
         node.timeouts,
+        node.zeroing_splits,
         node.elapsed.as_secs_f64()
     )
+}
+
+/// Write a TikZ recursion tree in the same cover-centric style as the paper.
+/// Every hitting-set node contains the time spent checking that set.
+fn write_tikz_plot(
+    output_path: &Path,
+    input_path: &Path,
+    nodes: &[VariableZeroingNodeResult],
+) -> Result<(), String> {
+    let input_label = input_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("P");
+    let tikz = render_tikz_plot(input_label, nodes)?;
+    std::fs::write(output_path, tikz)
+        .map_err(|error| format!("cannot write {}: {error}", output_path.display()))
+}
+
+fn render_tikz_plot(
+    input_label: &str,
+    nodes: &[VariableZeroingNodeResult],
+) -> Result<String, String> {
+    if nodes.is_empty() {
+        return Err("the run did not create a recursion node".to_string());
+    }
+
+    let nodes_by_id: HashMap<usize, &VariableZeroingNodeResult> =
+        nodes.iter().map(|node| (node.node_id, node)).collect();
+    let mut rows: BTreeMap<usize, Vec<(usize, Option<usize>)>> = BTreeMap::new();
+    for node in nodes {
+        let row = rows.entry(node.decisions.len()).or_default();
+        row.extend(plot_members(node));
+    }
+
+    let mut positions = HashMap::new();
+    for row in rows.values() {
+        let mut raw_positions = Vec::with_capacity(row.len());
+        let mut x = 0.0;
+        let mut previous_node = None;
+        for &(node_id, cover_index) in row {
+            if previous_node.is_some_and(|previous| previous != node_id) {
+                x += 0.8;
+            }
+            raw_positions.push((node_id, cover_index, x));
+            x += 2.2;
+            previous_node = Some(node_id);
+        }
+        let center = raw_positions
+            .first()
+            .zip(raw_positions.last())
+            .map_or(0.0, |(first, last)| (first.2 + last.2) / 2.0);
+        for (node_id, cover_index, raw_x) in raw_positions {
+            positions.insert((node_id, cover_index), raw_x - center);
+        }
+    }
+
+    let mut output = String::new();
+    writeln!(output, "% Input: {}", input_label.replace('\n', " ")).unwrap();
+    output.push_str(
+        r#"\providecommand{\vzInconsistent}{\ensuremath{\textcolor{red!75!black}{\boldsymbol{\times}}}}
+\providecommand{\vzPruned}{\ensuremath{\textcolor{black}{\boldsymbol{\times}}}}
+\providecommand{\vzConsistent}{\ensuremath{\textcolor{green!45!black}{\boldsymbol{\checkmark}}}}
+\providecommand{\vzNoCovers}{\ensuremath{\textcolor{gray!75!black}{\boldsymbol{\varnothing}}}}
+\providecommand{\vzTimeout}{\tikz[baseline=-0.55ex,scale=0.105]{\filldraw[fill=yellow!70,draw=orange!85!black,line width=1.2pt] (0,0) circle (1);\draw[orange!85!black,line width=1.4pt,line cap=round] (0,0) -- (0,0.58) (0,0) -- (0.48,-0.28);}}
+
+\begin{tikzpicture}[
+  font=\small,
+  cover/.style={draw=blue!65!black,fill=blue!3,rounded corners=2pt,line width=0.65pt,minimum width=18mm,minimum height=10mm,inner sep=2pt,align=center},
+  timeout cover/.style={cover,draw=orange!85!black,fill=yellow!12},
+  empty branch/.style={draw=gray!65,dashed,fill=gray!5,rounded corners=2pt,minimum width=18mm,minimum height=10mm,inner sep=2pt,align=center},
+  input/.style={draw=blue!70!black,fill=blue!8,circle,line width=0.7pt,minimum size=8mm,align=center},
+  branch/.style={-{Stealth[length=1.8mm]},line width=0.65pt},
+  stem/.style={line width=0.65pt},
+  edge label/.style={fill=white,inner sep=1pt,font=\scriptsize}
+]
+"#,
+    );
+
+    for node in nodes {
+        let depth = node.decisions.len();
+        let y = -1.45 - depth as f64 * 2.15;
+        let members = plot_members(node);
+        let center = members
+            .iter()
+            .filter_map(|key| positions.get(key))
+            .sum::<f64>()
+            / members.len() as f64;
+        writeln!(
+            output,
+            "\\coordinate (group-{}) at ({center:.3},{:.3});",
+            node.node_id,
+            y + 0.72
+        )
+        .unwrap();
+
+        for check in &node.checks {
+            let x = positions[&(node.node_id, Some(check.cover_index))];
+            let name = cover_node_name(node.node_id, check.cover_index);
+            let style = if check.outcome == VariableZeroingCoverOutcome::Timeout {
+                "timeout cover"
+            } else {
+                "cover"
+            };
+            let outcome = match check.outcome {
+                VariableZeroingCoverOutcome::Consistent => "\\vzConsistent",
+                VariableZeroingCoverOutcome::Inconsistent => "\\vzInconsistent",
+                VariableZeroingCoverOutcome::CorePruned => "\\vzPruned",
+                VariableZeroingCoverOutcome::Timeout => "\\vzTimeout",
+            };
+            let split = check
+                .split_variable
+                .as_ref()
+                .map_or_else(String::new, |variable| {
+                    format!(
+                        "\\\\[-1pt]{{\\scriptsize split: \\texttt{{{}}}}}",
+                        tex_escape(variable)
+                    )
+                });
+            writeln!(
+                output,
+                "\\node[{style}] ({name}) at ({x:.3},{y:.3}) {{{outcome}{split}\\\\[-1pt]{{\\scriptsize hit \\#{}}}\\\\[-1pt]{{\\scriptsize {}}}}};",
+                check.cover_index,
+                format_check_duration(check.elapsed)
+            )
+            .unwrap();
+        }
+        if node.checks.len() < node.covers || node.covers == 0 {
+            let x = positions[&(node.node_id, None)];
+            if node.covers == 0 {
+                writeln!(
+                    output,
+                    "\\node[empty branch] (pending-{}) at ({x:.3},{y:.3}) {{\\vzNoCovers\\\\[-1pt]{{\\scriptsize no covers}}}};",
+                    node.node_id
+                )
+                .unwrap();
+            } else {
+                let unchecked = node.covers - node.checks.len();
+                writeln!(
+                    output,
+                    "\\node[empty branch] (pending-{}) at ({x:.3},{y:.3}) {{$\\boldsymbol{{\\cdots}}$\\\\[-1pt]{{\\scriptsize {unchecked} unchecked}}}};",
+                    node.node_id
+                )
+                .unwrap();
+            }
+        }
+    }
+
+    let root = nodes_by_id
+        .get(&0)
+        .ok_or_else(|| "recursion trace has no root node #0".to_string())?;
+    let root_center = group_center(root, &positions);
+    writeln!(
+        output,
+        "\\node[input] (input) at ({root_center:.3},0) {{$P$}};"
+    )
+    .unwrap();
+    output.push_str("\\draw[stem] (input) -- (group-0);\n");
+    draw_group_fan(&mut output, root);
+
+    for node in nodes {
+        for check in &node.checks {
+            let parent_name = cover_node_name(node.node_id, check.cover_index);
+            for (child_id, relation) in [(check.zero_child, "=0"), (check.nonzero_child, "\\ne 0")]
+            {
+                let Some(child_id) = child_id else { continue };
+                let child = nodes_by_id.get(&child_id).ok_or_else(|| {
+                    format!("cover {parent_name} refers to missing child node {child_id}")
+                })?;
+                writeln!(
+                    output,
+                    "\\draw[stem] ({parent_name}.south) -- node[edge label,sloped,above] {{$ {relation} $}} (group-{child_id});"
+                )
+                .unwrap();
+                draw_group_fan(&mut output, child);
+            }
+        }
+    }
+
+    let max_depth = nodes
+        .iter()
+        .map(|node| node.decisions.len())
+        .max()
+        .unwrap_or(0);
+    let legend_y = -2.25 - max_depth as f64 * 2.15;
+    writeln!(
+        output,
+        "\\node[draw=gray!55,fill=white,rounded corners=2pt,inner sep=3pt,anchor=north] at (0,{legend_y:.3}) {{\\scriptsize \\vzInconsistent\\ inconsistent\\quad \\vzPruned\\ core-pruned\\quad \\vzConsistent\\ consistent\\quad \\vzTimeout\\ timed out\\quad \\vzNoCovers\\ no covers}};"
+    )
+    .unwrap();
+    output.push_str("\\end{tikzpicture}\n");
+    Ok(output)
+}
+
+fn group_center(
+    node: &VariableZeroingNodeResult,
+    positions: &HashMap<(usize, Option<usize>), f64>,
+) -> f64 {
+    let members = plot_members(node);
+    members.iter().map(|key| positions[key]).sum::<f64>() / members.len() as f64
+}
+
+fn draw_group_fan(output: &mut String, node: &VariableZeroingNodeResult) {
+    for check in &node.checks {
+        writeln!(
+            output,
+            "\\draw[branch] (group-{}) -- ({}.north);",
+            node.node_id,
+            cover_node_name(node.node_id, check.cover_index)
+        )
+        .unwrap();
+    }
+    if node.checks.len() < node.covers || node.covers == 0 {
+        writeln!(
+            output,
+            "\\draw[branch] (group-{}) -- (pending-{}.north);",
+            node.node_id, node.node_id
+        )
+        .unwrap();
+    }
+}
+
+fn plot_members(node: &VariableZeroingNodeResult) -> Vec<(usize, Option<usize>)> {
+    let mut members = node
+        .checks
+        .iter()
+        .map(|check| (node.node_id, Some(check.cover_index)))
+        .collect::<Vec<_>>();
+    if node.checks.len() < node.covers || node.covers == 0 {
+        members.push((node.node_id, None));
+    }
+    members
+}
+
+fn cover_node_name(node_id: usize, cover_index: usize) -> String {
+    format!("cover-{node_id}-{cover_index}")
+}
+
+fn format_check_duration(duration: Duration) -> String {
+    if duration.as_secs() != 0 {
+        format!("{:.3} s", duration.as_secs_f64())
+    } else if duration.as_millis() != 0 {
+        format!("{:.3} ms", duration.as_secs_f64() * 1_000.0)
+    } else {
+        format!("{:.3} $\\mu$s", duration.as_secs_f64() * 1_000_000.0)
+    }
+}
+
+fn tex_escape(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            '\\' => "\\textbackslash{}".to_string(),
+            '{' => "\\{".to_string(),
+            '}' => "\\}".to_string(),
+            '#' => "\\#".to_string(),
+            '$' => "\\$".to_string(),
+            '%' => "\\%".to_string(),
+            '&' => "\\&".to_string(),
+            '_' => "\\_".to_string(),
+            '^' => "\\^{}".to_string(),
+            '~' => "\\~{}".to_string(),
+            other => other.to_string(),
+        })
+        .collect()
 }
 
 fn format_variable_list<'a>(variables: impl Iterator<Item = &'a str>) -> String {
@@ -288,6 +591,8 @@ mod tests {
                 "input.txt",
                 "--timeout",
                 "75",
+                "--max-runtime",
+                "900000",
                 "--max-nodes",
                 "12",
                 "--max-covers",
@@ -298,6 +603,9 @@ mod tests {
                 "x",
                 "--gb",
                 "gvw",
+                "--no-unsat-core-search",
+                "--plot",
+                "tree.tex",
                 "--summary",
             ]
             .into_iter()
@@ -306,11 +614,14 @@ mod tests {
         .expect("arguments");
         assert_eq!(options.path, PathBuf::from("input.txt"));
         assert_eq!(options.timeout_ms, 75);
+        assert_eq!(options.max_runtime_ms, Some(900_000));
         assert_eq!(options.max_nodes, 12);
         assert_eq!(options.max_evaluations, 30);
         assert_eq!(options.max_depth, 4);
         assert_eq!(options.variable_names, vec!["x"]);
         assert_eq!(options.gb_backend, GbBackend::Gvw);
+        assert!(!options.unsat_core_search);
+        assert_eq!(options.plot, Some(PathBuf::from("tree.tex")));
         assert!(options.summary);
     }
 
@@ -336,11 +647,85 @@ mod tests {
             timeouts: 1,
             zeroing_splits: 1,
             elapsed: Duration::from_millis(125),
+            checks: Vec::new(),
         };
 
         assert_eq!(
             format_node_summary(&node),
             "ZEROING_NODE node=3 zeroed=x nonzero=y covers=4 evaluations=3 consistent=1 inconsistent=1 core_pruned=1 timeouts=1 splits=1 elapsed_secs=0.125000"
         );
+    }
+
+    #[test]
+    fn tikz_plot_contains_each_check_time_and_split_edges() {
+        let nodes = vec![
+            VariableZeroingNodeResult {
+                node_id: 0,
+                decisions: Vec::new(),
+                covers: 1,
+                evaluations: 1,
+                consistent: 0,
+                inconsistent: 0,
+                core_pruned: 0,
+                timeouts: 1,
+                zeroing_splits: 1,
+                elapsed: Duration::from_secs(5),
+                checks: vec![polynomial_cdcl::VariableZeroingCoverResult {
+                    cover_index: 0,
+                    outcome: VariableZeroingCoverOutcome::Timeout,
+                    elapsed: Duration::from_millis(5_012),
+                    split_variable: Some("x_1".to_string()),
+                    zero_child: Some(1),
+                    nonzero_child: Some(2),
+                }],
+            },
+            VariableZeroingNodeResult {
+                node_id: 1,
+                decisions: vec![polynomial_cdcl::SplitDecision {
+                    variable: "x_1".to_string(),
+                    is_zero: true,
+                }],
+                covers: 0,
+                evaluations: 0,
+                consistent: 0,
+                inconsistent: 0,
+                core_pruned: 0,
+                timeouts: 0,
+                zeroing_splits: 0,
+                elapsed: Duration::ZERO,
+                checks: Vec::new(),
+            },
+            VariableZeroingNodeResult {
+                node_id: 2,
+                decisions: vec![polynomial_cdcl::SplitDecision {
+                    variable: "x_1".to_string(),
+                    is_zero: false,
+                }],
+                covers: 1,
+                evaluations: 1,
+                consistent: 0,
+                inconsistent: 1,
+                core_pruned: 0,
+                timeouts: 0,
+                zeroing_splits: 0,
+                elapsed: Duration::from_millis(20),
+                checks: vec![polynomial_cdcl::VariableZeroingCoverResult {
+                    cover_index: 0,
+                    outcome: VariableZeroingCoverOutcome::Inconsistent,
+                    elapsed: Duration::from_millis(20),
+                    split_variable: None,
+                    zero_child: None,
+                    nonzero_child: None,
+                }],
+            },
+        ];
+
+        let plot = render_tikz_plot("system_test.txt", &nodes).expect("plot");
+        assert!(plot.contains("5.012 s"));
+        assert!(plot.contains("split: \\texttt{x\\_1}"));
+        assert!(plot.contains("$ =0 $"));
+        assert!(plot.contains("$ \\ne 0 $"));
+        assert!(plot.contains("20.000 ms"));
+        assert!(plot.contains("no covers"));
     }
 }

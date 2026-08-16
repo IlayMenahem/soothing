@@ -6,7 +6,8 @@
 //! hitting set is checked by a selectable Gröbner backend; inconsistent sets
 //! yield iteratively refined GB-Cores that prune later supersets.
 //!
-//! Usage: `branching [path]` — default path: `systems/system.txt`.
+//! Usage: `branching [path] [--no-unsat-core-search]` — default path:
+//! `systems/system.txt`.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -35,6 +36,7 @@ struct CliOptions {
     max_covers: usize,
     timeout_ms: u64,
     gb_backend: GbBackend,
+    unsat_core_search: bool,
     summary: bool,
 }
 
@@ -44,6 +46,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut max_covers = usize::MAX;
     let mut timeout_ms = 5_000;
     let mut gb_backend = GbBackend::M4gb;
+    let mut unsat_core_search = true;
     let mut summary = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -73,6 +76,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     )
                 })?;
             }
+            "--no-unsat-core-search" => unsat_core_search = false,
             "--summary" => summary = true,
             _ if arg.starts_with("--") => return Err(format!("unknown option {arg:?}")),
             _ if path.is_some() => return Err(format!("unexpected positional argument {arg:?}")),
@@ -85,6 +89,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         max_covers,
         timeout_ms,
         gb_backend,
+        unsat_core_search,
         summary,
     })
 }
@@ -235,15 +240,22 @@ fn run_search(
                 });
             }
             Outcome::Inconsistent => {
-                let core_started = Instant::now();
-                let core = iteratively_refined_unsat_core(&candidate, timeout);
-                println!(
-                    "  cover #{cover_index}: unsatisfiable; learned a {}-factor core (solve {:?}, refinement {:?})",
-                    core.len(),
-                    cover_started.elapsed(),
-                    core_started.elapsed()
-                );
-                cores.push(core);
+                if options.unsat_core_search {
+                    let core_started = Instant::now();
+                    let core = iteratively_refined_unsat_core(&candidate, timeout);
+                    println!(
+                        "  cover #{cover_index}: unsatisfiable; learned a {}-factor core (solve {:?}, refinement {:?})",
+                        core.len(),
+                        cover_started.elapsed(),
+                        core_started.elapsed()
+                    );
+                    cores.push(core);
+                } else {
+                    println!(
+                        "  cover #{cover_index}: unsatisfiable; core search disabled (solve {:?})",
+                        cover_started.elapsed()
+                    );
+                }
                 inconsistent += 1;
             }
             Outcome::Timeout => {
@@ -387,6 +399,7 @@ mod tests {
             max_covers: usize::MAX,
             timeout_ms: 5_000,
             gb_backend: GbBackend::Symbolica,
+            unsat_core_search: true,
             summary: true,
         }
     }
@@ -403,6 +416,7 @@ mod tests {
                 "250",
                 "--gb",
                 "gvw",
+                "--no-unsat-core-search",
                 "--summary",
             ]
             .into_iter()
@@ -415,6 +429,7 @@ mod tests {
         assert_eq!(options.max_covers, 17);
         assert_eq!(options.timeout_ms, 250);
         assert_eq!(options.gb_backend, GbBackend::Gvw);
+        assert!(!options.unsat_core_search);
         assert!(options.summary);
     }
 
@@ -449,6 +464,25 @@ mod tests {
         assert_eq!(result.inconsistent, 1);
         assert_eq!(result.core_pruned, 1);
         assert!(result.cores.iter().all(|core| !core.is_empty()));
+        assert!(result.complete());
+    }
+
+    #[test]
+    fn disabled_core_search_checks_every_inconsistent_cover() {
+        activate_license();
+        let loaded =
+            load_mathematica_system_from_str_with_var_names("{x == 0, x - 1 == 0, y*z == 0}")
+                .expect("load");
+        let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
+        let (factors, covers) = factor_covers(polynomials);
+        let mut options = test_options();
+        options.unsat_core_search = false;
+
+        let result = run_search(&options, &factors, &covers, 3);
+
+        assert_eq!(result.inconsistent, 2);
+        assert_eq!(result.core_pruned, 0);
+        assert!(result.cores.is_empty());
         assert!(result.complete());
     }
 }

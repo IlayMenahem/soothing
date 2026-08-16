@@ -40,7 +40,11 @@ pub struct VariableZeroingOptions {
     pub interreduce: bool,
     /// Per-cover Gröbner-basis time budget.
     pub timeout: Duration,
+    /// Optional wall-clock budget for the entire recursive search.
+    pub max_runtime: Option<Duration>,
     pub gb_backend: GbBackend,
+    /// Learn unsatisfiable cores and use them to prune later covers.
+    pub unsat_core_search: bool,
     /// Global recursion-node budget. Exhaustion is reported, never treated as
     /// unsatisfiability.
     pub max_nodes: usize,
@@ -57,7 +61,9 @@ impl Default for VariableZeroingOptions {
         Self {
             interreduce: true,
             timeout: Duration::from_secs(5),
+            max_runtime: None,
             gb_backend: GbBackend::M4gb,
+            unsat_core_search: true,
             max_nodes: usize::MAX,
             max_evaluations: usize::MAX,
             max_depth: usize::MAX,
@@ -105,6 +111,7 @@ pub enum UnresolvedReason {
     NodeBudget,
     EvaluationBudget,
     DepthBudget,
+    RuntimeBudget,
 }
 
 /// A branch whose variety is still part of the answer but was not solved.
@@ -130,6 +137,30 @@ pub struct VariableZeroingStats {
     pub largest_depth: usize,
 }
 
+/// Outcome recorded for one hitting-set check in the recursion tree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VariableZeroingCoverOutcome {
+    Consistent,
+    Inconsistent,
+    CorePruned,
+    Timeout,
+}
+
+/// Trace information for one hitting set considered at a recursion node.
+#[derive(Clone, Debug)]
+pub struct VariableZeroingCoverResult {
+    pub cover_index: usize,
+    pub outcome: VariableZeroingCoverOutcome,
+    /// Time spent deciding this hitting set, excluding recursive child work.
+    pub elapsed: Duration,
+    /// Variable selected when a timed-out check was recursively split.
+    pub split_variable: Option<String>,
+    /// Recursion node reached by the `split_variable = 0` branch, if created.
+    pub zero_child: Option<usize>,
+    /// Recursion node reached by the `split_variable != 0` branch, if created.
+    pub nonzero_child: Option<usize>,
+}
+
 /// Work performed while checking one recursion node.
 ///
 /// `elapsed` excludes time spent recursively checking child nodes, so summing
@@ -146,6 +177,9 @@ pub struct VariableZeroingNodeResult {
     pub timeouts: usize,
     pub zeroing_splits: usize,
     pub elapsed: Duration,
+    /// Hitting sets in their evaluation order. This may be shorter than
+    /// `covers` when a global budget stops the node early.
+    pub checks: Vec<VariableZeroingCoverResult>,
 }
 
 pub struct VariableZeroingResult {
@@ -184,6 +218,22 @@ struct Solver<'a> {
 }
 
 impl Solver<'_> {
+    fn runtime_exhausted(&self) -> bool {
+        self.options
+            .max_runtime
+            .is_some_and(|limit| self.started.elapsed() >= limit)
+    }
+
+    fn evaluation_timeout(&self) -> Duration {
+        self.options
+            .max_runtime
+            .map_or(self.options.timeout, |limit| {
+                self.options
+                    .timeout
+                    .min(limit.saturating_sub(self.started.elapsed()))
+            })
+    }
+
     fn retain_unresolved(
         &mut self,
         polynomials: Vec<PolyExtLex>,
@@ -204,9 +254,18 @@ impl Solver<'_> {
         mut polynomials: Vec<PolyExtLex>,
         variables: Vec<ZeroingVariable>,
         decisions: Vec<SplitDecision>,
-    ) -> Result<(), String> {
+    ) -> Result<Option<usize>, String> {
         let depth = decisions.len();
         self.stats.largest_depth = self.stats.largest_depth.max(depth);
+        if self.runtime_exhausted() {
+            self.retain_unresolved(
+                polynomials,
+                &variables,
+                &decisions,
+                UnresolvedReason::RuntimeBudget,
+            );
+            return Ok(None);
+        }
         if self.stats.nodes >= self.options.max_nodes {
             self.retain_unresolved(
                 polynomials,
@@ -214,7 +273,7 @@ impl Solver<'_> {
                 &decisions,
                 UnresolvedReason::NodeBudget,
             );
-            return Ok(());
+            return Ok(None);
         }
 
         let node_id = self.stats.nodes;
@@ -232,6 +291,7 @@ impl Solver<'_> {
             timeouts: 0,
             zeroing_splits: 0,
             elapsed: Duration::ZERO,
+            checks: Vec::new(),
         };
         if self.options.interreduce {
             polynomials = interreduce_polys(polynomials);
@@ -260,14 +320,41 @@ impl Solver<'_> {
         }
 
         for (cover_index, cover_mask) in covers.iter().copied().enumerate() {
+            let cover_started = Instant::now();
             let candidate = decode_cover(&factors, cover_mask);
-            if self
-                .cores
-                .iter()
-                .any(|core| polynomial_set_contains(&candidate, core))
+            if self.runtime_exhausted() {
+                self.retain_unresolved(
+                    candidate,
+                    &variables,
+                    &decisions,
+                    UnresolvedReason::RuntimeBudget,
+                );
+                for &pending_mask in &covers[cover_index + 1..] {
+                    self.retain_unresolved(
+                        decode_cover(&factors, pending_mask),
+                        &variables,
+                        &decisions,
+                        UnresolvedReason::RuntimeBudget,
+                    );
+                }
+                break;
+            }
+            if self.options.unsat_core_search
+                && self
+                    .cores
+                    .iter()
+                    .any(|core| polynomial_set_contains(&candidate, core))
             {
                 self.stats.core_pruned += 1;
                 node_result.core_pruned += 1;
+                node_result.checks.push(VariableZeroingCoverResult {
+                    cover_index,
+                    outcome: VariableZeroingCoverOutcome::CorePruned,
+                    elapsed: cover_started.elapsed(),
+                    split_variable: None,
+                    zero_child: None,
+                    nonzero_child: None,
+                });
                 if self.options.verbose {
                     println!("  cover #{cover_index}: core-pruned");
                 }
@@ -293,12 +380,13 @@ impl Solver<'_> {
 
             self.stats.evaluations += 1;
             node_result.evaluations += 1;
-            let cover_started = Instant::now();
-            match (self.evaluator)(
+            let outcome = (self.evaluator)(
                 candidate.clone(),
-                self.options.timeout,
+                self.evaluation_timeout(),
                 self.options.gb_backend,
-            ) {
+            );
+            let cover_elapsed = cover_started.elapsed();
+            match outcome {
                 Outcome::Consistent(basis) => {
                     self.stats.consistent += 1;
                     node_result.consistent += 1;
@@ -309,9 +397,17 @@ impl Solver<'_> {
                         println!(
                             "  cover #{cover_index}: solved ({} basis element(s), {:?})",
                             basis.elements.len(),
-                            cover_started.elapsed()
+                            cover_elapsed
                         );
                     }
+                    node_result.checks.push(VariableZeroingCoverResult {
+                        cover_index,
+                        outcome: VariableZeroingCoverOutcome::Consistent,
+                        elapsed: cover_elapsed,
+                        split_variable: None,
+                        zero_child: None,
+                        nonzero_child: None,
+                    });
                     self.components.push(ProjectedComponent {
                         node_id,
                         decisions: decisions.clone(),
@@ -323,19 +419,58 @@ impl Solver<'_> {
                     self.stats.inconsistent += 1;
                     node_result.inconsistent += 1;
                     if self.options.verbose {
-                        println!(
-                            "  cover #{cover_index}: inconsistent ({:?})",
-                            cover_started.elapsed()
-                        );
+                        println!("  cover #{cover_index}: inconsistent ({:?})", cover_elapsed);
                     }
-                    self.cores.push(iteratively_refined_unsat_core(
-                        &candidate,
-                        self.options.timeout,
-                    ));
+                    node_result.checks.push(VariableZeroingCoverResult {
+                        cover_index,
+                        outcome: VariableZeroingCoverOutcome::Inconsistent,
+                        elapsed: cover_elapsed,
+                        split_variable: None,
+                        zero_child: None,
+                        nonzero_child: None,
+                    });
+                    if self.options.unsat_core_search {
+                        if self.options.max_runtime.is_some() {
+                            // The full candidate is already a certified core;
+                            // avoid an unbounded sequence of refinements when
+                            // the caller requested a wall-clock budget.
+                            self.cores.push(candidate.clone());
+                        } else {
+                            self.cores.push(iteratively_refined_unsat_core(
+                                &candidate,
+                                self.options.timeout,
+                            ));
+                        }
+                    }
                 }
                 Outcome::Timeout => {
                     self.stats.timeouts += 1;
                     node_result.timeouts += 1;
+                    if self.runtime_exhausted() {
+                        self.retain_unresolved(
+                            candidate,
+                            &variables,
+                            &decisions,
+                            UnresolvedReason::RuntimeBudget,
+                        );
+                        for &pending_mask in &covers[cover_index + 1..] {
+                            self.retain_unresolved(
+                                decode_cover(&factors, pending_mask),
+                                &variables,
+                                &decisions,
+                                UnresolvedReason::RuntimeBudget,
+                            );
+                        }
+                        node_result.checks.push(VariableZeroingCoverResult {
+                            cover_index,
+                            outcome: VariableZeroingCoverOutcome::Timeout,
+                            elapsed: cover_elapsed,
+                            split_variable: None,
+                            zero_child: None,
+                            nonzero_child: None,
+                        });
+                        break;
+                    }
                     let Some(selected_index) = choose_variable(&candidate, &variables) else {
                         let reason = if variables.is_empty() {
                             UnresolvedReason::TimeoutAfterVariablesExhausted
@@ -343,6 +478,14 @@ impl Solver<'_> {
                             UnresolvedReason::NoUsefulVariable
                         };
                         self.retain_unresolved(candidate, &variables, &decisions, reason);
+                        node_result.checks.push(VariableZeroingCoverResult {
+                            cover_index,
+                            outcome: VariableZeroingCoverOutcome::Timeout,
+                            elapsed: cover_elapsed,
+                            split_variable: None,
+                            zero_child: None,
+                            nonzero_child: None,
+                        });
                         continue;
                     };
                     if depth >= self.options.max_depth {
@@ -352,6 +495,14 @@ impl Solver<'_> {
                             &decisions,
                             UnresolvedReason::DepthBudget,
                         );
+                        node_result.checks.push(VariableZeroingCoverResult {
+                            cover_index,
+                            outcome: VariableZeroingCoverOutcome::Timeout,
+                            elapsed: cover_elapsed,
+                            split_variable: None,
+                            zero_child: None,
+                            nonzero_child: None,
+                        });
                         continue;
                     }
 
@@ -367,9 +518,7 @@ impl Solver<'_> {
                     if self.options.verbose {
                         println!(
                             "  cover #{cover_index}: timed out ({:?}); splitting {} = 0 / {} != 0",
-                            cover_started.elapsed(),
-                            selected.name,
-                            selected.name
+                            cover_elapsed, selected.name, selected.name
                         );
                     }
 
@@ -379,15 +528,25 @@ impl Solver<'_> {
                         is_zero: true,
                     });
                     let children_started = Instant::now();
-                    self.solve_node(zero_branch, remaining.clone(), zero_decisions)?;
+                    let zero_child =
+                        self.solve_node(zero_branch, remaining.clone(), zero_decisions)?;
 
                     let mut nonzero_decisions = decisions.clone();
                     nonzero_decisions.push(SplitDecision {
-                        variable: selected.name,
+                        variable: selected.name.clone(),
                         is_zero: false,
                     });
-                    self.solve_node(nonzero_branch, remaining, nonzero_decisions)?;
+                    let nonzero_child =
+                        self.solve_node(nonzero_branch, remaining, nonzero_decisions)?;
                     child_elapsed += children_started.elapsed();
+                    node_result.checks.push(VariableZeroingCoverResult {
+                        cover_index,
+                        outcome: VariableZeroingCoverOutcome::Timeout,
+                        elapsed: cover_elapsed,
+                        split_variable: Some(selected.name.clone()),
+                        zero_child,
+                        nonzero_child,
+                    });
                 }
                 Outcome::BackendError(error) => {
                     return Err(format!(
@@ -399,7 +558,7 @@ impl Solver<'_> {
         }
         node_result.elapsed = node_started.elapsed().saturating_sub(child_elapsed);
         self.nodes.push(node_result);
-        Ok(())
+        Ok(Some(node_id))
     }
 }
 
@@ -627,6 +786,12 @@ mod tests {
         assert_eq!(result.nodes[0].evaluations, 1);
         assert_eq!(result.nodes[0].timeouts, 1);
         assert_eq!(result.nodes[0].zeroing_splits, 1);
+        assert_eq!(result.nodes[0].checks.len(), 1);
+        assert_eq!(
+            result.nodes[0].checks[0].outcome,
+            VariableZeroingCoverOutcome::Timeout
+        );
+        assert!(result.nodes[0].checks[0].split_variable.is_some());
         assert_eq!(result.unresolved.len(), 2);
         assert!(
             result
@@ -642,6 +807,28 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![true, false]
         );
+    }
+
+    #[test]
+    fn exhausted_runtime_retains_the_root_without_evaluating_it() {
+        let (loaded, polynomials) = load("{x + y == 0}");
+        let options = VariableZeroingOptions {
+            max_runtime: Some(Duration::ZERO),
+            ..VariableZeroingOptions::default()
+        };
+        let evaluations = AtomicUsize::new(0);
+        let evaluator = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| {
+            evaluations.fetch_add(1, Ordering::Relaxed);
+            Outcome::Timeout
+        };
+
+        let result = solve_by_zeroing_with(polynomials, candidates(&loaded), &options, &evaluator)
+            .expect("search");
+
+        assert_eq!(evaluations.load(Ordering::Relaxed), 0);
+        assert!(result.nodes.is_empty());
+        assert_eq!(result.unresolved.len(), 1);
+        assert_eq!(result.unresolved[0].reason, UnresolvedReason::RuntimeBudget);
     }
 
     #[test]
@@ -724,6 +911,50 @@ mod tests {
                 .sum::<usize>(),
             1
         );
+    }
+
+    #[test]
+    fn disabled_core_search_checks_later_nodes() {
+        let (loaded, polynomials) = load("{x == 0, x - 1 == 0}");
+        let options = VariableZeroingOptions {
+            interreduce: false,
+            unsat_core_search: false,
+            ..VariableZeroingOptions::default()
+        };
+        let evaluations = AtomicUsize::new(0);
+        let inconsistent = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| {
+            evaluations.fetch_add(1, Ordering::Relaxed);
+            Outcome::Inconsistent
+        };
+        let mut solver = Solver {
+            options: &options,
+            evaluator: &inconsistent,
+            started: Instant::now(),
+            fresh_variable: 0,
+            components: Vec::new(),
+            unresolved: Vec::new(),
+            cores: Vec::new(),
+            nodes: Vec::new(),
+            stats: VariableZeroingStats::default(),
+            first_solution: None,
+        };
+        let decisions = vec![SplitDecision {
+            variable: loaded.var_names[0].clone(),
+            is_zero: true,
+        }];
+
+        solver
+            .solve_node(polynomials.clone(), Vec::new(), decisions.clone())
+            .expect("first node");
+        let mut sibling_decisions = decisions;
+        sibling_decisions[0].is_zero = false;
+        solver
+            .solve_node(polynomials, Vec::new(), sibling_decisions)
+            .expect("later node");
+
+        assert_eq!(evaluations.load(Ordering::Relaxed), 2);
+        assert!(solver.cores.is_empty());
+        assert_eq!(solver.stats.core_pruned, 0);
     }
 
     #[test]

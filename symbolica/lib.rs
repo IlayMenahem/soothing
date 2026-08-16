@@ -32,6 +32,7 @@ pub use sig_groebner::{
 pub use system::PolynomialSystem;
 pub use var_id::VarId;
 pub use variable_zeroing::{
-    ProjectedComponent, SplitDecision, UnresolvedBranch, UnresolvedReason, VariableZeroingOptions,
-    VariableZeroingNodeResult, VariableZeroingResult, ZeroingVariable, solve_by_zeroing,
+    ProjectedComponent, SplitDecision, UnresolvedBranch, UnresolvedReason,
+    VariableZeroingCoverOutcome, VariableZeroingCoverResult, VariableZeroingNodeResult,
+    VariableZeroingOptions, VariableZeroingResult, ZeroingVariable, solve_by_zeroing,
 };

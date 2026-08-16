@@ -1,0 +1,94 @@
+\begin{tikzpicture}[
+    font=\small,
+    every node/.style={align=center},
+    blue box/.style={draw=blue!70!cyan, line width=1pt, rounded corners=6pt,
+        fill=blue!50!cyan!4, inner sep=7pt},
+    loop box/.style={draw=orange!85!black, line width=1pt, rounded corners=6pt,
+        fill=yellow!40!orange!12, inner sep=7pt},
+    decision/.style={draw=green!55!black, line width=1pt, diamond, aspect=1.8,
+        fill=green!60!teal!8, inner sep=1pt},
+    green box/.style={draw=green!55!black, line width=1pt, rounded corners=6pt,
+        fill=green!60!teal!4, inner sep=7pt},
+    red box/.style={draw=red!70, line width=1pt, rounded corners=6pt,
+        fill=red!4, inner sep=7pt},
+    return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
+        fill=violet!6, inner sep=7pt},
+    arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
+]
+
+% ---- initialization and entry into the recursive routine ----
+\node[blue box] (input) {%
+    \textcolor{blue}{\bfseries Input}\\[3pt]
+    Polynomial system $P$ and timeout $\tau$};
+
+\node[blue box, right=12mm of input] (init) {%
+    \textcolor{blue}{\bfseries Initialization}\\[3pt]
+    $C\leftarrow\emptyset$ and $X\leftarrow\Call{Variables}{P}$};
+
+\node[blue box, right=12mm of init] (entry) {%
+    Call $\Call{SolveByZeroing}{P,X,\tau,C}$};
+
+% ---- one invocation of SolveByZeroing ----
+\node[blue box, below=8mm of entry] (solve) {%
+    For the current system $Q$, run\\
+    $\Call{BranchingWithTimeout}{Q,\tau,C}$\\
+    to obtain solved branches $S$ and timeouts $T$};
+
+\node[blue box, below=5mm of solve] (unresolved) {Initialize $U\leftarrow\emptyset$};
+
+\node[decision, below=5mm of unresolved] (next) {Is there an\\ unprocessed $Q\in T$?};
+
+\node[return box, left=18mm of next] (return) {%
+    \textcolor{violet}{\bfseries Return}\\[3pt]
+    $(S,U,C)$};
+
+\node[decision, below=7mm of next] (variables) {Are splitting\\ variables available?};
+
+\node[red box, right=16mm of variables] (keep) {%
+    No split is possible\\
+    Add $Q$ to $U$};
+
+\node[loop box, below=7mm of variables] (choose) {%
+    \textcolor{orange!75!black}{\bfseries Split}\\[3pt]
+    Choose $x\in X$};
+
+% ---- the two recursive children ----
+\node[blue box] (zero) at ($(choose.south)+(-38mm,-17mm)$) {%
+    \textcolor{blue}{\bfseries Zero branch}\\[3pt]
+    Recursively solve $Q\cup\{x\}$\\
+    with $X\setminus\{x\}$};
+
+\node[blue box] (nonzero) at ($(choose.south)+(38mm,-17mm)$) {%
+    \textcolor{blue}{\bfseries Nonzero branch}\\[3pt]
+    Recursively solve $Q\cup\{1-xz\}$\\
+    with $X\setminus\{x\}$};
+
+\node[green box] (merge) at ($(choose.south)+(0,-43mm)$) {%
+    Merge both children's solved and unresolved\\
+    branches into $S$ and $U$; retain the updated $C$};
+
+% ---- arrows ----
+\draw[arr] (input) -- (init);
+\draw[arr] (init) -- (entry);
+\draw[arr] (entry.south) -- (solve.north);
+\draw[arr] (solve) -- (unresolved);
+\draw[arr] (unresolved) -- (next);
+
+\draw[arr] (next.west) -- node[above] {No} (return.east);
+\draw[arr] (next.south) -- node[right] {Yes} (variables.north);
+\draw[arr] (variables.east) -- node[above] {No} (keep.west);
+\draw[arr] (variables.south) -- node[right] {Yes} (choose.north);
+
+\draw[arr] (choose.south) -- node[above left] {$x=0$} (zero.north);
+\draw[arr] (choose.south) -- node[above right] {$x\neq0$} (nonzero.north);
+\draw[arr, rounded corners=5pt] (zero.south) |- (merge.west);
+\draw[arr, rounded corners=5pt] (nonzero.south) |- (merge.east);
+
+% ---- feedback to process the next timed-out branch ----
+\coordinate (fbcol) at ($(keep.east)+(12mm,0)$);
+\draw[arr, rounded corners=5pt]
+    (keep.east) -- (keep.east -| fbcol) |- (next.east);
+\draw[arr, rounded corners=5pt]
+    (merge.east) -- node[below] {next $Q$} (merge.east -| fbcol) |- (next.east);
+
+\end{tikzpicture}

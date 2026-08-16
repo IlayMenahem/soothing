@@ -1,3 +1,188 @@
 \appendix
-\section{Appendix}
+\section{Complete experimental results}
 \label{sec:appendix}
+
+The tables below give every run summarized in
+Table~\ref{tab:baseline-comparison}.  Unless stated otherwise, entries are
+end-to-end wall times in seconds.  \textnormal{P} marks a partial run and
+\textnormal{TO} an outer timeout.  These are single measurements.
+
+\subsection{Factor branching}
+
+Table~\ref{tab:appendix-branching} reports all five branch-solver
+configurations.  A partial entry found the easy component shown in the main
+text but left at least one cover unresolved.
+
+\begin{table}[p]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l r r r r r}
+\hline
+System & M4GB & F5 & GVW & Symbolica & Singular \\
+\hline
+Signed distance, $n=8$ & $0.651$ & $0.053$ & $0.122$ & $0.008$ & $0.083$ \\
+Signed distance, $n=10$ & $0.046$ & $10.927$ & $45.797$ & $0.025$ & $0.084$ \\
+Signed distance, $n=12$ & $0.182$ & $6.256$ & $1.841$ & $0.087$ & $0.271$ \\
+Overlapping $(4,6,2)$ & $0.017$ & $0.008$ & $0.011$ & $0.015$ & $0.038$ \\
+Overlapping $(6,8,3)$ & $1.053$ & $0.132$ & $0.280$ & $0.657$ & $0.201$ \\
+Overlapping $(8,10,3)$ & TO & $10.937$ & $30.687$ & TO & $2.931$ \\
+Positive affine $(8,6,4)$ & $0.009$ & $0.008$ & $0.010$ & $0.008$ & $0.497$ \\
+Positive affine $(10,8,5)$ & $0.021$ & $0.020$ & $0.028$ & $0.020$ & $1.870$ \\
+Positive affine $(12,10,6)$ & $0.072$ & $0.067$ & $0.096$ & $0.068$ & $6.498$ \\
+Gated Cyclic-5 & $0.010$ & $0.010$ & $0.011$ & $0.009$ & $0.022$ \\
+Gated Cyclic-6 & P $60.010$ & $5.960$ & $2.275$ & P $60.013$ & $0.045$ \\
+Gated Cyclic-7 & P $60.875$ & P $60.504$ & P $60.955$ & P $60.024$ & P $60.103$ \\
+Gated Katsura-6 & $0.366$ & $0.483$ & $1.338$ & $2.540$ & $0.049$ \\
+Gated Katsura-7 & $4.487$ & $15.220$ & $42.113$ & P $60.012$ & $0.283$ \\
+Gated Katsura-8 & $54.055$ & P $60.325$ & P $60.047$ & P $60.012$ & $2.657$ \\
+Gated dense, $n=5$ & $0.177$ & $0.071$ & $0.200$ & $0.204$ & $0.029$ \\
+Gated dense, $n=6$ & $4.716$ & $3.194$ & $7.475$ & $21.498$ & $0.546$ \\
+Gated dense, $n=7$ & P $60.008$ & P $60.050$ & P $60.041$ & P $60.015$ & $42.020$ \\
+Square affine $(8,4)$ & $15.117$ & TO & TO & $3.096$ & $0.470$ \\
+Square affine $(10,5)$ & $14.750$ & TO & $47.561$ & $1.174$ & $2.548$ \\
+\hline
+\end{tabular}%
+}
+\caption{End-to-end wall times for every factor-branching configuration.}
+\label{tab:appendix-branching}
+\end{table}
+
+\subsection{Variable zeroing}
+
+Table~\ref{tab:appendix-zeroing} gives the complete output of the fastest
+completed zeroing configuration used in Table~\ref{tab:baseline-comparison}.
+Every backend receives three seconds per cover and a 60-second outer budget,
+and UNSAT-core learning is disabled.
+The overlapping-random-multiple rows disable interreduction, as in the
+ordinary branching experiment.  Here $N$ is the number of recursion nodes,
+$E$ the number of cover evaluations, $O/S$ the numbers of per-cover timeouts
+and zeroing splits, and $C/U$ the numbers of returned components and unresolved
+branches.  The time entry is $T/F$.
+
+\begin{table}[p]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l l r r r r r l}
+\hline
+System & Backend & $T/F$ & $N$ & $E$ & $O/S$ & $C/U$ & Result \\
+\hline
+Signed distance, $n=8$ & Symbolica & $0.008/0.001$ & 1 & 8 & $0/0$ & $8/0$ & complete \\
+Signed distance, $n=10$ & Symbolica & $0.025/0.002$ & 1 & 8 & $0/0$ & $8/0$ & complete \\
+Signed distance, $n=12$ & Symbolica & $0.091/0.003$ & 1 & 32 & $0/0$ & $32/0$ & complete \\
+Overlapping $(4,6,2)$ & F5 & $0.009/0.001$ & 1 & 4 & $0/0$ & $4/0$ & complete \\
+Overlapping $(6,8,3)$ & F5 & $0.132/0.021$ & 1 & 16 & $0/0$ & $16/0$ & complete \\
+Overlapping $(8,10,3)$ & Singular & $2.892/0.152$ & 1 & 28 & $0/0$ & $28/0$ & complete \\
+Positive affine $(8,6,4)$ & Singular & $0.181/0.012$ & 1 & 4 & $0/0$ & $4/0$ & complete \\
+Positive affine $(10,8,5)$ & Symbolica & $0.060/0.007$ & 1 & 242 & $0/0$ & $242/0$ & complete \\
+Positive affine $(12,10,6)$ & Singular & $9.600/0.078$ & 1 & 511 & $0/0$ & $511/0$ & complete \\
+Gated Cyclic-5 & Symbolica & $0.011/0.001$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Cyclic-6 & Singular & $0.043/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Cyclic-7 & Singular & $24.118/0.009$ & 15 & 17 & $8/7$ & $1/1$ & partial \\
+Gated Katsura-6 & Singular & $0.049/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Katsura-7 & Singular & $0.284/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Katsura-8 & Singular & $2.588/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated dense, $n=5$ & Singular & $0.029/0.008$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated dense, $n=6$ & Singular & $0.535/0.008$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated dense, $n=7$ & Singular & $4.797$/-- & -- & -- & -- & -- & error \\
+Square affine $(8,4)$ & Singular & $0.445/0.012$ & 1 & 31 & $0/0$ & $31/0$ & complete \\
+Square affine $(10,5)$ & Symbolica & $1.326/0.015$ & 1 & 304 & $0/0$ & $304/0$ & complete \\
+\hline
+\end{tabular}%
+}
+\caption{Selected variable-zeroing result for every system.  Times are
+end-to-end wall time and first-solution latency in seconds.}
+\label{tab:appendix-zeroing}
+\end{table}
+
+The dense $n=7$ run failed while constructing the first recursive child:
+the expanded Singular program exceeded the operating system's command-line
+argument limit.  This is an implementation error, not an UNSAT result or a
+timeout.  We also tried M4GB, F5, GVW, and Symbolica on this system.  These
+backends execute in-process; after a per-cover timeout their non-cancellable
+worker threads continued alongside the recursive children until the process
+was killed under memory pressure.  Singular remains preferable for the hard
+rows because its external worker can be terminated.  The Cyclic-7 run
+exhausted all useful splitting variables on one route and therefore returned
+one unresolved branch.
+
+\subsection{Direct whole-ideal Gr\"obner bases}
+
+\begin{table}[p]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l r r r r r r}
+\hline
+System & M4GB & F5 & GVW & Symbolica & Singular & Macaulay2 \\
+\hline
+Signed distance, $n=8$ & $0.646$ & $0.014$ & $0.010$ & $0.008$ & $0.333$ & $0.570$ \\
+Signed distance, $n=10$ & $0.130$ & $0.221$ & $0.112$ & $0.029$ & $0.194$ & $0.518$ \\
+Signed distance, $n=12$ & $3.266$ & $20.044$ & $8.685$ & $0.472$ & $0.512$ & $1.293$ \\
+Overlapping $(4,6,2)$ & $1.000$ & $24.865$ & $0.472$ & $0.413$ & TO & TO \\
+Overlapping $(6,8,3)$ & TO & TO & TO & TO & TO & TO \\
+Overlapping $(8,10,3)$ & TO & TO & TO & TO & TO & TO \\
+Positive affine $(8,6,4)$ & TO & TO & TO & TO & TO & TO \\
+Positive affine $(10,8,5)$ & TO & TO & TO & TO & TO & TO \\
+Positive affine $(12,10,6)$ & TO & TO & TO & TO & TO & TO \\
+Gated Cyclic-5 & $0.012$ & $0.279$ & $0.009$ & $0.008$ & $0.183$ & $0.480$ \\
+Gated Cyclic-6 & TO & TO & $1.738$ & TO & $0.309$ & $0.917$ \\
+Gated Cyclic-7 & TO & TO & TO & TO & TO & TO \\
+Gated Katsura-6 & $0.436$ & $44.961$ & $0.226$ & $5.277$ & $14.430$ & TO \\
+Gated Katsura-7 & $5.165$ & TO & $3.176$ & TO & TO & TO \\
+Gated Katsura-8 & TO & TO & TO & TO & TO & TO \\
+Gated dense, $n=5$ & $0.171$ & $8.884$ & $0.179$ & $0.200$ & $0.529$ & TO \\
+Gated dense, $n=6$ & $4.736$ & TO & $6.755$ & $17.472$ & TO & TO \\
+Gated dense, $n=7$ & TO & TO & TO & TO & TO & TO \\
+Square affine $(8,4)$ & TO & TO & TO & TO & TO & TO \\
+Square affine $(10,5)$ & TO & TO & TO & TO & TO & TO \\
+\hline
+\end{tabular}%
+}
+\caption{End-to-end wall times for every direct whole-ideal Gr\"obner-basis
+configuration.}
+\label{tab:appendix-direct}
+\end{table}
+
+\subsection{Decomposition and numerical methods}
+
+\begin{table}[p]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l r r r r}
+\hline
+System & facstd & primdecGTZ & Macaulay2 & Homotopy \\
+\hline
+Signed distance, $n=8$ & $0.190$ & $0.320$ & $1.020$ & $32.410$ \\
+Signed distance, $n=10$ & $0.430$ & $0.667$ & $3.224$ & $29.944$ \\
+Signed distance, $n=12$ & $4.800$ & $3.056$ & $25.223$ & $36.880$ \\
+Overlapping $(4,6,2)$ & $0.265$ & TO & TO & $30.069$ \\
+Overlapping $(6,8,3)$ & TO & TO & TO & TO \\
+Overlapping $(8,10,3)$ & TO & TO & TO & TO \\
+Positive affine $(8,6,4)$ & $0.368$ & TO & TO & $50.934$ \\
+Positive affine $(10,8,5)$ & $1.836$ & TO & TO & TO \\
+Positive affine $(12,10,6)$ & $53.318$ & TO & TO & TO \\
+Gated Cyclic-5 & $0.181$ & $0.337$ & $0.709$ & $35.054$ \\
+Gated Cyclic-6 & $2.729$ & TO & $2.620$ & $37.314$ \\
+Gated Cyclic-7 & TO & TO & TO & $58.287$ \\
+Gated Katsura-6 & $0.233$ & TO & TO & $31.532$ \\
+Gated Katsura-7 & $0.539$ & TO & TO & $31.980$ \\
+Gated Katsura-8 & $3.596$ & TO & TO & $34.264$ \\
+Gated dense, $n=5$ & $0.198$ & TO & TO & $29.289$ \\
+Gated dense, $n=6$ & $0.755$ & TO & TO & $30.053$ \\
+Gated dense, $n=7$ & $48.820$ & TO & TO & $32.261$ \\
+Square affine $(8,4)$ & $0.601$ & TO & TO & TO \\
+Square affine $(10,5)$ & $2.141$ & TO & TO & TO \\
+\hline
+\end{tabular}%
+}
+\caption{End-to-end wall times for every decomposition and numerical
+configuration.}
+\label{tab:appendix-decomposition}
+\end{table}
