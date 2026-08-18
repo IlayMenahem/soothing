@@ -4,8 +4,11 @@
 //! `paper/sections/variable_zeroing.tex`. A factor cover that exceeds its
 //! Gröbner-basis time budget is split into the constructible cases `x = 0`
 //! and `x != 0`. The latter is encoded by the Rabinowitsch equation
-//! `1 - x*z = 0`, where `z` is fresh. Only original-variable basis elements
-//! and the zero/nonzero decisions are exposed by the projected result.
+//! `1 - x*z = 0`, where `z` is fresh. If one side of a split has no factor
+//! cover and the other has a unique cover, the unique cover is split again
+//! without a redundant Gröbner-basis call. Only original-variable basis
+//! elements and the zero/nonzero decisions are exposed by the projected
+//! result.
 
 use std::time::{Duration, Instant};
 
@@ -144,6 +147,9 @@ pub enum VariableZeroingCoverOutcome {
     Inconsistent,
     CorePruned,
     Timeout,
+    /// The solver call was bypassed because the sibling branch had no cover
+    /// and this branch had a unique cover.
+    Contracted,
 }
 
 /// Trace information for one hitting set considered at a recursion node.
@@ -251,9 +257,19 @@ impl Solver<'_> {
 
     fn solve_node(
         &mut self,
+        polynomials: Vec<PolyExtLex>,
+        variables: Vec<ZeroingVariable>,
+        decisions: Vec<SplitDecision>,
+    ) -> Result<Option<usize>, String> {
+        self.solve_node_with_contraction(polynomials, variables, decisions, false)
+    }
+
+    fn solve_node_with_contraction(
+        &mut self,
         mut polynomials: Vec<PolyExtLex>,
         variables: Vec<ZeroingVariable>,
         decisions: Vec<SplitDecision>,
+        contract_unique_cover: bool,
     ) -> Result<Option<usize>, String> {
         let depth = decisions.len();
         self.stats.largest_depth = self.stats.largest_depth.max(depth);
@@ -360,6 +376,40 @@ impl Solver<'_> {
                 }
                 continue;
             }
+
+            // The caller has already established that this is the unique
+            // cover on one side of a zero/nonzero split and that the sibling
+            // has no cover. Hence this cover represents the entire parent
+            // branch, and another zeroing split is sound without first asking
+            // the Gröbner solver to rediscover that the branch is difficult.
+            if contract_unique_cover
+                && covers.len() == 1
+                && depth < self.options.max_depth
+                && let Some(selected_index) = choose_variable(&candidate, &variables)
+            {
+                let selected = variables[selected_index].clone();
+                if self.options.verbose {
+                    println!(
+                        "  cover #{cover_index}: branch-contracted; splitting {} = 0 / {} != 0",
+                        selected.name, selected.name
+                    );
+                }
+                let (zero_child, nonzero_child, recursive_elapsed) =
+                    self.split_and_solve(candidate, &variables, &decisions, selected_index)?;
+                self.stats.zeroing_splits += 1;
+                node_result.zeroing_splits += 1;
+                child_elapsed += recursive_elapsed;
+                node_result.checks.push(VariableZeroingCoverResult {
+                    cover_index,
+                    outcome: VariableZeroingCoverOutcome::Contracted,
+                    elapsed: cover_started.elapsed().saturating_sub(recursive_elapsed),
+                    split_variable: Some(selected.name),
+                    zero_child,
+                    nonzero_child,
+                });
+                continue;
+            }
+
             if self.stats.evaluations >= self.options.max_evaluations {
                 self.retain_unresolved(
                     candidate,
@@ -507,38 +557,17 @@ impl Solver<'_> {
                     }
 
                     let selected = variables[selected_index].clone();
-                    let mut remaining = variables.clone();
-                    remaining.remove(selected_index);
-                    let fresh = self.fresh_variable;
-                    self.fresh_variable += 1;
-                    let (zero_branch, nonzero_branch) =
-                        split_on_variable(candidate, &selected.variable, fresh)?;
-                    self.stats.zeroing_splits += 1;
-                    node_result.zeroing_splits += 1;
                     if self.options.verbose {
                         println!(
                             "  cover #{cover_index}: timed out ({:?}); splitting {} = 0 / {} != 0",
                             cover_elapsed, selected.name, selected.name
                         );
                     }
-
-                    let mut zero_decisions = decisions.clone();
-                    zero_decisions.push(SplitDecision {
-                        variable: selected.name.clone(),
-                        is_zero: true,
-                    });
-                    let children_started = Instant::now();
-                    let zero_child =
-                        self.solve_node(zero_branch, remaining.clone(), zero_decisions)?;
-
-                    let mut nonzero_decisions = decisions.clone();
-                    nonzero_decisions.push(SplitDecision {
-                        variable: selected.name.clone(),
-                        is_zero: false,
-                    });
-                    let nonzero_child =
-                        self.solve_node(nonzero_branch, remaining, nonzero_decisions)?;
-                    child_elapsed += children_started.elapsed();
+                    let (zero_child, nonzero_child, recursive_elapsed) =
+                        self.split_and_solve(candidate, &variables, &decisions, selected_index)?;
+                    self.stats.zeroing_splits += 1;
+                    node_result.zeroing_splits += 1;
+                    child_elapsed += recursive_elapsed;
                     node_result.checks.push(VariableZeroingCoverResult {
                         cover_index,
                         outcome: VariableZeroingCoverOutcome::Timeout,
@@ -559,6 +588,53 @@ impl Solver<'_> {
         node_result.elapsed = node_started.elapsed().saturating_sub(child_elapsed);
         self.nodes.push(node_result);
         Ok(Some(node_id))
+    }
+
+    fn split_and_solve(
+        &mut self,
+        candidate: Vec<PolyExtLex>,
+        variables: &[ZeroingVariable],
+        decisions: &[SplitDecision],
+        selected_index: usize,
+    ) -> Result<(Option<usize>, Option<usize>, Duration), String> {
+        let selected = variables[selected_index].clone();
+        let mut remaining = variables.to_vec();
+        remaining.remove(selected_index);
+        let fresh = self.fresh_variable;
+        self.fresh_variable += 1;
+        let (zero_branch, nonzero_branch) =
+            split_on_variable(candidate, &selected.variable, fresh)?;
+
+        let zero_cover_count = factor_cover_count(&zero_branch)?;
+        let nonzero_cover_count = factor_cover_count(&nonzero_branch)?;
+        let contract_zero = zero_cover_count == 1 && nonzero_cover_count == 0;
+        let contract_nonzero = nonzero_cover_count == 1 && zero_cover_count == 0;
+
+        let mut zero_decisions = decisions.to_vec();
+        zero_decisions.push(SplitDecision {
+            variable: selected.name.clone(),
+            is_zero: true,
+        });
+        let children_started = Instant::now();
+        let zero_child = self.solve_node_with_contraction(
+            zero_branch,
+            remaining.clone(),
+            zero_decisions,
+            contract_zero,
+        )?;
+
+        let mut nonzero_decisions = decisions.to_vec();
+        nonzero_decisions.push(SplitDecision {
+            variable: selected.name,
+            is_zero: false,
+        });
+        let nonzero_child = self.solve_node_with_contraction(
+            nonzero_branch,
+            remaining,
+            nonzero_decisions,
+            contract_nonzero,
+        )?;
+        Ok((zero_child, nonzero_child, children_started.elapsed()))
     }
 }
 
@@ -673,6 +749,22 @@ fn split_on_variable(
     candidate.push(nonzero_constraint);
     let nonzero_branch = interreduce_polys(candidate);
     Ok((zero_branch, nonzero_branch))
+}
+
+/// Count the minimal factor covers of a split child without invoking a
+/// Gröbner-basis backend.
+fn factor_cover_count(polynomials: &[PolyExtLex]) -> Result<usize, String> {
+    let groups = try_factor_groups_from_polys(polynomials.to_vec())
+        .map_err(|error| format!("factorization while checking branch contraction: {error}"))?;
+    let (factors, index_groups) = build_factor_index(&groups);
+    minimal_covers(&index_groups, factors.len())
+        .map(|covers| covers.len())
+        .ok_or_else(|| {
+            format!(
+                "split child has {} distinct factors; the cover enumerator supports at most 63",
+                factors.len()
+            )
+        })
 }
 
 fn uses_temporary_variable(polynomial: &PolyExtGrevLex) -> bool {
@@ -860,6 +952,36 @@ mod tests {
             result.nodes[1].decisions[0].variable,
             result.nodes[2].decisions[0].variable
         );
+    }
+
+    #[test]
+    fn singleton_branch_is_split_again_without_an_evaluation() {
+        let (loaded, polynomials) = load("{x == 0, y == 0}");
+        let options = VariableZeroingOptions::default();
+        let evaluations = AtomicUsize::new(0);
+        let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| {
+            evaluations.fetch_add(1, Ordering::Relaxed);
+            Outcome::Timeout
+        };
+
+        let result =
+            solve_by_zeroing_with(polynomials, candidates(&loaded), &options, &always_timeout)
+                .expect("search");
+
+        // The root is evaluated and split on x. Its x = 0 child has one
+        // cover, while its x != 0 sibling has none, so the unique cover is
+        // split directly on y. Only the final y = 0 leaf is evaluated.
+        assert_eq!(evaluations.load(Ordering::Relaxed), 2);
+        assert_eq!(result.stats.evaluations, 2);
+        assert_eq!(result.stats.zeroing_splits, 2);
+        let contracted = result
+            .nodes
+            .iter()
+            .flat_map(|node| &node.checks)
+            .filter(|check| check.outcome == VariableZeroingCoverOutcome::Contracted)
+            .collect::<Vec<_>>();
+        assert_eq!(contracted.len(), 1);
+        assert!(contracted[0].split_variable.is_some());
     }
 
     #[test]

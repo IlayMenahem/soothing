@@ -344,11 +344,13 @@ fn render_tikz_plot(
 \providecommand{\vzConsistent}{\ensuremath{\textcolor{green!45!black}{\boldsymbol{\checkmark}}}}
 \providecommand{\vzNoCovers}{\ensuremath{\textcolor{gray!75!black}{\boldsymbol{\varnothing}}}}
 \providecommand{\vzTimeout}{\tikz[baseline=-0.55ex,scale=0.105]{\filldraw[fill=yellow!70,draw=orange!85!black,line width=1.2pt] (0,0) circle (1);\draw[orange!85!black,line width=1.4pt,line cap=round] (0,0) -- (0,0.58) (0,0) -- (0.48,-0.28);}}
+\providecommand{\vzContracted}{\ensuremath{\textcolor{violet!80!black}{\boldsymbol{\leadsto}}}}
 
 \begin{tikzpicture}[
   font=\small,
   cover/.style={draw=blue!65!black,fill=blue!3,rounded corners=2pt,line width=0.65pt,minimum width=18mm,minimum height=10mm,inner sep=2pt,align=center},
   timeout cover/.style={cover,draw=orange!85!black,fill=yellow!12},
+  contracted cover/.style={cover,draw=violet!75!black,fill=violet!5},
   empty branch/.style={draw=gray!65,dashed,fill=gray!5,rounded corners=2pt,minimum width=18mm,minimum height=10mm,inner sep=2pt,align=center},
   input/.style={draw=blue!70!black,fill=blue!8,circle,line width=0.7pt,minimum size=8mm,align=center},
   branch/.style={-{Stealth[length=1.8mm]},line width=0.65pt},
@@ -378,16 +380,17 @@ fn render_tikz_plot(
         for check in &node.checks {
             let x = positions[&(node.node_id, Some(check.cover_index))];
             let name = cover_node_name(node.node_id, check.cover_index);
-            let style = if check.outcome == VariableZeroingCoverOutcome::Timeout {
-                "timeout cover"
-            } else {
-                "cover"
+            let style = match check.outcome {
+                VariableZeroingCoverOutcome::Timeout => "timeout cover",
+                VariableZeroingCoverOutcome::Contracted => "contracted cover",
+                _ => "cover",
             };
             let outcome = match check.outcome {
                 VariableZeroingCoverOutcome::Consistent => "\\vzConsistent",
                 VariableZeroingCoverOutcome::Inconsistent => "\\vzInconsistent",
                 VariableZeroingCoverOutcome::CorePruned => "\\vzPruned",
                 VariableZeroingCoverOutcome::Timeout => "\\vzTimeout",
+                VariableZeroingCoverOutcome::Contracted => "\\vzContracted",
             };
             let split = check
                 .split_variable
@@ -466,7 +469,7 @@ fn render_tikz_plot(
     let legend_y = -2.25 - max_depth as f64 * 2.15;
     writeln!(
         output,
-        "\\node[draw=gray!55,fill=white,rounded corners=2pt,inner sep=3pt,anchor=north] at (0,{legend_y:.3}) {{\\scriptsize \\vzInconsistent\\ inconsistent\\quad \\vzPruned\\ core-pruned\\quad \\vzConsistent\\ consistent\\quad \\vzTimeout\\ timed out\\quad \\vzNoCovers\\ no covers}};"
+        "\\node[draw=gray!55,fill=white,rounded corners=2pt,inner sep=3pt,anchor=north] at (0,{legend_y:.3}) {{\\scriptsize \\vzInconsistent\\ inconsistent\\quad \\vzPruned\\ core-pruned\\quad \\vzConsistent\\ consistent\\quad \\vzTimeout\\ timed out\\quad \\vzContracted\\ contracted\\quad \\vzNoCovers\\ no covers}};"
     )
     .unwrap();
     output.push_str("\\end{tikzpicture}\n");

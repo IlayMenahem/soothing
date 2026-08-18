@@ -91,6 +91,24 @@ Its score is the triple
 \]
 and scores are compared lexicographically.
 
+\subsection{Branch contraction}
+\label{subsec:zeroing-branch-contraction}
+
+After a split, we optionally interreduce, and factor both child systems before sending their hitting sets to the branch solver.
+Let $\mathcal H_0$ and $\mathcal H_1$ be the minimal hitting sets for $x=0$ and $x\neq 0$.
+Suppose, up to exchanging the two children, that
+\[
+    \mathcal H_0=\emptyset
+    \qquad\text{and}\qquad
+    \mathcal H_1=\{H\}.
+\]
+The first child is inconsistent, and we have
+\[
+    V_Y(Q)=V_Y(H).
+\]
+There is no need to run the branch solver on $H$ before choosing the next
+splitting variable.
+
 \subsection{Theoretical analysis of variable zeroing}
 \label{subsec:zeroing-theoretical-analysis}
 
