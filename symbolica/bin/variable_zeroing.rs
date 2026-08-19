@@ -1,7 +1,7 @@
 //! CLI for recursive factor branching with variable zeroing.
 //!
-//! Usage: `variable_zeroing [path] [--no-unsat-core-search]` (default:
-//! `systems/system.txt`).
+//! Usage: `variable_zeroing [path] [--unsat-core-search]` (default path:
+//! `systems/system.txt`; default Gröbner backend: Singular).
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
@@ -47,8 +47,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut interreduce = true;
     let mut timeout_ms = 5_000;
     let mut max_runtime_ms = None;
-    let mut gb_backend = GbBackend::M4gb;
-    let mut unsat_core_search = true;
+    let mut gb_backend = GbBackend::SingularGb;
+    let mut unsat_core_search = false;
     let mut max_nodes = usize::MAX;
     let mut max_evaluations = usize::MAX;
     let mut max_depth = usize::MAX;
@@ -75,6 +75,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     )
                 })?;
             }
+            "--unsat-core-search" => unsat_core_search = true,
             "--no-unsat-core-search" => unsat_core_search = false,
             "--max-nodes" => max_nodes = parse_usize(&mut args, "--max-nodes")?,
             "--max-covers" | "--max-evaluations" => {
@@ -627,6 +628,22 @@ mod tests {
         assert!(!options.unsat_core_search);
         assert_eq!(options.plot, Some(PathBuf::from("tree.tex")));
         assert!(options.summary);
+    }
+
+    #[test]
+    fn parse_args_uses_fast_defaults() {
+        let options = parse_args(std::iter::empty()).expect("arguments");
+
+        assert_eq!(options.gb_backend, GbBackend::SingularGb);
+        assert!(!options.unsat_core_search);
+    }
+
+    #[test]
+    fn parse_args_can_enable_unsat_core_search() {
+        let options =
+            parse_args(["--unsat-core-search"].into_iter().map(String::from)).expect("arguments");
+
+        assert!(options.unsat_core_search);
     }
 
     #[test]

@@ -6,8 +6,8 @@
 //! hitting set is checked by a selectable Gröbner backend; inconsistent sets
 //! yield iteratively refined GB-Cores that prune later supersets.
 //!
-//! Usage: `branching [path] [--no-unsat-core-search]` — default path:
-//! `systems/system.txt`.
+//! Usage: `branching [path] [--unsat-core-search]` — default path:
+//! `systems/system.txt`; default Gröbner backend: Singular.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -45,8 +45,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut interreduce = true;
     let mut max_covers = usize::MAX;
     let mut timeout_ms = 5_000;
-    let mut gb_backend = GbBackend::M4gb;
-    let mut unsat_core_search = true;
+    let mut gb_backend = GbBackend::SingularGb;
+    let mut unsat_core_search = false;
     let mut summary = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -76,6 +76,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     )
                 })?;
             }
+            "--unsat-core-search" => unsat_core_search = true,
             "--no-unsat-core-search" => unsat_core_search = false,
             "--summary" => summary = true,
             _ if arg.starts_with("--") => return Err(format!("unknown option {arg:?}")),
@@ -432,6 +433,22 @@ mod tests {
         assert_eq!(options.gb_backend, GbBackend::Gvw);
         assert!(!options.unsat_core_search);
         assert!(options.summary);
+    }
+
+    #[test]
+    fn parse_args_uses_fast_defaults() {
+        let options = parse_args(std::iter::empty()).expect("arguments");
+
+        assert_eq!(options.gb_backend, GbBackend::SingularGb);
+        assert!(!options.unsat_core_search);
+    }
+
+    #[test]
+    fn parse_args_can_enable_unsat_core_search() {
+        let options =
+            parse_args(["--unsat-core-search"].into_iter().map(String::from)).expect("arguments");
+
+        assert!(options.unsat_core_search);
     }
 
     #[test]

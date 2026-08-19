@@ -8,7 +8,8 @@
 //! factor-cover cores are normalized polynomial sets, so they remain valid
 //! across branches whose factor-index universes differ.
 //!
-//! Usage: `idos [path]` — default path: `systems/system.txt`.
+//! Usage: `idos [path]` — default path: `systems/system.txt`; default Gröbner
+//! backend: Singular.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -48,7 +49,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut interreduce = true;
     let mut max_covers: usize = 2_000;
     let mut timeout_ms: u64 = 5_000;
-    let mut gb_backend = GbBackend::M4gb;
+    let mut gb_backend = GbBackend::SingularGb;
     let mut sparse = false;
     let mut sparse_names = Vec::new();
     let mut summary = false;
@@ -648,7 +649,7 @@ mod tests {
         assert!(!options.interreduce);
         assert_eq!(options.max_covers, 17);
         assert_eq!(options.timeout_ms, 250);
-        assert_eq!(options.gb_backend, GbBackend::M4gb);
+        assert_eq!(options.gb_backend, GbBackend::SingularGb);
         assert!(!options.sparse);
     }
 

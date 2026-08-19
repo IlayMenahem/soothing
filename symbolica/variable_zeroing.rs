@@ -45,8 +45,11 @@ pub struct VariableZeroingOptions {
     pub timeout: Duration,
     /// Optional wall-clock budget for the entire recursive search.
     pub max_runtime: Option<Duration>,
+    /// Gröbner-basis implementation used to evaluate covers. Defaults to
+    /// Singular.
     pub gb_backend: GbBackend,
-    /// Learn unsatisfiable cores and use them to prune later covers.
+    /// Learn unsatisfiable cores and use them to prune later covers. Disabled
+    /// by default.
     pub unsat_core_search: bool,
     /// Global recursion-node budget. Exhaustion is reported, never treated as
     /// unsatisfiability.
@@ -65,8 +68,8 @@ impl Default for VariableZeroingOptions {
             interreduce: true,
             timeout: Duration::from_secs(5),
             max_runtime: None,
-            gb_backend: GbBackend::M4gb,
-            unsat_core_search: true,
+            gb_backend: GbBackend::SingularGb,
+            unsat_core_search: false,
             max_nodes: usize::MAX,
             max_evaluations: usize::MAX,
             max_depth: usize::MAX,
@@ -825,6 +828,14 @@ mod tests {
     }
 
     #[test]
+    fn options_default_to_singular_without_core_search() {
+        let options = VariableZeroingOptions::default();
+
+        assert_eq!(options.gb_backend, GbBackend::SingularGb);
+        assert!(!options.unsat_core_search);
+    }
+
+    #[test]
     fn choice_prefers_the_variable_in_more_generators() {
         let (loaded, polynomials) = load("{x + y == 0, x*z + 1 == 0}");
         let variables = candidates(&loaded);
@@ -989,6 +1000,7 @@ mod tests {
         let (loaded, polynomials) = load("{x == 0, x - 1 == 0}");
         let options = VariableZeroingOptions {
             interreduce: false,
+            unsat_core_search: true,
             ..VariableZeroingOptions::default()
         };
         let evaluations = AtomicUsize::new(0);
