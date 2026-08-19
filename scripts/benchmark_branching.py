@@ -19,6 +19,7 @@ import argparse
 import concurrent.futures
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from benchmark_idos import (
     generate_matrix,
     idos_args_with_engine,
     run,
+    subprocess_limit,
 )
 
 REPO = Path(__file__).resolve().parent.parent
@@ -320,6 +322,13 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
+    limit = subprocess_limit()
+    if args.jobs > limit:
+        print(
+            f"capping --jobs from {args.jobs} to {limit} (available CPUs minus two)",
+            file=sys.stderr,
+        )
+        args.jobs = limit
     if args.generate_only and args.output_dir is None:
         parser.error("--generate-only requires --output-dir so generated systems persist")
     return args

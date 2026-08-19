@@ -121,6 +121,7 @@ fn die(message: impl std::fmt::Display, code: i32) -> ! {
 fn main() {
     LicenseManager::set_license_key("5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21")
         .unwrap();
+    polynomial_cdcl::exit_if_solver_worker();
     let cli = parse_args(std::env::args().skip(1)).unwrap_or_else(|error| die(error, 2));
     println!("Loading {}", cli.path.display());
     let load_started = Instant::now();

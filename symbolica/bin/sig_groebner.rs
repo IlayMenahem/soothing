@@ -226,6 +226,7 @@ fn main() {
     };
 
     LicenseManager::set_license_key(LICENSE_KEY).ok();
+    polynomial_cdcl::exit_if_solver_worker();
 
     println!("Loading {}", args.path.display());
     let loaded = match load_mathematica_system_from_path_with_var_names(&args.path) {

@@ -334,6 +334,7 @@ fn report_results(result: &SearchResult, factors: &[PolyExtLex]) {
 fn main() {
     let key = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
     LicenseManager::set_license_key(key).unwrap();
+    polynomial_cdcl::exit_if_solver_worker();
 
     let options = parse_args(std::env::args().skip(1)).unwrap_or_else(|error| die(error, 2));
     println!("Loading {}", options.path.display());

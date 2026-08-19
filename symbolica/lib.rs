@@ -9,6 +9,8 @@ pub mod m4gb;
 pub mod mathematica;
 pub(crate) mod monom;
 pub mod sig_groebner;
+#[cfg_attr(test, allow(dead_code))]
+mod solver_process;
 pub mod sparse;
 pub mod system;
 pub mod var_id;
@@ -29,6 +31,7 @@ pub use sig_groebner::{
     Signature, groebner_f5, groebner_f5_from_system, groebner_f5_from_system_with, groebner_gvw,
     groebner_gvw_from_system, groebner_gvw_from_system_with, ideal_in_order,
 };
+pub use solver_process::exit_if_solver_worker;
 pub use system::PolynomialSystem;
 pub use var_id::VarId;
 pub use variable_zeroing::{

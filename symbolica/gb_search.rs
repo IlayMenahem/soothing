@@ -3,10 +3,10 @@
 
 use std::io::Read;
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use symbolica::domains::Ring;
 use symbolica::domains::rational::Q;
 use symbolica::poly::polynomial::MultivariatePolynomial;
@@ -65,7 +65,7 @@ pub enum Outcome {
     BackendError(String),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum GbBackend {
     M4gb,
     F5,
@@ -141,6 +141,10 @@ fn singular_program(cover: &[PolyExtLex]) -> String {
 /// only needs the basis length and leading-monomial ideal, so the compact
 /// `leadexp` output is reconstructed as monomials in the original ring.
 fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
+    let deadline = Instant::now() + timeout;
+    let Some(_permit) = crate::solver_process::acquire_solver_process(deadline) else {
+        return Outcome::Timeout;
+    };
     let program = singular_program(&cover);
     let mut child = match Command::new("Singular")
         .args(["-q", "--no-tty", "-c", &program])
@@ -166,7 +170,6 @@ fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome
         text
     });
 
-    let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
@@ -229,11 +232,9 @@ fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome
     })
 }
 
-/// Compute the cover's Gröbner basis on a worker thread, abandoning it if it
-/// outlives `timeout`. The cover is reordered to degrevlex before the
-/// computation, which is typically far cheaper than lex for deciding
-/// satisfiability (Section 3.1). Cancellation is cooperative-free, so a
-/// timed-out thread keeps running until it finishes on its own.
+/// Compute the cover's Gröbner basis in a killable child process. The cover is
+/// reordered to degrevlex before computation, which is typically far cheaper
+/// than lex for deciding satisfiability (Section 3.1).
 pub fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBackend) -> Outcome {
     // Interreduction retains zero polynomials to preserve the input slots, but
     // they impose no constraint. In particular, Symbolica 1.5.1 attempts to
@@ -254,27 +255,35 @@ pub fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBack
     if backend == GbBackend::SingularGb {
         return evaluate_cover_singular(cover, timeout);
     }
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let grevlex: Vec<_> = cover.iter().map(|p| p.reorder::<GrevLexOrder>()).collect();
-        let system = match backend {
-            GbBackend::M4gb => groebner_m4gb(&grevlex).system,
-            GbBackend::F5 => groebner_f5(&grevlex).system,
-            GbBackend::Gvw => groebner_gvw(&grevlex).system,
-            GbBackend::Symbolica => {
-                symbolica::poly::groebner::GroebnerBasis::new(&grevlex, false).system
-            }
-            GbBackend::SingularGb => unreachable!("handled before spawning the worker thread"),
-        };
-        let _ = tx.send(system);
-    });
-    match rx.recv_timeout(timeout) {
-        Ok(system) if is_unit_ideal(&system) => Outcome::Inconsistent,
-        Ok(system) => Outcome::Consistent(ComputedBasis {
+    if cfg!(test) || crate::solver_process::running_under_test_harness() {
+        evaluate_cover_in_process(cover, backend)
+    } else {
+        crate::solver_process::evaluate_cover_isolated(cover, timeout, backend)
+    }
+}
+
+pub(crate) fn evaluate_cover_in_process(cover: Vec<PolyExtLex>, backend: GbBackend) -> Outcome {
+    let grevlex: Vec<_> = cover.iter().map(|p| p.reorder::<GrevLexOrder>()).collect();
+    let system = match backend {
+        GbBackend::M4gb => groebner_m4gb(&grevlex).system,
+        GbBackend::F5 => groebner_f5(&grevlex).system,
+        GbBackend::Gvw => groebner_gvw(&grevlex).system,
+        GbBackend::Symbolica => {
+            symbolica::poly::groebner::GroebnerBasis::new(&grevlex, false).system
+        }
+        GbBackend::SingularGb => {
+            return Outcome::BackendError(
+                "Singular cannot run through the in-process worker entry point".to_string(),
+            );
+        }
+    };
+    if is_unit_ideal(&system) {
+        Outcome::Inconsistent
+    } else {
+        Outcome::Consistent(ComputedBasis {
             elements: system,
             leading_monomials_only: false,
-        }),
-        Err(_) => Outcome::Timeout,
+        })
     }
 }
 
@@ -417,11 +426,7 @@ mod tests {
         }
 
         let product = test_poly("x*y");
-        match evaluate_cover(
-            vec![product],
-            Duration::from_secs(5),
-            GbBackend::SingularGb,
-        ) {
+        match evaluate_cover(vec![product], Duration::from_secs(5), GbBackend::SingularGb) {
             Outcome::Consistent(basis) => {
                 assert!(basis.leading_monomials_only);
                 assert_eq!(basis.elements.len(), 1);

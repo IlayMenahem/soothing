@@ -5,7 +5,6 @@
 //! a Gröbner backend has certified that a factor cover generates the unit ideal.
 
 use std::collections::VecDeque;
-use std::sync::mpsc;
 use std::time::Duration;
 
 use symbolica::domains::rational::Rational;
@@ -274,6 +273,12 @@ fn gb_core_once(candidate: Vec<PolyExtLex>) -> Option<GbCoreRun> {
     None
 }
 
+pub(crate) fn gb_core_once_for_worker(
+    candidate: Vec<PolyExtLex>,
+) -> Option<(Vec<PolyExtLex>, Vec<PolyExtLex>)> {
+    gb_core_once(candidate).map(|run| (run.ranked_core, run.core))
+}
+
 /// Run proof-carrying GB-Core repeatedly using refutation distance and
 /// frequency to reorder generators. Returns `None` if a run times out or does
 /// not obtain a unit certificate.
@@ -282,12 +287,17 @@ pub fn paper_gb_core(candidate: &[PolyExtLex], timeout: Duration) -> Option<Core
     let mut first_run = true;
     loop {
         let input_len = current.len();
-        let (sender, receiver) = mpsc::channel();
-        let input = current.clone();
-        std::thread::spawn(move || {
-            let _ = sender.send(gb_core_once(input));
-        });
-        let run = receiver.recv_timeout(timeout).ok()??;
+        let run = if cfg!(test) || crate::solver_process::running_under_test_harness() {
+            gb_core_once(current.clone())?
+        } else {
+            match crate::solver_process::gb_core_once_isolated(current.clone(), timeout).ok()? {
+                crate::solver_process::ProcessRun::Completed(Some((ranked_core, core))) => {
+                    GbCoreRun { ranked_core, core }
+                }
+                crate::solver_process::ProcessRun::Completed(None)
+                | crate::solver_process::ProcessRun::Timeout => return None,
+            }
+        };
         let shrunk = run.ranked_core.len() < input_len;
         let reordered = run.ranked_core != current;
         current = run.ranked_core;
@@ -311,10 +321,10 @@ mod tests {
     use super::*;
     use std::sync::Once;
 
-    use symbolica::domains::rational::Q;
     use symbolica::LicenseManager;
+    use symbolica::domains::rational::Q;
 
-    use crate::gb_search::{evaluate_cover, GbBackend, Outcome};
+    use crate::gb_search::{GbBackend, Outcome, evaluate_cover};
     use crate::{load_mathematica_system_from_str_with_var_names, polynomials_from_loaded};
 
     static LICENSE: Once = Once::new();

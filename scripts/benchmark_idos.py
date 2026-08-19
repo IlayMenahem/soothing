@@ -37,6 +37,14 @@ IDOS = SYMBOLICA / "target" / "release" / "idos"
 SIG = SYMBOLICA / "target" / "release" / "sig_groebner"
 MATRIX_REPORT = RESULTS / "idos_engine_comparison.md"
 
+
+def subprocess_limit() -> int:
+    """Maximum concurrent child processes, leaving two CPUs responsive."""
+    affinity = getattr(os, "sched_getaffinity", None)
+    cores = len(affinity(0)) if affinity is not None else (os.cpu_count() or 1)
+    return max(1, cores - 2)
+
+
 SUMMARY_RE = re.compile(
     r"IDOS_SUMMARY branches=(\d+) candidates=(\d+) satisfiable=(\d+) unsatisfiable=(\d+) "
     r"timeouts=(\d+) largest_dimension=(\d+|unknown) largest_basis_len=(\d+) "
@@ -877,6 +885,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("--timeout must be at least 1")
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
+    limit = subprocess_limit()
+    if args.jobs > limit:
+        print(
+            f"capping --jobs from {args.jobs} to {limit} (available CPUs minus two)",
+            file=sys.stderr,
+        )
+        args.jobs = limit
     if args.generate_only and args.output_dir is None:
         parser.error("--generate-only requires --output-dir so generated systems persist")
     return args
