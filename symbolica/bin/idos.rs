@@ -73,11 +73,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
             }
             "--gb" => {
                 let value = args.next().ok_or_else(|| {
-                    "--gb requires one of: m4gb, f5, gvw, symbolica, singular-gb".to_string()
+                    "--gb requires one of: m4gb, f5, gvw, symbolica, singular-gb, singular-facstd"
+                        .to_string()
                 })?;
                 gb_backend = GbBackend::parse(&value).ok_or_else(|| {
                     format!(
-                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, or singular-gb"
+                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, singular-gb, or singular-facstd"
                     )
                 })?;
             }
@@ -401,6 +402,33 @@ fn run_search(
                                 });
                         if improves {
                             largest_dimension = Some((idx, hint_mask, dimension, basis));
+                        }
+                    }
+                }
+                Outcome::ConsistentComponents(bases) => {
+                    branch_satisfiable = true;
+                    if inferred_from.is_none() {
+                        satisfiable_covers.push((idx, candidate));
+                    }
+                    println!(
+                        "  cover #{idx}: satisfiable ({} facstd component(s), elapsed {:?})",
+                        bases.len(),
+                        t_cover.elapsed()
+                    );
+                    for basis in bases {
+                        let len = basis.elements.len();
+                        let dimension = solution_dimension(&basis.elements, nvars);
+                        solutions.push((idx, len, dimension));
+                        if let Some(dimension) = dimension {
+                            let improves = largest_dimension.as_ref().is_none_or(
+                                |&(_, _, best_dim, ref best)| {
+                                    dimension > best_dim
+                                        || (dimension == best_dim && len < best.elements.len())
+                                },
+                            );
+                            if improves {
+                                largest_dimension = Some((idx, hint_mask, dimension, basis));
+                            }
                         }
                     }
                 }

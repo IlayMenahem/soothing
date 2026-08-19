@@ -35,13 +35,13 @@ The complete measurements are stored in the appendix.
 \subsection{Baseline systems}
 \label{subsec:baseline-systems}
 
-The baseline has 20 generated systems in six families. Signed-distance cycles and
-affine-factor hypergraphs test many inexpensive hitting sets.  The overlapping
-random multiples use seeded dense quadratic factors that recur across
-equations, with no factor shared by every equation.  In the gated systems, a
-single selector multiplies every equation of a Cyclic, Katsura, or dense
-quadratic system.  This produces one easy selector cover and one nonlinear
-residual cover.
+The baseline has 20 generated systems in six families.
+\begin{itemize}
+    \item Signed-distance cycles and affine-factor hypergraphs test many inexpensive hitting sets.
+    \item The overlapping random multiples use seeded dense quadratic factors that recur across equations, with no factor shared by every equation.
+    \item For gated systems, we create a new variable and multiply every equation in Cyclic, Katsura, or dense quadratic by it.
+    \item This produces one easy selector cover and one nonlinear residual cover.
+\end{itemize}
 
 \begin{table}[htbp]
 \centering
@@ -111,9 +111,7 @@ Square affine $(10,5)$ & Symb. $1.174/0.000$ & Symb. $1.326/0.015$ & timeout & f
 \end{tabular}%
 }
 \caption{Best completed baseline results and the fastest completed zeroing
-backend observed.  Branching and zeroing entries show wall time and
-first-solution latency; baseline entries show wall time.  All times are in
-seconds.}
+backend observed. All times are in seconds.}
 \label{tab:baseline-comparison}
 \end{table}
 

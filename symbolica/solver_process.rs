@@ -326,6 +326,10 @@ fn execute_worker(request: WorkerRequest) -> Result<WorkerResponse, String> {
                     basis: encode_polynomials(&basis.elements),
                     leading_monomials_only: basis.leading_monomials_only,
                 }),
+                Outcome::ConsistentComponents(_) => Err(
+                    "factorizing components cannot run through the in-process worker entry point"
+                        .to_string(),
+                ),
                 Outcome::Inconsistent => Ok(WorkerResponse::Inconsistent),
                 Outcome::Timeout => Err("nested solver worker timed out".to_string()),
                 Outcome::BackendError(error) => Ok(WorkerResponse::Error(error)),

@@ -1,7 +1,8 @@
 //! CLI for recursive factor branching with variable zeroing.
 //!
-//! Usage: `variable_zeroing [path] [--unsat-core-search]` (default path:
-//! `systems/system.txt`; default Gröbner backend: Singular).
+//! Usage: `variable_zeroing [path] [--unsat-core-search]
+//! [--saturate-each-variable]` (default path: `systems/system.txt`; default
+//! Gröbner backend: Singular).
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
@@ -27,6 +28,7 @@ struct CliOptions {
     max_runtime_ms: Option<u64>,
     gb_backend: GbBackend,
     unsat_core_search: bool,
+    saturate_each_variable: bool,
     max_nodes: usize,
     max_evaluations: usize,
     max_depth: usize,
@@ -49,6 +51,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut max_runtime_ms = None;
     let mut gb_backend = GbBackend::SingularGb;
     let mut unsat_core_search = false;
+    let mut saturate_each_variable = false;
     let mut max_nodes = usize::MAX;
     let mut max_evaluations = usize::MAX;
     let mut max_depth = usize::MAX;
@@ -67,16 +70,18 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
             }
             "--gb" => {
                 let value = args.next().ok_or_else(|| {
-                    "--gb requires m4gb, f5, gvw, symbolica, or singular-gb".to_string()
+                    "--gb requires m4gb, f5, gvw, symbolica, singular-gb, or singular-facstd"
+                        .to_string()
                 })?;
                 gb_backend = GbBackend::parse(&value).ok_or_else(|| {
                     format!(
-                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, or singular-gb"
+                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, singular-gb, or singular-facstd"
                     )
                 })?;
             }
             "--unsat-core-search" => unsat_core_search = true,
             "--no-unsat-core-search" => unsat_core_search = false,
+            "--saturate-each-variable" => saturate_each_variable = true,
             "--max-nodes" => max_nodes = parse_usize(&mut args, "--max-nodes")?,
             "--max-covers" | "--max-evaluations" => {
                 max_evaluations = parse_usize(&mut args, "--max-evaluations")?;
@@ -105,6 +110,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         max_runtime_ms,
         gb_backend,
         unsat_core_search,
+        saturate_each_variable,
         max_nodes,
         max_evaluations,
         max_depth,
@@ -158,13 +164,18 @@ fn main() {
         load_started.elapsed()
     );
     println!(
-        "Recursive branching: {}ms/cover, {} backend, unsat core search {}, max runtime {}, max nodes {}, max evaluations {}, max depth {}",
+        "Recursive branching: {}ms/cover, {} backend, unsat core search {}, saturation equations {}, max runtime {}, max nodes {}, max evaluations {}, max depth {}",
         cli.timeout_ms,
         cli.gb_backend.label(),
         if cli.unsat_core_search {
             "enabled"
         } else {
             "disabled"
+        },
+        if cli.saturate_each_variable {
+            "per variable"
+        } else {
+            "shared product"
         },
         cli.max_runtime_ms
             .map_or_else(|| "unlimited".to_string(), |value| format!("{value}ms")),
@@ -179,6 +190,7 @@ fn main() {
         max_runtime: cli.max_runtime_ms.map(Duration::from_millis),
         gb_backend: cli.gb_backend,
         unsat_core_search: cli.unsat_core_search,
+        saturate_each_variable: cli.saturate_each_variable,
         max_nodes: cli.max_nodes,
         max_evaluations: cli.max_evaluations,
         max_depth: cli.max_depth,
@@ -609,6 +621,7 @@ mod tests {
                 "--gb",
                 "gvw",
                 "--no-unsat-core-search",
+                "--saturate-each-variable",
                 "--plot",
                 "tree.tex",
                 "--summary",
@@ -626,6 +639,7 @@ mod tests {
         assert_eq!(options.variable_names, vec!["x"]);
         assert_eq!(options.gb_backend, GbBackend::Gvw);
         assert!(!options.unsat_core_search);
+        assert!(options.saturate_each_variable);
         assert_eq!(options.plot, Some(PathBuf::from("tree.tex")));
         assert!(options.summary);
     }
@@ -636,6 +650,7 @@ mod tests {
 
         assert_eq!(options.gb_backend, GbBackend::SingularGb);
         assert!(!options.unsat_core_search);
+        assert!(!options.saturate_each_variable);
     }
 
     #[test]

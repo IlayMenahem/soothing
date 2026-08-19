@@ -68,11 +68,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
             }
             "--gb" => {
                 let value = args.next().ok_or_else(|| {
-                    "--gb requires one of: m4gb, f5, gvw, symbolica, singular-gb".to_string()
+                    "--gb requires one of: m4gb, f5, gvw, symbolica, singular-gb, singular-facstd"
+                        .to_string()
                 })?;
                 gb_backend = GbBackend::parse(&value).ok_or_else(|| {
                     format!(
-                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, or singular-gb"
+                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, singular-gb, or singular-facstd"
                     )
                 })?;
             }
@@ -239,6 +240,22 @@ fn run_search(
                     dimension,
                     basis,
                 });
+            }
+            Outcome::ConsistentComponents(bases) => {
+                first_solution.get_or_insert_with(|| started.elapsed());
+                solved += 1;
+                println!(
+                    "  cover #{cover_index}: satisfiable ({} factor(s), {} facstd component(s), elapsed {:?})",
+                    candidate.len(),
+                    bases.len(),
+                    cover_started.elapsed()
+                );
+                components.extend(bases.into_iter().map(|basis| Component {
+                    cover_index,
+                    cover_mask,
+                    dimension: solution_dimension(&basis.elements, nvars),
+                    basis,
+                }));
             }
             Outcome::Inconsistent => {
                 if options.unsat_core_search {

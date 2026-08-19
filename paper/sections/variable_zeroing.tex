@@ -3,9 +3,20 @@
 
 Algorithm~\ref{alg:ZeroingBranching} handles timeouts from the branch solver.
 After a timeout, it chooses a variable $x$ and replaces the unresolved branch
-with two children, one with the additional constraint $x = 0$ and another with $x\neq 0$.
-It then applies Algorithm~\ref{alg:Branching} recursively to both children. The recursion stops when all branches are resolved, no splitting variables remain, or the computation budget is exhausted.
+with two children. In the zero child, the algorithm substitutes $x=0$ in every
+generator. In the nonzero child, it adds $x$ to the variables in the saturation
+product. It then applies Algorithm~\ref{alg:Branching} recursively to both
+children. The recursion stops when all branches are resolved, no splitting
+variables remain, or the computation budget is exhausted.
 This construction does not depend on the choice of branch solver.
+
+Let $N=\{x_1,\ldots,x_n\}$ be the variables declared nonzero on the current
+path. They are represented by the single equation
+\begin{equation}
+\label{eq:zeroing-saturation}
+    \sigma_N=1-sx_1\cdots x_n=0,
+\end{equation}
+The operation $\Call{UpdateSaturation}{Q,N}$ removes the previous equation involving $s$, if there is one, and adds $\sigma_N$.
 
 % Pseudocode for the method with variable zeroing
 \begin{algorithm}
@@ -17,23 +28,24 @@ This construction does not depend on the choice of branch solver.
     \Function{ZeroingBranching}{$P, \tau$}
         \State $C \gets \emptyset$ \Comment{One global UNSAT-core set}
         \State $X \gets \Call{Variables}{P}$ \Comment{All variables of $P$}
-        \State \Return $\Call{SolveByZeroing}{P,X,\tau,C}$
+        \State \Return $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,C}$
     \EndFunction
-    \Function{SolveByZeroing}{$P,X,\tau,C$}
+    \Function{SolveByZeroing}{$P,X,Z,N,\tau,C$}
         \State $(S,T) \gets \Call{BranchingWithTimeout}{P,\tau,C}$
-        \Comment{Algorithm~\ref{alg:Branching}; $C$ is shared and updated}
+        \Comment{Representations inherit the path conditions $(Z,N)$}
         \State $U \gets \emptyset$ \Comment{Branches left unresolved}
 
         \ForAll{$Q \in T$}
             \If{$X=\emptyset$}
-                \State $U \gets U\cup\{Q\}$
+                \State $U \gets U\cup\{(Q,Z,N)\}$
                 \State \textbf{continue}
             \EndIf
 
             \State $x \gets \Call{ChooseVariable}{Q,X}$
-            \State $(S_0, U_0, C) \gets \Call{SolveByZeroing}{Q\cup\{x\}, X\setminus\{x\}, \tau,C}$
-            \State $(S_1, U_1, C) \gets \Call{SolveByZeroing}{Q\cup\{1-xz\}, X\setminus\{x\}, \tau,C}$
-            \Comment{$z$ is fresh}
+            \State $Q_0 \gets \Call{Substitute}{Q,x,0}$
+            \State $Q_1 \gets \Call{UpdateSaturation}{Q,N\cup\{x\}}$
+            \State $(S_0, U_0, C) \gets \Call{SolveByZeroing}{Q_0, X\setminus\{x\}, Z\cup\{x\}, N, \tau,C}$
+            \State $(S_1, U_1, C) \gets \Call{SolveByZeroing}{Q_1, X\setminus\{x\}, Z, N\cup\{x\}, \tau,C}$
 
             \State $S \gets S\cup S_0\cup S_1$
             \State $U \gets U\cup U_0\cup U_1$
@@ -51,13 +63,11 @@ This construction does not depend on the choice of branch solver.
     \label{fig:variable_zeroing_flowchart}
 \end{figure}
 
-Solutions of the nonzero branch are projected onto the original variables, so the fresh variables do not appear in the output.
+Solutions of the nonzero branch are projected onto the original variables, so
+the saturation variable does not appear in the output. The zero and nonzero
+decisions remain part of the solution-set representation.
 
-In the zero branch, the solver can substitute $x=0$ directly. In the nonzero
-branch, $1-xz=0$ records that $x$ is invertible. Interreduction with either
-equation may simplify the remaining generators. The effect depends on the
-branch solver. Section~\ref{sec:experiments} describes the Gr\"obner-basis
-solvers used in our experiments.
+In the nonzero branch, Equation~\eqref{eq:zeroing-saturation} states that the product of all variables in $N$ is invertible.
 
 The run on \texttt{systems/system.txt}, with a five-second timeout for each
 hitting set, produces the recursion tree in Figure~\ref{fig:variable_zeroing_tree}.
@@ -74,16 +84,18 @@ node.  Its outgoing edges give the zero and nonzero cases.
 \subsection{Choice of variable for splitting}
 \label{subsec:zeroing-variable-choice}
 
-The choice of variable for splitting effects the efficiency of the algorithm.
+The choice of variable for splitting affects the efficiency of the algorithm.
 Every split creates at least two new hitting sets to check.
 If a variable barely occurs in the current hitting set, both recursive calls may repeat most of the same work.
-A variable that occurs in many generators is a more promising choice: setting it to zero removes all terms containing it at once, while in the nonzero branch the algorithm can use the $1 - xz$.
+A variable that occurs in many generators is a more promising choice. Setting
+it to zero removes all terms containing it at once. In the nonzero branch, it
+is appended to the product in Equation~\eqref{eq:zeroing-saturation}.
 
 For each candidate variable $x$ that is still available on the current branch, define
 \begin{align*}
     g_Q(x) &= \#\{q\in Q : x\text{ occurs in }q\},\\
-    t_Q(x) &= \#\{(q,m) : q\in Q,\ m\text{ is a term of }q \deg_x(m) > 0\},\\
-    e_Q(x) &= \sum_{q\in Q}\ \sum_{\substack{m\text{ a term of }q \deg_x(m) > 0}} \deg_x(m).
+    t_Q(x) &= \#\{(q,m) : q\in Q,\ m\text{ is a term of }q,\ \deg_x(m) > 0\},\\
+    e_Q(x) &= \sum_{q\in Q}\ \sum_{\substack{m\text{ a term of }q,\\ \deg_x(m) > 0}} \deg_x(m).
 \end{align*}
 Its score is the triple
 \[
@@ -112,46 +124,60 @@ splitting variable.
 \subsection{Theoretical analysis of variable zeroing}
 \label{subsec:zeroing-theoretical-analysis}
 
-Let $Y$ be the set of variables in the input system, and let $\pi_Y$ denote
-projection onto those coordinates. For any system $Q$ encountered during the
-recursion, write
+Let $Y$ be the variables in the input system. A path is described by two
+disjoint subsets of $Y$: the variables $Z$ set to zero and the variables $N$
+declared nonzero. For a system $Q$ on that path, define
 \[
-    V_Y(Q)=\pi_Y(V(Q)).
+\begin{aligned}
+    V_Y(Q;Z,N)=\bigl\{a\in\mathbb A^Y :{}&
+    a_z=0\ (z\in Z),\ a_x\neq0\ (x\in N),\\
+    & (a,s)\in V(Q)\text{ for some }s\bigr\}.
+\end{aligned}
 \]
-This projection removes the inverse variables introduced along the path to
-$Q$.
+The quantified coordinate $s$ is omitted when $N=\emptyset$. This notation
+keeps the zero decisions even though the corresponding variables have already
+been replaced by zero in the polynomials of $Q$.
 
-We use the following contract for \textsc{BranchingWithTimeout}. On input $Q$,
-it returns a collection $S_Q$ of solution-set representations and a set $T_Q$
-of unresolved branches such that
+We use the following contract for \textsc{BranchingWithTimeout}. At a path
+$(Z,N)$, an input $Q$ returns a collection $S_Q$ of solution-set
+representations and a set $T_Q$ of unresolved branches such that
 \begin{equation}
 \label{eq:timeout-decomposition}
-    V_Y(Q)=\operatorname{Sol}(S_Q)\cup\bigcup_{R\in T_Q}V_Y(R).
+    V_Y(Q;Z,N)=\operatorname{Sol}(S_Q)
+    \cup\bigcup_{R\in T_Q}V_Y(R;Z,N).
 \end{equation}
-As defined in Section~\ref{sec:method}, $\operatorname{Sol}(S_Q)$ is the union
-of the sets represented by $S_Q$, projected here onto the coordinates in $Y$.
-Equation~\eqref{eq:timeout-decomposition} is the usual branching invariant: a
-timeout moves an unprocessed branch to $T_Q$ instead of discarding it. We also
-assume, as in
-Theorem~\ref{thm:branching-correctness}, that every learned UNSAT core
-is certified.
+Here $\operatorname{Sol}(S_Q)$ includes the path conditions and is projected
+onto $Y$. A timeout places an unprocessed branch in $T_Q$ instead of discarding
+it. As in Theorem~\ref{thm:branching-correctness}, every learned UNSAT core is
+assumed to be certified.
 
 \begin{lemma}[Correctness of a zeroing split]
 \label{lem:zeroing-split}
-Let $x\in Y$, and let $z$ be a variable that does not occur in $Q$. Then
+Let $x\in Y\setminus(Z\cup N)$. Set
 \[
-    V_Y(Q)=V_Y(Q\cup\{x\})\cup V_Y(Q\cup\{1-xz\}).
+    Q_0=Q|_{x=0}
+    \qquad\text{and}\qquad
+    Q_1=\Call{UpdateSaturation}{Q,N\cup\{x\}}.
+\]
+Then
+\[
+    V_Y(Q;Z,N)=V_Y(Q_0;Z\cup\{x\},N)
+    \cup V_Y(Q_1;Z,N\cup\{x\}).
 \]
 \end{lemma}
 
 \begin{proof}
-Take $a\in V_Y(Q)$ and choose a point $\widetilde a\in V(Q)$ with
-$\pi_Y(\widetilde a)=a$. If $\widetilde a_x=0$, then
-$a\in V_Y(Q\cup\{x\})$. If $\widetilde a_x\neq 0$, extend $\widetilde a$ by
-setting $z=\widetilde a_x^{-1}$. The resulting point satisfies $1-xz=0$, so
-$a\in V_Y(Q\cup\{1-xz\})$. This proves the forward inclusion. The reverse
-inclusion follows because each child system contains every polynomial in
-$Q$.
+Take $a\in V_Y(Q;Z,N)$. If $a_x=0$, then evaluating a polynomial at $a$ is
+unchanged when $x$ is first replaced by zero. Hence
+$a\in V_Y(Q_0;Z\cup\{x\},N)$. If $a_x\neq0$, then every variable in
+$N\cup\{x\}$ is nonzero. Setting
+\[
+    s=\left(a_x\prod_{y\in N}a_y\right)^{-1}
+\]
+satisfies the updated saturation equation, so
+$a\in V_Y(Q_1;Z,N\cup\{x\})$. The converse follows by the same two
+observations: substitution is valid under $a_x=0$, and the saturation equation
+only records the stated nonzero conditions.
 \end{proof}
 
 \begin{theorem}[Variable zeroing]
@@ -159,17 +185,24 @@ $Q$.
 Suppose Algorithm~\ref{alg:ZeroingBranching} returns $(S,U,C)$ on input $P$.
 Then
 \[
-    V(P)=\operatorname{Sol}(S)\cup\bigcup_{R\in U}V_Y(R).
+    V(P)=\operatorname{Sol}(S)
+    \cup\bigcup_{(R,Z_R,N_R)\in U}V_Y(R;Z_R,N_R).
 \]
 In particular, if $U=\emptyset$, then $\operatorname{Sol}(S)=V(P)$.
 \end{theorem}
 
 \begin{proof}
-We prove the stronger claim that every call
-$\operatorname{SolveByZeroing}(Q,X,\tau,C)$ returning $(S',U',C')$ satisfies
+We prove a stronger claim. Suppose the call
+\[
+    \operatorname{SolveByZeroing}(Q,X,Z,N,\tau,C)
+\]
+returns $(S',U',C')$. Then
 \begin{equation}
 \label{eq:zeroing-invariant}
-    V_Y(Q)=\operatorname{Sol}(S')\cup\bigcup_{R\in U'}V_Y(R).
+\begin{aligned}
+    V_Y(Q;Z,N)={}&\operatorname{Sol}(S')\\
+    &\cup\bigcup_{(R,Z_R,N_R)\in U'}V_Y(R;Z_R,N_R).
+\end{aligned}
 \end{equation}
 The proof is by induction on $|X|$.
 
@@ -184,36 +217,38 @@ variables are available. Let $(S_Q,T_Q)$ be the result of
 \textnormal{\textsc{BranchingWithTimeout}} on $Q$. For each $R\in T_Q$, the
 procedure chooses some $x\in X$ and recursively processes
 \[
-    R_0=R\cup\{x\}
+    R_0=R|_{x=0}
     \qquad\text{and}\qquad
-    R_1=R\cup\{1-xz\},
+    R_1=\Call{UpdateSaturation}{R,N\cup\{x\}}.
 \]
-where $z$ is fresh. Both calls use the smaller set $X\setminus\{x\}$.
+Both calls use the smaller set $X\setminus\{x\}$.
 Lemma~\ref{lem:zeroing-split} gives
 \[
-    V_Y(R)=V_Y(R_0)\cup V_Y(R_1).
+    V_Y(R;Z,N)=V_Y(R_0;Z\cup\{x\},N)
+    \cup V_Y(R_1;Z,N\cup\{x\}).
 \]
 Substituting these decompositions into
 Equation~\eqref{eq:timeout-decomposition} gives
 Equation~\eqref{eq:zeroing-invariant}.
 
-Apply the claim to the initial call with $Q=P$. Since $P$ contains no inverse
-variables, $V_Y(P)=V(P)$, which proves the stated identity. If $U$ is empty,
-the union over $U$ is empty and hence $\operatorname{Sol}(S)=V(P)$.
+Apply the claim to the initial call with $Q=P$ and $Z=N=\emptyset$. Then
+$V_Y(P;\emptyset,\emptyset)=V(P)$, which proves the stated identity. If $U$
+is empty, the union over $U$ is empty and
+$\operatorname{Sol}(S)=V(P)$.
 \end{proof}
 
-Now to show the run always terminates in finite time.
-\begin{theorem}
+\begin{theorem}[Termination]
     \label{thm:zeroing-termination}
-    Zeroing-Branching~\ref{alg:ZeroingBranching} terminates in finite time.
+    Algorithm~\ref{alg:ZeroingBranching} terminates in finite time.
 \end{theorem}
 \begin{proof}
-    The depth of the recursion tree is at most $|X|$ since for each call an unused variable is required and removed.
-    The branching factor is bounded by the number of hitting sets of factors which is finite.
-    The tree size is finite, and due to the timeout each hitting set is evaluated in finite time.
-    Thus the algorithm terminates in finite time.
+Each recursive call removes one variable from $X$, so the recursion depth is at
+most $|X|$. Every polynomial system has finitely many factor hitting sets, and
+the timeout bounds the time spent evaluating each one. The recursion tree is
+therefore finite.
 \end{proof}
 
-We can infer a solution-set representation for the hitting set on which the solver timed out from its children's representations.
-If all children are UNSAT, then so is the result of the timeout evaluation.
-Otherwise it represents the union of the sets represented by its children.
+The representations returned by the children determine the representation of
+the hitting set on which the solver timed out. If every child is UNSAT, the
+timed-out hitting set is also UNSAT. Otherwise, it represents the union of the
+children's sets.

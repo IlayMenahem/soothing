@@ -3,15 +3,18 @@
 //! This implements Algorithm `ZeroingBranching` from
 //! `paper/sections/variable_zeroing.tex`. A factor cover that exceeds its
 //! Gröbner-basis time budget is split into the constructible cases `x = 0`
-//! and `x != 0`. The latter is encoded by the Rabinowitsch equation
-//! `1 - x*z = 0`, where `z` is fresh. If one side of a split has no factor
-//! cover and the other has a unique cover, the unique cover is split again
-//! without a redundant Gröbner-basis call. Only original-variable basis
-//! elements and the zero/nonzero decisions are exposed by the projected
-//! result.
+//! and `x != 0`. In the zero branch, `x` is replaced by zero. All nonzero
+//! decisions on a branch share the saturation equation
+//! `1 - s*x_1*...*x_n = 0` by default. An option instead gives every
+//! nonzero variable its own equation `1 - s_i*x_i = 0`. If one side of a
+//! split has no factor cover and the other has a unique cover, the unique
+//! cover is split again without a redundant Gröbner-basis call. Only
+//! original-variable basis elements and the zero/nonzero decisions are
+//! exposed by the projected result.
 
 use std::time::{Duration, Instant};
 
+use symbolica::domains::Ring;
 use symbolica::poly::PolyVariable;
 
 use crate::cover::{build_factor_index, decode_cover, minimal_covers, ordered_cover_masks};
@@ -51,6 +54,9 @@ pub struct VariableZeroingOptions {
     /// Learn unsatisfiable cores and use them to prune later covers. Disabled
     /// by default.
     pub unsat_core_search: bool,
+    /// Use one Rabinowitsch variable and equation per nonzero variable instead
+    /// of one equation for their product.
+    pub saturate_each_variable: bool,
     /// Global recursion-node budget. Exhaustion is reported, never treated as
     /// unsatisfiability.
     pub max_nodes: usize,
@@ -70,6 +76,7 @@ impl Default for VariableZeroingOptions {
             max_runtime: None,
             gb_backend: GbBackend::SingularGb,
             unsat_core_search: false,
+            saturate_each_variable: false,
             max_nodes: usize::MAX,
             max_evaluations: usize::MAX,
             max_depth: usize::MAX,
@@ -97,7 +104,7 @@ impl ProjectedComponent {
         self.basis.leading_monomials_only
     }
 
-    /// Basis entries not involving a fresh Rabinowitsch variable.
+    /// Basis entries not involving the saturation variable.
     ///
     /// Together with `decisions`, these form the printable projection view.
     /// The nonzero decisions are essential: an open condition such as `x != 0`
@@ -215,7 +222,6 @@ struct Solver<'a> {
     options: &'a VariableZeroingOptions,
     evaluator: &'a Evaluator<'a>,
     started: Instant,
-    fresh_variable: usize,
     components: Vec<ProjectedComponent>,
     unresolved: Vec<UnresolvedBranch>,
     /// Shared by every recursion node so a core learned in one branch can
@@ -264,7 +270,7 @@ impl Solver<'_> {
         variables: Vec<ZeroingVariable>,
         decisions: Vec<SplitDecision>,
     ) -> Result<Option<usize>, String> {
-        self.solve_node_with_contraction(polynomials, variables, decisions, false)
+        self.solve_node_with_contraction(polynomials, variables, decisions, Vec::new(), false)
     }
 
     fn solve_node_with_contraction(
@@ -272,6 +278,7 @@ impl Solver<'_> {
         mut polynomials: Vec<PolyExtLex>,
         variables: Vec<ZeroingVariable>,
         decisions: Vec<SplitDecision>,
+        nonzero_variables: Vec<PolyVariable>,
         contract_unique_cover: bool,
     ) -> Result<Option<usize>, String> {
         let depth = decisions.len();
@@ -397,8 +404,13 @@ impl Solver<'_> {
                         selected.name, selected.name
                     );
                 }
-                let (zero_child, nonzero_child, recursive_elapsed) =
-                    self.split_and_solve(candidate, &variables, &decisions, selected_index)?;
+                let (zero_child, nonzero_child, recursive_elapsed) = self.split_and_solve(
+                    candidate,
+                    &variables,
+                    &decisions,
+                    &nonzero_variables,
+                    selected_index,
+                )?;
                 self.stats.zeroing_splits += 1;
                 node_result.zeroing_splits += 1;
                 child_elapsed += recursive_elapsed;
@@ -441,32 +453,26 @@ impl Solver<'_> {
             let cover_elapsed = cover_started.elapsed();
             match outcome {
                 Outcome::Consistent(basis) => {
-                    self.stats.consistent += 1;
-                    node_result.consistent += 1;
-                    self.first_solution
-                        .get_or_insert_with(|| self.started.elapsed());
-                    let dimension = solution_dimension(&basis.elements, node_nvars);
-                    if self.options.verbose {
-                        println!(
-                            "  cover #{cover_index}: solved ({} basis element(s), {:?})",
-                            basis.elements.len(),
-                            cover_elapsed
-                        );
-                    }
-                    node_result.checks.push(VariableZeroingCoverResult {
-                        cover_index,
-                        outcome: VariableZeroingCoverOutcome::Consistent,
-                        elapsed: cover_elapsed,
-                        split_variable: None,
-                        zero_child: None,
-                        nonzero_child: None,
-                    });
-                    self.components.push(ProjectedComponent {
+                    self.record_consistent_components(
+                        vec![basis],
                         node_id,
-                        decisions: decisions.clone(),
-                        dimension,
-                        basis,
-                    });
+                        node_nvars,
+                        &decisions,
+                        cover_index,
+                        cover_elapsed,
+                        &mut node_result,
+                    );
+                }
+                Outcome::ConsistentComponents(bases) => {
+                    self.record_consistent_components(
+                        bases,
+                        node_id,
+                        node_nvars,
+                        &decisions,
+                        cover_index,
+                        cover_elapsed,
+                        &mut node_result,
+                    );
                 }
                 Outcome::Inconsistent => {
                     self.stats.inconsistent += 1;
@@ -566,8 +572,13 @@ impl Solver<'_> {
                             cover_elapsed, selected.name, selected.name
                         );
                     }
-                    let (zero_child, nonzero_child, recursive_elapsed) =
-                        self.split_and_solve(candidate, &variables, &decisions, selected_index)?;
+                    let (zero_child, nonzero_child, recursive_elapsed) = self.split_and_solve(
+                        candidate,
+                        &variables,
+                        &decisions,
+                        &nonzero_variables,
+                        selected_index,
+                    )?;
                     self.stats.zeroing_splits += 1;
                     node_result.zeroing_splits += 1;
                     child_elapsed += recursive_elapsed;
@@ -593,20 +604,69 @@ impl Solver<'_> {
         Ok(Some(node_id))
     }
 
+    fn record_consistent_components(
+        &mut self,
+        bases: Vec<ComputedBasis>,
+        node_id: usize,
+        node_nvars: usize,
+        decisions: &[SplitDecision],
+        cover_index: usize,
+        elapsed: Duration,
+        node_result: &mut VariableZeroingNodeResult,
+    ) {
+        self.stats.consistent += 1;
+        node_result.consistent += 1;
+        self.first_solution
+            .get_or_insert_with(|| self.started.elapsed());
+        if self.options.verbose {
+            let basis_elements = bases
+                .iter()
+                .map(|basis| basis.elements.len())
+                .sum::<usize>();
+            println!(
+                "  cover #{cover_index}: solved ({} component(s), {basis_elements} basis element(s), {:?})",
+                bases.len(),
+                elapsed
+            );
+        }
+        node_result.checks.push(VariableZeroingCoverResult {
+            cover_index,
+            outcome: VariableZeroingCoverOutcome::Consistent,
+            elapsed,
+            split_variable: None,
+            zero_child: None,
+            nonzero_child: None,
+        });
+        self.components.extend(bases.into_iter().map(|basis| {
+            let dimension = solution_dimension(&basis.elements, node_nvars);
+            ProjectedComponent {
+                node_id,
+                decisions: decisions.to_vec(),
+                dimension,
+                basis,
+            }
+        }));
+    }
+
     fn split_and_solve(
         &mut self,
         candidate: Vec<PolyExtLex>,
         variables: &[ZeroingVariable],
         decisions: &[SplitDecision],
+        nonzero_variables: &[PolyVariable],
         selected_index: usize,
     ) -> Result<(Option<usize>, Option<usize>, Duration), String> {
         let selected = variables[selected_index].clone();
         let mut remaining = variables.to_vec();
         remaining.remove(selected_index);
-        let fresh = self.fresh_variable;
-        self.fresh_variable += 1;
-        let (zero_branch, nonzero_branch) =
-            split_on_variable(candidate, &selected.variable, fresh)?;
+        let mut updated_nonzero_variables = nonzero_variables.to_vec();
+        updated_nonzero_variables.push(selected.variable.clone());
+        let (zero_branch, nonzero_branch) = split_on_variable(
+            candidate,
+            &selected.variable,
+            &updated_nonzero_variables,
+            self.options.saturate_each_variable,
+        )?;
 
         let zero_cover_count = factor_cover_count(&zero_branch)?;
         let nonzero_cover_count = factor_cover_count(&nonzero_branch)?;
@@ -623,6 +683,7 @@ impl Solver<'_> {
             zero_branch,
             remaining.clone(),
             zero_decisions,
+            nonzero_variables.to_vec(),
             contract_zero,
         )?;
 
@@ -635,6 +696,7 @@ impl Solver<'_> {
             nonzero_branch,
             remaining,
             nonzero_decisions,
+            updated_nonzero_variables,
             contract_nonzero,
         )?;
         Ok((zero_child, nonzero_child, children_started.elapsed()))
@@ -662,7 +724,6 @@ fn solve_by_zeroing_with(
         options,
         evaluator,
         started,
-        fresh_variable: 0,
         components: Vec::new(),
         unresolved: Vec::new(),
         cores: Vec::new(),
@@ -724,34 +785,91 @@ fn choose_variable(polynomials: &[PolyExtLex], variables: &[ZeroingVariable]) ->
     best.map(|(index, _)| index)
 }
 
-/// Construct and interreduce `Q + {x}` and `Q + {1 - x*z}`.
+/// Substitute `x = 0` in the zero branch and rebuild the saturation equation(s)
+/// in the nonzero branch.
 fn split_on_variable(
-    mut candidate: Vec<PolyExtLex>,
+    candidate: Vec<PolyExtLex>,
     variable: &PolyVariable,
-    fresh_id: usize,
+    nonzero_variables: &[PolyVariable],
+    saturate_each_variable: bool,
 ) -> Result<(Vec<PolyExtLex>, Vec<PolyExtLex>), String> {
-    let template = candidate
-        .first()
-        .ok_or_else(|| "cannot zero a variable in an empty cover".to_string())?;
-    let zero_constraint = template.variable(variable)?;
-    let mut zero_branch = candidate.clone();
-    zero_branch.push(zero_constraint);
+    if candidate.is_empty() {
+        return Err("cannot zero a variable in an empty cover".to_string());
+    }
+    let zero_branch = candidate
+        .iter()
+        .map(|polynomial| {
+            polynomial
+                .variables
+                .iter()
+                .position(|candidate| candidate == variable)
+                .map_or_else(
+                    || polynomial.clone(),
+                    |position| polynomial.replace(position, &polynomial.ring.zero()),
+                )
+        })
+        .collect();
     let zero_branch = interreduce_polys(zero_branch);
 
-    let fresh = PolyVariable::Temporary(fresh_id);
-    for polynomial in &mut candidate {
-        polynomial.add_variable(&fresh);
+    let mut nonzero_branch: Vec<_> = candidate
+        .into_iter()
+        .filter(|polynomial| !uses_temporary_variable_lex(polynomial))
+        .collect();
+    if nonzero_branch.is_empty() {
+        return Err("cannot rebuild saturation from an empty cover".to_string());
     }
-    let template = candidate
+    let saturation_variable_count = if saturate_each_variable {
+        nonzero_variables.len()
+    } else {
+        1
+    };
+    for index in 0..saturation_variable_count {
+        let saturation_variable = PolyVariable::Temporary(index);
+        for polynomial in &mut nonzero_branch {
+            polynomial.add_variable(&saturation_variable);
+        }
+    }
+
+    let template = nonzero_branch
         .first()
+        .cloned()
         .expect("the nonzero branch retains the nonempty cover");
-    let x = template.variable(variable)?;
-    let z = template.variable(&fresh)?;
-    let xz = x * &z;
-    let nonzero_constraint = template.one() - xz;
-    candidate.push(nonzero_constraint);
-    let nonzero_branch = interreduce_polys(candidate);
+    if saturate_each_variable {
+        for (index, nonzero_variable) in nonzero_variables.iter().enumerate() {
+            let inverse = template.variable(&PolyVariable::Temporary(index))?;
+            let product = inverse * &template.variable(nonzero_variable)?;
+            nonzero_branch.push(template.one() - product);
+        }
+    } else {
+        let mut product = template.variable(&PolyVariable::Temporary(0))?;
+        for nonzero_variable in nonzero_variables {
+            product = product * &template.variable(nonzero_variable)?;
+        }
+        nonzero_branch.push(template.one() - product);
+    }
+    let nonzero_branch = interreduce_polys(nonzero_branch);
     Ok((zero_branch, nonzero_branch))
+}
+
+fn uses_variable(polynomial: &PolyExtLex, variable: &PolyVariable) -> bool {
+    let Some(position) = polynomial
+        .variables
+        .iter()
+        .position(|candidate| candidate == variable)
+    else {
+        return false;
+    };
+    polynomial
+        .exponents_iter()
+        .any(|exponents| exponents[position] != 0)
+}
+
+fn uses_temporary_variable_lex(polynomial: &PolyExtLex) -> bool {
+    polynomial
+        .variables
+        .iter()
+        .filter(|variable| matches!(variable, PolyVariable::Temporary(_)))
+        .any(|variable| uses_variable(polynomial, variable))
 }
 
 /// Count the minimal factor covers of a split child without invoking a
@@ -833,6 +951,7 @@ mod tests {
 
         assert_eq!(options.gb_backend, GbBackend::SingularGb);
         assert!(!options.unsat_core_search);
+        assert!(!options.saturate_each_variable);
     }
 
     #[test]
@@ -844,8 +963,8 @@ mod tests {
     }
 
     #[test]
-    fn split_adds_zero_and_rabinowitsch_constraints() {
-        let (loaded, polynomials) = load("{x*y == 0}");
+    fn split_substitutes_zero_and_keeps_one_saturation_equation() {
+        let (loaded, polynomials) = load("{x*y + y == 0}");
         let x = PolyVariable::from(
             loaded.id_to_sym[loaded
                 .var_names
@@ -853,18 +972,77 @@ mod tests {
                 .position(|name| name == "x")
                 .unwrap()],
         );
-        let (zero, nonzero) = split_on_variable(polynomials, &x, 7).expect("split");
+        let y = PolyVariable::from(
+            loaded.id_to_sym[loaded
+                .var_names
+                .iter()
+                .position(|name| name == "y")
+                .unwrap()],
+        );
+        let (zero, nonzero) =
+            split_on_variable(polynomials, &x, std::slice::from_ref(&x), false).expect("split");
 
-        assert!(zero.iter().any(|polynomial| {
-            polynomial.nterms() == 1
-                && polynomial
-                    .variable(&x)
-                    .is_ok_and(|generator| polynomial.clone().make_monic() == generator)
+        assert!(zero.iter().all(|polynomial| !uses_variable(polynomial, &x)));
+        assert_eq!(
+            nonzero
+                .iter()
+                .filter(|polynomial| uses_variable(polynomial, &PolyVariable::Temporary(0)))
+                .count(),
+            1
+        );
+
+        let (_, twice_nonzero) =
+            split_on_variable(nonzero, &y, &[x, y.clone()], false).expect("second split");
+        assert_eq!(
+            twice_nonzero
+                .iter()
+                .filter(|polynomial| uses_variable(polynomial, &PolyVariable::Temporary(0)))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn split_can_saturate_each_nonzero_variable_with_a_separate_equation() {
+        let (loaded, polynomials) = load("{x*y + y == 0}");
+        let variable = |name: &str| {
+            PolyVariable::from(
+                loaded.id_to_sym[loaded
+                    .var_names
+                    .iter()
+                    .position(|candidate| candidate == name)
+                    .unwrap()],
+            )
+        };
+        let x = variable("x");
+        let y = variable("y");
+
+        let (_, x_nonzero) =
+            split_on_variable(polynomials, &x, std::slice::from_ref(&x), true).expect("split x");
+        assert_eq!(
+            x_nonzero
+                .iter()
+                .filter(|polynomial| uses_temporary_variable_lex(polynomial))
+                .count(),
+            1
+        );
+
+        let (_, x_y_nonzero) =
+            split_on_variable(x_nonzero, &y, &[x.clone(), y.clone()], true).expect("split y");
+        let saturation_equations = x_y_nonzero
+            .iter()
+            .filter(|polynomial| uses_temporary_variable_lex(polynomial))
+            .collect::<Vec<_>>();
+        assert_eq!(saturation_equations.len(), 2);
+        assert!(saturation_equations.iter().any(|polynomial| {
+            uses_variable(polynomial, &PolyVariable::Temporary(0))
+                && uses_variable(polynomial, &x)
+                && !uses_variable(polynomial, &y)
         }));
-        assert!(nonzero.iter().any(|polynomial| {
-            polynomial.variables.contains(&PolyVariable::Temporary(7))
-                && polynomial.to_string().contains("_TMP_7")
-                && polynomial.nterms() == 2
+        assert!(saturation_equations.iter().any(|polynomial| {
+            uses_variable(polynomial, &PolyVariable::Temporary(1))
+                && uses_variable(polynomial, &y)
+                && !uses_variable(polynomial, &x)
         }));
     }
 
@@ -1012,7 +1190,6 @@ mod tests {
             options: &options,
             evaluator: &inconsistent,
             started: Instant::now(),
-            fresh_variable: 0,
             components: Vec::new(),
             unresolved: Vec::new(),
             cores: Vec::new(),
@@ -1064,7 +1241,6 @@ mod tests {
             options: &options,
             evaluator: &inconsistent,
             started: Instant::now(),
-            fresh_variable: 0,
             components: Vec::new(),
             unresolved: Vec::new(),
             cores: Vec::new(),
@@ -1092,7 +1268,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_variables_are_absent_from_projected_basis_view() {
+    fn saturation_variable_is_absent_from_projected_basis_view() {
         let (_, polynomials) = load("{x == 0}");
         let mut polynomial = polynomials[0].clone();
         polynomial.add_variable(&PolyVariable::Temporary(3));

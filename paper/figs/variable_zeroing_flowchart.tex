@@ -26,7 +26,7 @@
     $C\leftarrow\emptyset$ and $X\leftarrow\Call{Variables}{P}$};
 
 \node[blue box, right=12mm of init] (entry) {%
-    Call $\Call{SolveByZeroing}{P,X,\tau,C}$};
+    Call $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,C}$};
 
 % ---- one invocation of SolveByZeroing ----
 \node[blue box, below=8mm of entry] (solve) {%
@@ -46,7 +46,7 @@
 
 \node[red box, right=16mm of variables] (keep) {%
     No split is possible\\
-    Add $Q$ to $U$};
+    Add $(Q,Z,N)$ to $U$};
 
 \node[loop box, below=7mm of variables] (choose) {%
     \textcolor{orange!75!black}{\bfseries Split}\\[3pt]
@@ -55,13 +55,13 @@
 % ---- the two recursive children ----
 \node[blue box] (zero) at ($(choose.south)+(-38mm,-17mm)$) {%
     \textcolor{blue}{\bfseries Zero branch}\\[3pt]
-    Recursively solve $Q\cup\{x\}$\\
-    with $X\setminus\{x\}$};
+    Substitute $x=0$ in $Q$\\
+    and add $x$ to $Z$};
 
 \node[blue box] (nonzero) at ($(choose.south)+(38mm,-17mm)$) {%
     \textcolor{blue}{\bfseries Nonzero branch}\\[3pt]
-    Recursively solve $Q\cup\{1-xz\}$\\
-    with $X\setminus\{x\}$};
+    Replace the saturation equation by\\
+    $1-sx\prod_{y\in N}y=0$ and add $x$ to $N$};
 
 \node[green box] (merge) at ($(choose.south)+(0,-43mm)$) {%
     Merge both children's solved and unresolved\\

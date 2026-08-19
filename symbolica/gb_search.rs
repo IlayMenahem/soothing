@@ -1,8 +1,8 @@
 //! Evaluates a candidate factor cover against a Gröbner-basis backend and
 //! extracts a minimal unsat core when the cover turns out inconsistent.
 
-use std::io::Read;
-use std::process::{Command, Stdio};
+use std::io::{Read, Write};
+use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -57,6 +57,8 @@ pub struct ComputedBasis {
 pub enum Outcome {
     /// Non-unit reduced basis: the cover is consistent.
     Consistent(ComputedBasis),
+    /// A factorizing backend represented the cover as a union of components.
+    ConsistentComponents(Vec<ComputedBasis>),
     /// Reduced basis is `{1}`: the cover's ideal is the whole ring.
     Inconsistent,
     /// Computation exceeded the per-cover time budget.
@@ -72,6 +74,7 @@ pub enum GbBackend {
     Gvw,
     Symbolica,
     SingularGb,
+    SingularFacstd,
 }
 
 impl GbBackend {
@@ -82,6 +85,7 @@ impl GbBackend {
             "gvw" => Some(Self::Gvw),
             "symbolica" => Some(Self::Symbolica),
             "singular-gb" | "singular" => Some(Self::SingularGb),
+            "singular-facstd" | "facstd" => Some(Self::SingularFacstd),
             _ => None,
         }
     }
@@ -93,6 +97,7 @@ impl GbBackend {
             Self::Gvw => "gvw",
             Self::Symbolica => "symbolica",
             Self::SingularGb => "singular-gb",
+            Self::SingularFacstd => "singular-facstd",
         }
     }
 }
@@ -136,27 +141,56 @@ fn singular_program(cover: &[PolyExtLex]) -> String {
     )
 }
 
-/// Run Singular in a child process so a timeout can terminate the actual
-/// computation instead of leaving an abandoned worker thread behind.  IDOS
-/// only needs the basis length and leading-monomial ideal, so the compact
-/// `leadexp` output is reconstructed as monomials in the original ring.
-fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
+fn singular_facstd_program(cover: &[PolyExtLex]) -> String {
+    let variables = (0..cover[0].nvars())
+        .map(|index| format!("x{index}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let generators = cover
+        .iter()
+        .map(singular_polynomial)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "ring r=0,({variables}),dp;\n\
+         ideal I={generators};\n\
+         ideal FI=interred(I);\n\
+         list F=facstd(FI);\n\
+         int i; ideal J; ideal G;\n\
+         for(i=1;i<=size(F);i=i+1){{\n\
+           print(\"IDOS_COMPONENT\");\n\
+           J=F[i]; G=std(J);\n\
+           print(\"IDOS_UNIT \"+string(reduce(1,G)==0));\n\
+           int j;\n\
+           for(j=1;j<=size(G);j=j+1){{print(\"IDOS_LEAD \"+string(leadexp(G[j])));}};\n\
+           print(\"IDOS_END_COMPONENT\");\n\
+         }};\n\
+         print(\"IDOS_DONE\");\n\
+         exit;\n"
+    )
+}
+
+enum SingularRun {
+    Completed {
+        status: ExitStatus,
+        stdout: String,
+        stderr: String,
+    },
+    Timeout,
+}
+
+fn run_singular(program: &str, timeout: Duration) -> Result<SingularRun, String> {
     let deadline = Instant::now() + timeout;
     let Some(_permit) = crate::solver_process::acquire_solver_process(deadline) else {
-        return Outcome::Timeout;
+        return Ok(SingularRun::Timeout);
     };
-    let program = singular_program(&cover);
-    let mut child = match Command::new("Singular")
-        .args(["-q", "--no-tty", "-c", &program])
+    let mut child = Command::new("Singular")
+        .args(["-q", "--no-tty"])
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-    {
-        Ok(child) => child,
-        Err(error) => {
-            return Outcome::BackendError(format!("could not start Singular: {error}"));
-        }
-    };
+        .map_err(|error| format!("could not start Singular: {error}"))?;
     let mut stdout = child.stdout.take().expect("piped Singular stdout");
     let mut stderr = child.stderr.take().expect("piped Singular stderr");
     let stdout_reader = thread::spawn(move || {
@@ -169,13 +203,22 @@ fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome
         let _ = stderr.read_to_string(&mut text);
         text
     });
+    if let Some(mut stdin) = child.stdin.take()
+        && let Err(error) = stdin.write_all(program.as_bytes())
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+        let stdout = stdout_reader.join().unwrap_or_default();
+        let stderr = stderr_reader.join().unwrap_or_default();
+        return Err(format!(
+            "could not send input to Singular: {error}; stdout={stdout:?}; stderr={stderr:?}"
+        ));
+    }
 
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) if Instant::now() < deadline => {
-                thread::sleep(Duration::from_millis(2));
-            }
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(2)),
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -186,7 +229,7 @@ fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome
                 let _ = child.wait();
                 let stdout = stdout_reader.join().unwrap_or_default();
                 let stderr = stderr_reader.join().unwrap_or_default();
-                return Outcome::BackendError(format!(
+                return Err(format!(
                     "failed while waiting for Singular: {error}; stdout={stdout:?}; stderr={stderr:?}"
                 ));
             }
@@ -194,8 +237,30 @@ fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome
     };
     let stdout = stdout_reader.join().unwrap_or_default();
     let stderr = stderr_reader.join().unwrap_or_default();
-    let Some(status) = status else {
-        return Outcome::Timeout;
+    Ok(match status {
+        Some(status) => SingularRun::Completed {
+            status,
+            stdout,
+            stderr,
+        },
+        None => SingularRun::Timeout,
+    })
+}
+
+/// Run Singular in a child process so a timeout can terminate the actual
+/// computation instead of leaving an abandoned worker thread behind.  IDOS
+/// only needs the basis length and leading-monomial ideal, so the compact
+/// `leadexp` output is reconstructed as monomials in the original ring.
+fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
+    let program = singular_program(&cover);
+    let (status, stdout, stderr) = match run_singular(&program, timeout) {
+        Ok(SingularRun::Completed {
+            status,
+            stdout,
+            stderr,
+        }) => (status, stdout, stderr),
+        Ok(SingularRun::Timeout) => return Outcome::Timeout,
+        Err(error) => return Outcome::BackendError(error),
     };
     if !status.success() || !stdout.lines().any(|line| line.trim() == "IDOS_DONE") {
         return Outcome::BackendError(format!(
@@ -232,6 +297,82 @@ fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome
     })
 }
 
+fn evaluate_cover_singular_facstd(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
+    let program = singular_facstd_program(&cover);
+    let (status, stdout, stderr) = match run_singular(&program, timeout) {
+        Ok(SingularRun::Completed {
+            status,
+            stdout,
+            stderr,
+        }) => (status, stdout, stderr),
+        Ok(SingularRun::Timeout) => return Outcome::Timeout,
+        Err(error) => return Outcome::BackendError(error),
+    };
+    if !status.success() || !stdout.lines().any(|line| line.trim() == "IDOS_DONE") {
+        return Outcome::BackendError(format!(
+            "Singular facstd exited with {status}; stdout={stdout:?}; stderr={stderr:?}"
+        ));
+    }
+
+    let template = cover[0].reorder::<GrevLexOrder>();
+    let mut components = Vec::new();
+    let mut current = None;
+    let mut current_is_unit = false;
+    for line in stdout.lines().map(str::trim) {
+        match line {
+            "IDOS_COMPONENT" => {
+                current = Some(Vec::new());
+                current_is_unit = false;
+            }
+            "IDOS_UNIT 1" => current_is_unit = true,
+            "IDOS_END_COMPONENT" => {
+                let Some(elements) = current.take() else {
+                    return Outcome::BackendError(
+                        "Singular facstd ended a component before starting it".to_string(),
+                    );
+                };
+                if !current_is_unit {
+                    components.push(ComputedBasis {
+                        elements,
+                        leading_monomials_only: true,
+                    });
+                }
+            }
+            _ => {
+                let Some(encoded) = line.strip_prefix("IDOS_LEAD ") else {
+                    continue;
+                };
+                let exponents = match encoded
+                    .split(',')
+                    .map(str::parse::<u16>)
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(exponents) if exponents.len() == template.nvars() => exponents,
+                    _ => {
+                        return Outcome::BackendError(format!(
+                            "invalid Singular facstd leading exponent vector {encoded:?}"
+                        ));
+                    }
+                };
+                let Some(elements) = current.as_mut() else {
+                    return Outcome::BackendError(
+                        "Singular facstd reported a basis outside a component".to_string(),
+                    );
+                };
+                elements.push(template.monomial(template.ring.one(), exponents));
+            }
+        }
+    }
+    if current.is_some() {
+        return Outcome::BackendError("Singular facstd left a component unfinished".to_string());
+    }
+    if components.is_empty() {
+        Outcome::Inconsistent
+    } else {
+        Outcome::ConsistentComponents(components)
+    }
+}
+
 /// Compute the cover's Gröbner basis in a killable child process. The cover is
 /// reordered to degrevlex before computation, which is typically far cheaper
 /// than lex for deciding satisfiability (Section 3.1).
@@ -252,8 +393,10 @@ pub fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBack
     if is_unit_ideal(&cover) {
         return Outcome::Inconsistent;
     }
-    if backend == GbBackend::SingularGb {
-        return evaluate_cover_singular(cover, timeout);
+    match backend {
+        GbBackend::SingularGb => return evaluate_cover_singular(cover, timeout),
+        GbBackend::SingularFacstd => return evaluate_cover_singular_facstd(cover, timeout),
+        _ => {}
     }
     if cfg!(test) || crate::solver_process::running_under_test_harness() {
         evaluate_cover_in_process(cover, backend)
@@ -271,7 +414,7 @@ pub(crate) fn evaluate_cover_in_process(cover: Vec<PolyExtLex>, backend: GbBacke
         GbBackend::Symbolica => {
             symbolica::poly::groebner::GroebnerBasis::new(&grevlex, false).system
         }
-        GbBackend::SingularGb => {
+        GbBackend::SingularGb | GbBackend::SingularFacstd => {
             return Outcome::BackendError(
                 "Singular cannot run through the in-process worker entry point".to_string(),
             );
@@ -445,6 +588,31 @@ mod tests {
             ),
             Outcome::Inconsistent
         ));
+    }
+
+    #[test]
+    fn singular_facstd_backend_reports_each_component() {
+        if Command::new("Singular").arg("--version").output().is_err() {
+            return;
+        }
+
+        let product = test_poly("x*y");
+        match evaluate_cover(
+            vec![product],
+            Duration::from_secs(5),
+            GbBackend::SingularFacstd,
+        ) {
+            Outcome::ConsistentComponents(components) => {
+                assert_eq!(components.len(), 2);
+                assert!(components.iter().all(|basis| basis.leading_monomials_only));
+                assert!(
+                    components
+                        .iter()
+                        .all(|basis| solution_dimension(&basis.elements, 2) == Some(1))
+                );
+            }
+            _ => panic!("Singular facstd should split the product ideal"),
+        }
     }
 
     #[test]
