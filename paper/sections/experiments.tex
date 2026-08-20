@@ -61,9 +61,7 @@ Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $31,304$ \\
 \hline
 \end{tabular}%
 }
-\caption{The generated systems used for the baseline benchmark.  The
-overlapping random multiples use seed 31415; both affine families use seed
-42.}
+\caption{The generated systems used for the baseline benchmark.}
 \label{tab:benchmark-families}
 \end{table}
 
@@ -108,6 +106,9 @@ Gated dense, $n=7$ & Singular $42.020/0.017$ & error & timeout & facstd $48.820$
 Square affine $(8,4)$ & Singular $0.470/0.023$ & Singular $0.445/0.012$ & timeout & facstd $0.601$ & timeout \\
 Square affine $(10,5)$ & Symb. $1.174/0.000$ & Symb. $1.326/0.015$ & timeout & facstd $2.141$ & timeout \\
 \hline
+\#systems solved & $19$ & $19$ & $10$ & $17$ & $14$ \\
+\#fastest (ties counted) & $12$ & $10$ & $2$ & $0$ & $2$ \\
+\hline
 \end{tabular}%
 }
 \caption{Best completed baseline results and the fastest completed zeroing
@@ -115,7 +116,30 @@ backend observed. All times are in seconds.}
 \label{tab:baseline-comparison}
 \end{table}
 
-% Result analysis
+% [Theortical explanation of when branching and variable zeroing are a good choice]
+
+Branching is a good choice when factorization produces branch ideals that are
+substantially easier than the expanded input ideal.  A large number of hitting
+sets can still be manageable when branch solving and core checks are cheap;
+the positive affine family shows that the hitting-set count alone is not
+decisive.  The method is less effective when one cover retains the difficulty
+of the original nonlinear system, as Cyclic-7 does.
+
+% [Back up the explanation with current or new experiments]
+
+The first-solution measurements support this explanation.  On positive affine
+$(12,10,6)$, $F$ rounds to $0.000$ seconds despite the 833 hitting sets.  On
+gated Katsura-8, the first satisfiable cover appears in $0.052$ seconds, but
+the full run takes $2.657$ seconds.  Factorization therefore finds the easy
+component quickly, while the nonlinear residual controls completion time.
+
+% [Variable zeroing analysis]
+Variable zeroing is intended for a narrower case: a cover has timed out, but
+branching a variable to zero or nonzero, both simplify it the system.
+The current benchmark gives limited evidence for that mechanism because none of the completed zeroing runs requires a split.
+On Cyclic-7, zeroing continues the stalled search and returns a partial result,
+but it does not complete the residual branch.
+
 
 \subsection{Physical Systems}
 \label{subsec:physical-systems}
