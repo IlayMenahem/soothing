@@ -143,6 +143,34 @@ but it does not complete the residual branch.
 
 \subsection{Physical Systems}
 \label{subsec:physical-systems}
-% explanation of the physical systems, and the reason to use the general pipeline for solving them.
+
+% A short explanation of the physical systems.
+The system is an order five approximation of the theories that represent a graviton are consistent with experimental results of QFT (quantum field theory).
+Solving this system can lead to a better understanding of how quantum gravity may look like.
 
 % Performance table of the pipeline by the internal subsolver (i.e F4, F5, etc.)
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l l l l l}
+\hline
+Backend & Branching $T/F$ (s) & Branching result & Zeroing $T/F$ (s) & Zeroing result \\
+\hline
+M4GB & $63.365/3.361$ & partial: 1 SAT, 2 UNSAT, 1 timeout; $d=14$ & $timeout/1.040$ & partial: 7 comp., 52 splits, 11 unresolved \\
+F5 & $timeout/\text{--}$ & partial: 2 UNSAT, 1 timeout, 1 unresolved & $timeout/2.066$ & partial: 13 comp., 63 splits, 9 unresolved \\
+GVW & $timeout/\text{--}$ & partial: 2 UNSAT, 1 timeout, 1 unresolved & $timeout/2.077$ & partial: 13 comp., 60 splits, 9 unresolved \\
+Symbolica & $timeout/40.107$ & partial: 1 SAT, 2 UNSAT, 1 unresolved; $d=14$ & $timeout/1.054$ & partial: 7 comp., 56 splits, 12 unresolved \\
+Singular & $60.603/0.599$ & partial: 1 SAT, 2 UNSAT, 1 timeout; $d=14$ & $timeout/0.565$ & partial: 1 comp., 44 splits, 12 unresolved \\
+\texttt{facstd} & $0.796/0.066$ & complete: 1 SAT, 3 UNSAT, 6 comp.; $d=14$ & $0.811/0.076$ & complete: 6 comp., 0 splits, 0 unresolved \\
+\hline
+\end{tabular}%
+}
+\label{tab:physical-system}
+\end{table}
+
+% Explain the results
+In the table we note that we get a complete solution when using facstd as the backend, and we get a complete solution when using either branching or zeroing.
+When using any backend with zeroing we get a partial solution, while branching with branching some backends don't find any solutions.
+None of the other benchmarked methods is able to solve the system within 10 minutes, not even partial solutions.
