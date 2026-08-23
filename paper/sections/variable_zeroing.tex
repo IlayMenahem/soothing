@@ -10,13 +10,11 @@ children. The recursion stops when all branches are resolved, no splitting
 variables remain, or the computation budget is exhausted.
 This construction does not depend on the choice of branch solver.
 
-Let $N=\{x_1,\ldots,x_n\}$ be the variables declared nonzero on the current
-path. They are represented by the single equation
-\begin{equation}
-\label{eq:zeroing-saturation}
-    \sigma_N=1-sx_1\cdots x_n=0,
-\end{equation}
-The operation $\Call{UpdateSaturation}{Q,N}$ removes the previous equation involving $s$, if there is one, and adds $\sigma_N$.
+Let $N$ be the variables declared nonzero on the current path. As described in
+Section~\ref{sec:preliminaries}, Equation~\eqref{eq:zeroing-saturation}
+records these conditions. The update removes any earlier equation involving
+$s$ and adds $\sigma_N=0$. In Algorithm~\ref{alg:ZeroingBranching}, this
+operation is denoted by $\Call{UpdateSaturation}{Q,N}$.
 
 % Pseudocode for the method with variable zeroing
 \begin{algorithm}
@@ -66,8 +64,6 @@ The operation $\Call{UpdateSaturation}{Q,N}$ removes the previous equation invol
 Solutions of the nonzero branch are projected onto the original variables, so
 the saturation variable does not appear in the output. The zero and nonzero
 decisions remain part of the solution-set representation.
-
-In the nonzero branch, Equation~\eqref{eq:zeroing-saturation} states that the product of all variables in $N$ is invertible.
 
 The run on \texttt{systems/system.txt}, with a five-second timeout for each
 hitting set, produces the recursion tree in Figure~\ref{fig:variable_zeroing_tree}.
