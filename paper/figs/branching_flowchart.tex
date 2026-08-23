@@ -16,59 +16,53 @@
     arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
 ]
 
-% ---- top row: input -> factorization -> initialization ----
-\node[blue box] (input) {%
-    \textcolor{blue}{\bfseries Input}\\[3pt]
-    Polynomials $P = \{p_1,\ldots,p_m\}$};
+% ---- initialization and refinement ----
+\node[blue box] (init) {%
+    \textcolor{blue}{\bfseries Initialize}\\
+    $P = \{p_1,\ldots,p_m\}$, $C,S \leftarrow \emptyset$};
 
-\node[blue box, right=12mm of input] (factors) {%
-    \textcolor{blue}{\bfseries Factorization}\\[3pt]
-    Form the factor sets $C_1,\ldots,C_m$};
+\node[blue box, right=12mm of init] (factors) {%
+    \textcolor{blue}{\bfseries Refine}\\
+    Interreduce and factor to obtain $\mathcal L(P)$};
 
-\node[blue box, right=12mm of factors] (init) {%
-    \textcolor{blue}{\bfseries Initialization}\\[3pt]
-    Learned cores $C \leftarrow \emptyset$\\
-    Solutions $S \leftarrow \emptyset$};
-
-% ---- loop over minimal hitting sets ----
-\node[loop box] (loop) at ($(init.south)+(-20mm,-8mm)$) {%
-    \textcolor{orange!75!black}{\bfseries Loop}\\[3pt]
-    Consider the next minimal hitting set $HS$\\
-    of $C_1,\ldots,C_m$};
+% ---- loop over terminal hitting sets ----
+\node[loop box, below=9mm of factors] (loop) {%
+    \textcolor{orange!75!black}{\bfseries Next set}\\
+    $H\in\mathcal L(P)$};
 
 % ---- unsat-core decision + prune ----
-\node[decision, below=4mm of loop] (learned) {%
-    Does $HS$ contain a\\ learned unsat core\\ from $C$?};
+\node[decision, below=6mm of loop] (learned) {%
+    Does $H$ contain\\ a core in $C$?};
 
-\node[green box, right=14mm of learned] (prune) {Prune / skip};
+\node[green box, right=16mm of learned] (prune) {Skip $H$};
 
 % ---- solve ----
-\node[blue box, below=4mm of learned] (solve)
-    {\textcolor{blue}{\bfseries Check satisfiability of $HS$}};
+\node[blue box, below=6mm of learned] (solve)
+    {\textcolor{blue}{\bfseries Solve $H$}};
 
 % ---- two outcome branches ----
-\node[red box] (unsat) at ($(solve.south)+(-34mm,-14mm)$) {%
-    \textcolor{red}{\bfseries Unsatisfiable}\\[3pt]
-    Add an unsatisfiable core\\
-    $U \subseteq HS$ to $C$};
+\node[red box] (unsat) at ($(solve.south)+(-27mm,-14mm)$) {%
+    \textcolor{red}{\bfseries UNSAT}\\
+    Learn $U\subseteq H$};
 
-\node[green box] (sat) at ($(solve.south)+(34mm,-20mm)$) {%
-    \textcolor{green!45!black}{\bfseries Satisfiable}\\[3pt]
-    Add the returned solutions to $S$};
+\node[green box] (sat) at ($(solve.south)+(27mm,-14mm)$) {%
+    \textcolor{green!45!black}{\bfseries SAT}\\
+    Add solutions to $S$};
 
 % ---- bottom rail ----
-\coordinate (raill) at ($(unsat.south)+(0,-3mm)$);
+\coordinate (raill) at ($(unsat.south)+(0,-4mm)$);
 \coordinate (railm) at (raill -| solve.south);
 \coordinate (railr) at (raill -| sat.south);
 
 % ---- return ----
-\node[return box] (return) at ($(railm)+(0,-8mm)$)
-    {\textcolor{violet}{\bfseries Return $S$ and $C$}};
+\node[return box] (return) at ($(railm)+(0,-10mm)$)
+    {\textcolor{violet}{\bfseries Return $(S,C)$}};
 
 % ---- arrows: top pipeline ----
-\draw[arr] (input) -- (factors);
-\draw[arr] (factors) -- (init);
-\draw[arr] (init.south) -- (init.south |- loop.north);
+\draw[arr] (init) -- (factors);
+\coordinate (entry) at ($(loop.north)+(0,4mm)$);
+\draw[arr, rounded corners=5pt]
+    (factors.south) |- (entry) -- (loop.north);
 
 % ---- loop body ----
 \draw[arr] (loop.south) -- (learned.north);
@@ -79,13 +73,15 @@
 
 % ---- bottom rail into return ----
 \draw[line width=1pt] (unsat.south) -- (raill) -- (railr) -- (sat.south);
-\draw[arr] (railm) -- node[right] {all $HS$ tried} (return);
+\draw[arr] (railm) -- node[right] {done} (return);
 
-% ---- feedback: next hitting set ----
-\coordinate (fbcol) at ($(sat.east)+(14mm,0)$);
-\draw[arr, rounded corners=5pt]
-    (prune.east) -- (prune.east -| fbcol) |- (loop.east);
-\draw[arr, rounded corners=5pt]
-    (railr) -- node[below] {next $HS$} (railr -| fbcol) |- (loop.east);
+% ---- feedback: merge both routes before re-entering the loop ----
+\coordinate (fbcol) at ($(prune.east)+(10mm,0)$);
+\coordinate (feedback) at (fbcol |- loop.east);
+\draw[line width=1pt, rounded corners=5pt]
+    (prune.east) -- (prune.east -| fbcol) |- (feedback);
+\draw[line width=1pt, rounded corners=5pt]
+    (railr) -- node[below] {next $H$} (railr -| fbcol) |- (feedback);
+\draw[arr] (feedback) -- (loop.east);
 
 \end{tikzpicture}

@@ -1,33 +1,62 @@
-\section{Method}
+\section{Branching framework}
 \label{sec:method}
 
-Algorithm~\ref{alg:Branching} uses a branch solver as a subroutine. Given a
-polynomial system $P$, it factors each polynomial to obtain
-$C_1,\ldots,C_m$ and enumerates the minimal hitting sets of these factor sets.
-Each hitting set is itself a smaller polynomial system. For a hitting set $H$,
-the branch solver must either describe $V(H)$ exactly or certify that
-$V(H)=\emptyset$. It may also return a certified UNSAT core
-$U\subseteq H$; any later hitting set containing $U$ can be skipped.
+\subsection{Framework description}
+\label{subsec:branching-framework}
 
-The branch solver returns a representation of the solution set of each
-satisfiable branch. If $S$ is a collection of such representations, let
-$\operatorname{Sol}(S)$ denote the union of the represented sets. The algorithm
-returns $S$ with $\operatorname{Sol}(S)=V(P)$.
-It processes the hitting sets in estimated order of cost and skips any set that contains a learned core.
+% motivation for breaking down a system of polynomial equations
+Solving a system of polynomial equations is double exponential hard~\cite{mayr1982complexity}.
+Thus breaking a system of polynomial equations into smaller subproblems allows for more efficient solving.
 
-\begin{algorithm}
+% How breaking down is done
+We break a system into smaller subproblems by iteratively doing two basic steps for each subproblem:
+\begin{enumerate}
+    \item Interreduce the current subproblems.
+    \item Factor each generator and enumerate the minimal hitting sets of the factor sets.
+\end{enumerate}
+
+Here is the pseudocode for the refinement of a polynomial system $Q$ into a smaller set of subproblems.
+
+\begin{algorithm}[H]
+\caption{Refinement}
+\label{alg:Refine}
+\begin{algorithmic}[1]
+    \Require A set of polynomials $Q$ and $A$
+
+    \State Interreduce $Q$ \Comment{Optional}
+    \State Factor each generator of $Q$
+    \State $\mathcal{H} \gets$ the minimal hitting sets of the factor sets
+    \State $T \gets \emptyset$
+    \ForAll{$H\in\mathcal H$}
+        \If{$H=Q$ or $H\in A$}
+            \State $T\gets T\cup\{H\}$
+        \Else
+            \State $T\gets T\cup\Call{Refine}{H,A\cup\{\widetilde Q\}}$
+        \EndIf
+    \EndFor
+    \State \Return $T$
+
+\end{algorithmic}
+\end{algorithm}
+
+% How branching is done
+Let $\mathcal L(P)$ denote the terminal hitting sets obtained from $P$.
+For each $H\in\mathcal L(P)$, the branch solver must either describe $V(H)$ exactly or certify that $V(H)=\emptyset$.
+
+% UNSAT core learning
+The solver may also return a certified UNSAT core $U\subseteq H$, any later hitting set containing $U$ can be determined to be UNSAT without calling the solver.
+
+\begin{algorithm}[H]
 \caption{Branching}
 \label{alg:Branching}
 \begin{algorithmic}[1]
     \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$ and an exact branch solver $\mathcal{B}$.
 
-    \State Interreduce the polynomials \Comment{Optional}
-    \State Initialize $C_1, \ldots, C_m$ as the sets of factors of $p_1, \ldots, p_m$
+    \State $C \gets \emptyset$ \Comment{Certified UNSAT cores}
+    \State $S \gets \emptyset$ \Comment{Solution-set representations}
+    \State $R \gets \Call{Refine}{P,\emptyset}$
 
-    \State Initialize $C \gets \emptyset$ an UNSAT-core set
-    \State Initialize $S \gets \emptyset$ a set of solution-set representations
-
-    \For{Each minimal hitting set $H$ of $C_1, \ldots, C_m$}
+    \ForAll{$H\in R$}
         \If{$H$ contains an UNSAT core from $C$}
             \State \textbf{continue}
         \EndIf
@@ -47,8 +76,12 @@ It processes the hitting sets in estimated order of cost and skips any set that 
 \end{algorithmic}
 \end{algorithm}
 
-% A flow chart of the method
+The order of the terminal hitting sets affects running time but not
+correctness. We use the number of generators in a hitting set as its estimated
+cost and process smaller sets first. An UNSAT core found in a small set may
+then prune larger sets before they reach the solver.
 
+% A flow chart of the method
 \begin{figure}[H]
     \centering
     \resizebox{\textwidth}{!}{\input{figs/branching_flowchart.tex}}
@@ -56,18 +89,13 @@ It processes the hitting sets in estimated order of cost and skips any set that 
     \label{fig:branching_flowchart}
 \end{figure}
 
-The order of the minimal hitting sets affects running time but not correctness.
-We use the number of factors in a hitting set as an estimate of its cost and
-process smaller sets first. An UNSAT core found in a small set may then
-prune larger sets before they reach the solver.
-
-%% Factor merging to reduce the number of minimal hitting sets to iterate over
-%% \paragraph*{Factor merging:} Under certain conditions, the increased number of minimal hitting sets can be more detrimental for the overall cost of the algorithm, than the cost of solving and checking satisfiability of hitting sets with larger factors.
-%% So we !!! write about the conditions and the factor merging procedure. !!!
 
 % Theoretical analysis of the method
 \subsection{Theoretical analysis}
 \label{subsec:branching-theoretical-analysis}
+
+Let $S$ be a collection of solution-set representations, and $\operatorname{Sol}(S)$ be the union of the represented sets.
+To show that Algorithm~\ref{alg:Branching} is sound and complete, we prove that it returns $S$ with $\operatorname{Sol}(S)=V(P)$, and if the solver terminates then the algorithm terminates.
 
 \begin{lemma}[Correctness of interreduction]
 \label{lem:interreduction}
@@ -93,9 +121,6 @@ system. Each generating set therefore generates the other. The same argument
 applies at every step of a sequential interreduction.
 \end{proof}
 
-A zero generator imposes no constraint and can be discarded. A nonzero
-constant makes the ideal the unit ideal, so the input system is UNSAT.
-
 \begin{lemma}[Sufficiency of minimal hitting sets]
 \label{lem:minimal-hitting-suffices}
 Every hitting set $T$ of the factor family contains a minimal hitting set
@@ -109,27 +134,50 @@ $T$ eventually produces a minimal hitting set $H$. Since $H\subseteq T$, any
 point in $V(T)$ also lies in $V(H)$.
 \end{proof}
 
-\begin{theorem}
+For a system $Q$, write $\mathcal H(Q)$ for the minimal hitting sets obtained
+in one factorization round.
+
+\begin{theorem}[One-round branch decomposition]
 \label{thm:branch-decomposition}
-The solution set of $P$ is
+The solution set of $Q$ is
 \[
-    V(P) = \bigcup_{H \in \mathcal{H}} V(H).
+    V(Q) = \bigcup_{H \in \mathcal{H}(Q)} V(H).
 \]
 \end{theorem}
 
 \begin{proof}
-Take $x \in V(P)$. Since $p_i(x)=0$, at least one factor in $C_i$ vanishes at
-$x$ for every $i$. The set of all factors that vanish at $x$ is therefore a
-hitting set of $C_1,\ldots,C_m$. Because the factor sets are finite, this set
-contains a minimal hitting set $H$. Every factor in $H$ vanishes at $x$, so
-$x \in V(H)$.
+Write $Q=\{q_1,\ldots,q_m\}$ and let $F_i$ be the nonconstant irreducible
+factors of $q_i$. Take $x \in V(Q)$. Since $q_i(x)=0$, at least one factor in
+$F_i$ vanishes at $x$ for every $i$. The set of all factors that vanish at
+$x$ is a hitting set of $F_1,\ldots,F_m$. Because the factor sets are finite,
+this set contains a minimal hitting set $H$. Every factor in $H$ vanishes at
+$x$, so $x \in V(H)$.
 
-For the reverse inclusion, take $x \in V(H)$ for some $H \in \mathcal{H}$.
-The set $H$ intersects every $C_i$, so each $p_i$ has a factor that vanishes at
-$x$. Hence $p_i(x)=0$ for every $i$, and $x \in V(P)$.
+For the reverse inclusion, take $x \in V(H)$ for some
+$H \in \mathcal{H}(Q)$. The set $H$ intersects every $F_i$, so each $q_i$ has
+a factor that vanishes at $x$. Hence $q_i(x)=0$ for every $i$, and
+$x \in V(Q)$.
 \end{proof}
 
-The same decomposition can be stated in terms of ideals.
+\begin{lemma}[Recursive refinement]
+\label{lem:recursive-refinement}
+Suppose refinement of $Q$ terminates with the finite collection
+$\mathcal L(Q)$. Then
+\[
+    V(Q)=\bigcup_{H\in\mathcal L(Q)}V(H).
+\]
+\end{lemma}
+
+\begin{proof}
+Interreduction preserves the zero set by
+Lemma~\ref{lem:interreduction}. Theorem~\ref{thm:branch-decomposition} then
+replaces each nonterminal node by the union of its children. Apply this
+identity from the root to the leaves of the finite refinement tree. A branch
+with no hitting set has an empty zero set, while a repeated branch is retained
+as a terminal set. The remaining leaves are exactly $\mathcal L(Q)$.
+\end{proof}
+
+The recursive decomposition also gives an ideal identity.
 
 \begin{theorem}[Radical decomposition]
 \label{thm:radical-decomposition}
@@ -137,17 +185,17 @@ The radical of the input ideal satisfies
 \[
     \sqrt{\langle P\rangle}
     =
-    \bigcap_{H\in\mathcal H}\sqrt{\langle H\rangle}.
+    \bigcap_{H\in\mathcal L(P)}\sqrt{\langle H\rangle}.
 \]
 \end{theorem}
 
 \begin{proof}
-By Theorem~\ref{thm:branch-decomposition},
-$V(P)=\bigcup_{H\in\mathcal H}V(H)$. Taking vanishing ideals gives
+By Lemma~\ref{lem:recursive-refinement},
+$V(P)=\bigcup_{H\in\mathcal L(P)}V(H)$. Taking vanishing ideals gives
 \[
     I(V(P))
-    = I\left(\bigcup_{H\in\mathcal H}V(H)\right)
-    = \bigcap_{H\in\mathcal H} I(V(H)).
+    = I\left(\bigcup_{H\in\mathcal L(P)}V(H)\right)
+    = \bigcap_{H\in\mathcal L(P)} I(V(H)).
 \]
 Hilbert's Nullstellensatz identifies $I(V(P))$ with
 $\sqrt{\langle P\rangle}$ and each $I(V(H))$ with
@@ -165,13 +213,12 @@ $V(H) \subseteq V(U)$. The core $U$ is UNSAT, so $V(U)=\emptyset$ and
 therefore $V(H)=\emptyset$.
 \end{proof}
 
-Soundness does not require $U$ to be minimal. A smaller core is useful only
-because more later branches may contain it.
+A smaller core is useful because more later branches may contain it.
 
-For the following result, assume that the branch solver terminates on every
-unpruned branch $H$. It either returns $V(H)$ exactly or certifies that
-$V(H)=\emptyset$. Any core used for pruning must be a certified subset
-$U\subseteq H$.
+For the following result, assume that refinement terminates and that the branch
+solver terminates on every unpruned terminal set $H$. The solver either
+returns $V(H)$ exactly or certifies that $V(H)=\emptyset$. Any core used for
+pruning must be a certified subset $U\subseteq H$.
 
 \begin{theorem}
 \label{thm:branching-correctness}
@@ -179,34 +226,30 @@ Algorithm~\ref{alg:Branching} is sound and complete for $P$.
 \end{theorem}
 
 \begin{proof}
-Let $P'$ denote the system after the optional interreduction step. We check
-that each part of the algorithm preserves the solution set.
+We check branch construction, pruning, and solving in turn.
 
-\paragraph*{Interreduction.}
-Lemma~\ref{lem:interreduction} gives $\langle P'\rangle=\langle P\rangle$, and hence $V(P')=V(P)$.
-
-\paragraph*{Factorization and branch construction.}
-Theorem~\ref{thm:branch-decomposition}, applied to the factor sets of $P'$,
-gives
+\paragraph*{Recursive branch construction.}
+Every interreduction round preserves the current ideal by
+Lemma~\ref{lem:interreduction}. In each factorization round,
+Lemma~\ref{lem:minimal-hitting-suffices} shows that nonminimal hitting sets add
+no solutions. Lemma~\ref{lem:recursive-refinement} therefore gives
 \[
-    V(P')=\bigcup_{H\in\mathcal H}V(H).
+    V(P)=\bigcup_{H\in\mathcal L(P)}V(H).
 \]
-Lemma~\ref{lem:minimal-hitting-suffices} shows that no nonminimal hitting set
-can add a solution missing from this union. Thus the initial branch collection
-represents exactly $V(P')$.
+Thus the terminal branch collection represents exactly $V(P)$.
 
 \paragraph*{Loop invariant.}
 Let $R$ be the set of unprocessed branches and $S$ the collection of
 solution-set representations returned so far. At the start of the loop,
 \[
-    \operatorname{Sol}(S)\subseteq V(P')
+    \operatorname{Sol}(S)\subseteq V(P)
     \qquad\text{and}\qquad
-    V(P')\subseteq \operatorname{Sol}(S)\cup\bigcup_{H\in R}V(H).
+    V(P)\subseteq \operatorname{Sol}(S)\cup\bigcup_{H\in R}V(H).
 \]
 The first inclusion is the soundness invariant. The second is the completeness
 invariant: every solution outside $\operatorname{Sol}(S)$ remains in a pending
-branch. Both hold initially because $S=\emptyset$, $R=\mathcal H$, and the
-branch decomposition holds.
+branch. Both hold initially because $S=\emptyset$, $R=\mathcal L(P)$, and the
+recursive branch decomposition holds.
 
 \paragraph*{Core pruning.}
 Suppose the algorithm skips $H$ because it contains a learned core $U$.
@@ -215,7 +258,7 @@ therefore leaves the completeness invariant unchanged, so soundness is unchanged
 
 \paragraph*{Branch solving.}
 If $H$ is satisfiable, the solver adds to $S$ a representation of $V(H)$. Since
-$V(H)\subseteq V(P')$, the soundness invariant is preserved. Moving $V(H)$
+$V(H)\subseteq V(P)$, the soundness invariant is preserved. Moving $V(H)$
 from the pending union into $\operatorname{Sol}(S)$ also preserves the
 completeness invariant. If
 $H$ is UNSAT, then $V(H)=\emptyset$, so removing it from $R$ preserves
@@ -223,10 +266,53 @@ both invariants.
 
 \paragraph*{Return.}
 When the loop ends, $R=\emptyset$. The completeness invariant gives
-$V(P')\subseteq \operatorname{Sol}(S)$, while the soundness invariant gives
-$\operatorname{Sol}(S)\subseteq V(P')$. Hence
-$\operatorname{Sol}(S)=V(P')=V(P)$.
+$V(P)\subseteq \operatorname{Sol}(S)$, while the soundness invariant gives
+$\operatorname{Sol}(S)\subseteq V(P)$. Hence
+$\operatorname{Sol}(S)=V(P)$.
 \end{proof}
 
 The theoretical analysis does not require $K$ to be algebraically closed. If a
 system has no solution over the algebraic closure, it has no solution over $K$.
+
+Now we shall show that the algorithm terminates.
+\begin{theorem}
+\label{thm:branching-termination}
+If the exact solver is known to terminate then Algorithm~\ref{alg:Branching} terminates.
+\end{theorem}
+
+\begin{proof}
+First consider the recursion in \textsc{Refine}.  If interreduction is
+disabled, every child consists of irreducible polynomials.  Factoring such a
+child again returns the child itself, so it is terminal.  Thus the refinement
+tree has finite depth in this case.
+
+Suppose now that interreduction is enabled.  For a finite system $Q$, set
+\[
+    M(Q)=\langle\operatorname{LM}(q):q\in Q\rangle.
+\]
+A reduction of one generator modulo the others can only enlarge $M(Q)$: if
+its leading monomial changes, the old leading monomial was divisible by the
+leading monomial of a generator that remains in the system.  After
+interreduction, the leading monomials of the nonzero generators are pairwise
+nondividing.  If $H$ is a hitting-set child, then for every $q\in Q$ some
+$h\in H$ divides $q$, and hence
+\(
+    \operatorname{LM}(h)\mid\operatorname{LM}(q)
+\).
+Consequently $M(Q)\subseteq M(H)$.  The inclusion can be an equality only
+when every selected factor is associate to the generator it hits; after
+normalization this says $H=Q$, and the branch is terminal.  Hence $M(Q)$
+strictly increases on every recursive edge.
+
+The polynomial ring is Noetherian, so its monomial ideals satisfy the
+ascending-chain condition.  There can therefore be no infinite path in the
+refinement tree.  Each node has finitely many children, since it has finitely
+many factors and finitely many minimal hitting sets.  K\"onig's lemma now
+implies that the entire tree is finite.  Consequently,
+$R=\Call{Refine}{P,\emptyset}$ is computed in finite time and is finite.
+
+Algorithm~\ref{alg:Branching} therefore performs only finitely many loop
+iterations.  A pruned branch requires no solver call, and on every unpruned
+branch the exact solver terminates by hypothesis.  All remaining operations
+are finite, so the algorithm terminates.
+\end{proof}
