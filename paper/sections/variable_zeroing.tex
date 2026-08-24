@@ -1,32 +1,37 @@
 \section{Branching with variable zeroing}
 \label{sec:variable-zeroing}
 
-Algorithm~\ref{alg:ZeroingBranching} handles timeouts from the branch solver.
-After a timeout, it chooses a variable $x$ and replaces the unresolved branch
-with two children. In the zero child, the algorithm substitutes $x=0$ in every
-generator. In the nonzero child, it adds $x$ to the variables in the saturation
-product. It then applies Algorithm~\ref{alg:Branching} recursively to both
-children. The recursion stops when all branches are resolved, no splitting
-variables remain, or the computation budget is exhausted.
-This construction does not depend on the choice of branch solver.
+\subsection{Branching with variable zeroing}
+\label{subsec:zeroing-branching}
 
-Let $N$ be the variables declared nonzero on the current path. As described in
-Section~\ref{sec:preliminaries}, Equation~\eqref{eq:zeroing-saturation}
-records these conditions. The update removes any earlier equation involving
-$s$ and adds $\sigma_N=0$. In Algorithm~\ref{alg:ZeroingBranching}, this
-operation is denoted by $\Call{UpdateSaturation}{Q,N}$.
+% Motivation for splitting
+Lets say that the solver doesn't terminate within reasonable amount of time for an hitting set given by Algorithm~\ref{alg:Branching}.
+
+% What is splitting
+In this case, we can further simplify the system by branching further.
+In each branch assume some side condition holds, and letting Algorithm~\ref{alg:Branching} run on the simplified system.
+This splitting can be done recursively until the solver terminates or the computation budget is exhausted.
+
+% Good properties for conditions on the set of conditions
+For completeness, the union of the side conditions must cover all possibilities.
+A set of conditions is a good choice if it is helpful for your solver, and works well with algorithm~\ref{alg:Refine}.
+
+% What is the condition we use, and why?
+For this work the branching conditions is whether a variable is zero or nonzero.
+This simplification choice is used in other works~\cite{}. % Add citation.
+in this work we considered physical systems and determined through past experience that we expect a variable to be always zero, or always nonzero.
 
 % Pseudocode for the method with variable zeroing
-\begin{algorithm}
+% Make the pseudocode shorter and simpler
+\begin{algorithm}[H]
 \footnotesize
 \caption{Recursive branching with variable zeroing}
 \label{alg:ZeroingBranching}
 \begin{algorithmic}[1]
     \Require A polynomial system $P$, and a timeout $\tau$.
     \Function{ZeroingBranching}{$P, \tau$}
-        \State $C \gets \emptyset$ \Comment{One global UNSAT-core set}
-        \State $X \gets \Call{Variables}{P}$ \Comment{All variables of $P$}
-        \State \Return $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,C}$
+        \State $X \gets \Call{Variables}{P}$
+        \State \Return $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,\emptyset}$
     \EndFunction
     \Function{SolveByZeroing}{$P,X,Z,N,\tau,C$}
         \State $(S,T) \gets \Call{BranchingWithTimeout}{P,\tau,C}$
@@ -39,12 +44,16 @@ operation is denoted by $\Call{UpdateSaturation}{Q,N}$.
                 \State \textbf{continue}
             \EndIf
 
+            % Prepare the systems for the zero and nonzero branches
             \State $x \gets \Call{ChooseVariable}{Q,X}$
             \State $Q_0 \gets \Call{Substitute}{Q,x,0}$
             \State $Q_1 \gets \Call{UpdateSaturation}{Q,N\cup\{x\}}$
+
+            % Recursive calls for zero and nonzero branches
             \State $(S_0, U_0, C) \gets \Call{SolveByZeroing}{Q_0, X\setminus\{x\}, Z\cup\{x\}, N, \tau,C}$
             \State $(S_1, U_1, C) \gets \Call{SolveByZeroing}{Q_1, X\setminus\{x\}, Z, N\cup\{x\}, \tau,C}$
 
+            % Combine results from both branches
             \State $S \gets S\cup S_0\cup S_1$
             \State $U \gets U\cup U_0\cup U_1$
         \EndFor
@@ -54,6 +63,16 @@ operation is denoted by $\Call{UpdateSaturation}{Q,N}$.
 \end{algorithmic}
 \end{algorithm}
 
+For Algorithm~\ref{alg:ZeroingBranching} we use a global set $C$ of learned UNSAT cores.
+
+% How the constraints are encoded into the system.
+Let $N$ be the variables declared nonzero on the current path.
+In Subsection~\ref{subsec:nonzero-encoding} we described two ways to encode the nonzero conditions as a polynomial equations.
+
+Solutions of the nonzero branch are projected onto the original variables, so
+the saturation variable does not appear in the output. The zero and nonzero
+decisions remain part of the solution-set representation.
+
 \begin{figure}[H]
     \centering
     \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_flowchart.tex}}
@@ -61,16 +80,11 @@ operation is denoted by $\Call{UpdateSaturation}{Q,N}$.
     \label{fig:variable_zeroing_flowchart}
 \end{figure}
 
-Solutions of the nonzero branch are projected onto the original variables, so
-the saturation variable does not appear in the output. The zero and nonzero
-decisions remain part of the solution-set representation.
-
 The run on \texttt{systems/system.txt}, with a five-second timeout for each
 hitting set, produces the recursion tree in Figure~\ref{fig:variable_zeroing_tree}.
-The variable chosen after a timeout is written inside the corresponding hitting-set
-node.  Its outgoing edges give the zero and nonzero cases.
+The variable chosen after a timeout is written inside the corresponding hitting-set node.  Its outgoing edges give the zero and nonzero cases.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_tree.tex}}
     \caption{Recursion tree for \texttt{systems/system.txt}. Each hitting set is shown separately; $\varnothing$ marks a branch that produces no hitting sets.}
@@ -102,7 +116,6 @@ and scores are compared lexicographically.
 \subsection{Branch contraction}
 \label{subsec:zeroing-branch-contraction}
 
-After a split, we optionally interreduce, and factor both child systems before sending their hitting sets to the branch solver.
 Let $\mathcal H_0$ and $\mathcal H_1$ be the minimal hitting sets for $x=0$ and $x\neq 0$.
 Suppose, up to exchanging the two children, that
 \[
