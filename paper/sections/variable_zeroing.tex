@@ -22,43 +22,34 @@ This simplification choice is used in other works~\cite{}. % Add citation.
 in this work we considered physical systems and determined through past experience that we expect a variable to be always zero, or always nonzero.
 
 % Pseudocode for the method with variable zeroing
-% Make the pseudocode shorter and simpler
 \begin{algorithm}[H]
-\footnotesize
+\small
 \caption{Recursive branching with variable zeroing}
 \label{alg:ZeroingBranching}
 \begin{algorithmic}[1]
-    \Require A polynomial system $P$, and a timeout $\tau$.
-    \Function{ZeroingBranching}{$P, \tau$}
+    \Require A polynomial system $P$ and a timeout $\tau$
+    \Function{ZeroingBranching}{$P,\tau$}
         \State $X \gets \Call{Variables}{P}$
         \State \Return $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,\emptyset}$
     \EndFunction
-    \Function{SolveByZeroing}{$P,X,Z,N,\tau,C$}
-        \State $(S,T) \gets \Call{BranchingWithTimeout}{P,\tau,C}$
-        \Comment{Representations inherit the path conditions $(Z,N)$}
-        \State $U \gets \emptyset$ \Comment{Branches left unresolved}
+    \Function{SolveByZeroing}{$Q,X,Z,N,\tau,C$}
+        \State $(S,T) \gets \Call{BranchingWithTimeout}{Q,\tau,C}$
+        \State $U \gets \emptyset$ \Comment{Unresolved branches}
 
-        \ForAll{$Q \in T$}
+        \ForAll{$R \in T$}
             \If{$X=\emptyset$}
-                \State $U \gets U\cup\{(Q,Z,N)\}$
-                \State \textbf{continue}
+                \State $U \gets U\cup\{(R,Z,N)\}$
+            \Else
+                \State $x \gets \Call{ChooseVariable}{R,X}$
+                \State $R_0 \gets \Call{Substitute}{R,x,0}$
+                \State $R_1 \gets \Call{UpdateSaturation}{R,N\cup\{x\}}$
+                \State $(S_0,U_0,C) \gets \Call{SolveByZeroing}{R_0,X\setminus\{x\},Z\cup\{x\},N,\tau,C}$
+                \State $(S_1,U_1,C) \gets \Call{SolveByZeroing}{R_1,X\setminus\{x\},Z,N\cup\{x\},\tau,C}$
+                \State $S \gets S\cup S_0\cup S_1$
+                \State $U \gets U\cup U_0\cup U_1$
             \EndIf
-
-            % Prepare the systems for the zero and nonzero branches
-            \State $x \gets \Call{ChooseVariable}{Q,X}$
-            \State $Q_0 \gets \Call{Substitute}{Q,x,0}$
-            \State $Q_1 \gets \Call{UpdateSaturation}{Q,N\cup\{x\}}$
-
-            % Recursive calls for zero and nonzero branches
-            \State $(S_0, U_0, C) \gets \Call{SolveByZeroing}{Q_0, X\setminus\{x\}, Z\cup\{x\}, N, \tau,C}$
-            \State $(S_1, U_1, C) \gets \Call{SolveByZeroing}{Q_1, X\setminus\{x\}, Z, N\cup\{x\}, \tau,C}$
-
-            % Combine results from both branches
-            \State $S \gets S\cup S_0\cup S_1$
-            \State $U \gets U\cup U_0\cup U_1$
         \EndFor
-
-        \State \Return $(S, U, C)$
+        \State \Return $(S,U,C)$
     \EndFunction
 \end{algorithmic}
 \end{algorithm}
@@ -67,7 +58,8 @@ For Algorithm~\ref{alg:ZeroingBranching} we use a global set $C$ of learned UNSA
 
 % How the constraints are encoded into the system.
 Let $N$ be the variables declared nonzero on the current path.
-In Subsection~\ref{subsec:nonzero-encoding} we described two ways to encode the nonzero conditions as a polynomial equations.
+Subsection~\ref{subsec:nonzero-encoding} describes two ways to encode these
+conditions as polynomial equations.
 
 Solutions of the nonzero branch are projected onto the original variables, so
 the saturation variable does not appear in the output. The zero and nonzero
@@ -75,14 +67,14 @@ decisions remain part of the solution-set representation.
 
 \begin{figure}[H]
     \centering
-    \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_flowchart.tex}}
+    \resizebox{0.9\textwidth}{!}{\input{figs/variable_zeroing_flowchart.tex}}
     \caption{Flowchart of the recursive variable-zeroing procedure of Algorithm~\ref{alg:ZeroingBranching}.}
     \label{fig:variable_zeroing_flowchart}
 \end{figure}
 
-The run on \texttt{systems/system.txt}, with a five-second timeout for each
-hitting set, produces the recursion tree in Figure~\ref{fig:variable_zeroing_tree}.
-The variable chosen after a timeout is written inside the corresponding hitting-set node.  Its outgoing edges give the zero and nonzero cases.
+Running the method on \texttt{systems/system.txt} with a five-second timeout
+per hitting set produces the recursion tree in
+Figure~\ref{fig:variable_zeroing_tree}.
 
 \begin{figure}[H]
     \centering

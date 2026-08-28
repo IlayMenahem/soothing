@@ -13,77 +13,52 @@
         fill=red!4, inner sep=7pt},
     return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
         fill=violet!6, inner sep=7pt},
-    arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
+    connector/.style={line width=1pt, line cap=round, line join=round},
+    arr/.style={connector, -{Stealth[length=2.6mm, width=2mm]}},
 ]
 
-% ---- initialization and entry into the recursive routine ----
 \node[blue box] (init) {%
     \textcolor{blue}{\bfseries Initialize}\\
-    $(P,\tau)$, $C\leftarrow\emptyset$, $X\leftarrow\Call{Variables}{P}$};
+    $X\leftarrow\Call{Variables}{P}$\\
+    $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,\emptyset}$};
 
-\node[blue box, right=10mm of init] (entry) {%
-    $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,C}$};
-
-% ---- one invocation of SolveByZeroing ----
-\node[blue box, below=8mm of entry] (solve) {%
+\node[blue box, below=7mm of init] (solve) {%
     $(S,T)\leftarrow\Call{BranchingWithTimeout}{Q,\tau,C}$};
+\node[decision, below=7mm of solve] (next) {Unresolved\\$R\in T$?};
+\node[return box, left=20mm of next] (return) {%
+    \textcolor{violet}{\bfseries Return}\\$(S,C)$};
 
-\node[blue box, below=5mm of solve] (unresolved) {$U\leftarrow\emptyset$};
+\node[loop box, below=8mm of next] (choose) {%
+    \textcolor{orange!75!black}{\bfseries Split}\\Choose $x\in X$};
 
-\node[decision, below=6mm of unresolved] (next) {Unprocessed\\$Q\in T$?};
+\node[blue box] (zero) at ($(choose.south)+(-40mm,-20mm)$) {%
+    \textcolor{blue}{\bfseries Zero branch}\\
+    $R_0\leftarrow R[x\mapsto0]$\\
+    Recurse with $Z\cup\{x\}$};
 
-\node[return box, left=18mm of next] (return) {%
-    \textcolor{violet}{\bfseries Return}\\
-    $(S,U,C)$};
+\node[blue box] (nonzero) at ($(choose.south)+(40mm,-20mm)$) {%
+    \textcolor{blue}{\bfseries Nonzero branch}\\
+    $R_1\leftarrow\Call{UpdateSaturation}{R,N\cup\{x\}}$\\
+    Recurse with $N\cup\{x\}$};
 
-\node[decision, below=7mm of next] (variables) {Splitting\\variable?};
+\node[green box] (merge) at ($(choose.south)+(0,-46mm)$) {%
+    Add both child results to $S$};
 
-\node[red box, right=16mm of variables] (keep) {%
-    Add $(Q,Z,N)$ to $U$};
-
-\node[loop box, below=7mm of variables] (choose) {%
-    \textcolor{orange!75!black}{\bfseries Split}\\
-    Choose $x\in X$};
-
-% ---- the two recursive children ----
-\node[blue box] (zero) at ($(choose.south)+(-38mm,-17mm)$) {%
-    \textcolor{blue}{\bfseries $x=0$}\\
-    $Q\leftarrow Q[x\mapsto0]$\\
-    $Z\leftarrow Z\cup\{x\}$};
-
-\node[blue box] (nonzero) at ($(choose.south)+(38mm,-17mm)$) {%
-    \textcolor{blue}{\bfseries $x\ne0$}\\
-    Update saturation\\
-    $N\leftarrow N\cup\{x\}$};
-
-\node[green box] (merge) at ($(choose.south)+(0,-43mm)$) {%
-    Merge child results};
-
-% ---- arrows ----
-\draw[arr] (init) -- (entry);
-\draw[arr] (entry.south) -- (solve.north);
-\draw[arr] (solve) -- (unresolved);
-\draw[arr] (unresolved) -- (next);
-
+\draw[arr] (init) -- (solve);
+\draw[arr] (solve) -- (next);
 \draw[arr] (next.west) -- node[above] {No} (return.east);
-\draw[arr] (next.south) -- node[right] {Yes} (variables.north);
-\draw[arr] (variables.east) -- node[above] {No} (keep.west);
-\draw[arr] (variables.south) -- node[right] {Yes} (choose.north);
+\draw[arr] (next) -- node[right] {Yes} (choose);
 
 \coordinate (split) at ($(choose.south)+(0,-4mm)$);
-\draw[line width=1pt] (choose.south) -- (split);
+\draw[connector] (choose.south) -- (split);
 \draw[arr] (split) -- (zero.north);
 \draw[arr] (split) -- (nonzero.north);
-\draw[arr, rounded corners=5pt] (zero.south) |- (merge.west);
-\draw[arr, rounded corners=5pt] (nonzero.south) |- (merge.east);
+\draw[arr, rounded corners=4pt] (zero.south) |- (merge.west);
+\draw[arr, rounded corners=4pt] (nonzero.south) |- (merge.east);
 
-% ---- merge feedback routes before processing the next timed-out branch ----
-\coordinate (fbcol) at ($(keep.east)+(12mm,0)$);
-\coordinate (feedback) at (fbcol |- next.east);
-\draw[line width=1pt, rounded corners=5pt]
-    (keep.east) -- (keep.east -| fbcol) |- (feedback);
-\draw[line width=1pt, rounded corners=5pt]
-    (merge.east) -- node[below] {next $Q$} (merge.east -| fbcol) |- (feedback);
-\draw[arr] (feedback) -- (next.east);
+\coordinate (rightcol) at ($(nonzero.east)+(10mm,0)$);
+\coordinate (belowmerge) at ($(merge.south)+(0,-4mm)$);
+\draw[arr, rounded corners=4pt]
+    (merge.south) -- (belowmerge) -| (rightcol) |- (next.east);
 
 \end{tikzpicture}
