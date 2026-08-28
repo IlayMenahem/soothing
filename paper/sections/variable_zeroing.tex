@@ -125,131 +125,96 @@ splitting variable.
 \subsection{Theoretical analysis of variable zeroing}
 \label{subsec:zeroing-theoretical-analysis}
 
-Let $Y$ be the variables in the input system. A path is described by two
-disjoint subsets of $Y$: the variables $Z$ set to zero and the variables $N$
-declared nonzero. For a system $Q$ on that path, define
-\[
-\begin{aligned}
-    V_Y(Q;Z,N)=\bigl\{a\in\mathbb A^Y :{}&
-    a_z=0\ (z\in Z),\ a_x\neq0\ (x\in N),\\
-    & (a,s)\in V(Q)\text{ for some }s\bigr\}.
-\end{aligned}
-\]
-The quantified coordinate $s$ is omitted when $N=\emptyset$. This notation
-keeps the zero decisions even though the corresponding variables have already
-been replaced by zero in the polynomials of $Q$.
+We prove the correctness and termination of Algorithm~\ref{alg:ZeroingBranching}.
 
-We use the following contract for \textsc{BranchingWithTimeout}. At a path
-$(Z,N)$, an input $Q$ returns a collection $S_Q$ of solution-set
-representations and a set $T_Q$ of unresolved branches such that
-\begin{equation}
-\label{eq:timeout-decomposition}
-    V_Y(Q;Z,N)=\operatorname{Sol}(S_Q)
-    \cup\bigcup_{R\in T_Q}V_Y(R;Z,N).
-\end{equation}
-Here $\operatorname{Sol}(S_Q)$ includes the path conditions and is projected
-onto $Y$. A timeout places an unprocessed branch in $T_Q$ instead of discarding
-it. As in Theorem~\ref{thm:branching-correctness}, every learned UNSAT core is
-assumed to be certified.
+Let $V_Y(Q;Z,N)$ denote the projection onto $Y$ of the solutions of $Q$ satisfying $z=0$ for $z\in Z$ and $y\neq0$ for $y\in N$.
+We also denote $Q_0=Q|_{x=0}$ and $Q_1=\Call{UpdateSaturation}{Q,N\cup\{x\}}$.
 
-\begin{lemma}[Correctness of a zeroing split]
+\begin{theorem}[Correctness of a zeroing split]
 \label{lem:zeroing-split}
-Let $x\in Y\setminus(Z\cup N)$. Set
-\[
-    Q_0=Q|_{x=0}
-    \qquad\text{and}\qquad
-    Q_1=\Call{UpdateSaturation}{Q,N\cup\{x\}}.
-\]
+Let there be $Z,N\subseteq Y$ such that $Z \cap N = \emptyset$, and let $x\in Y\setminus(Z\cup N)$.
 Then
-\[
-    V_Y(Q;Z,N)=V_Y(Q_0;Z\cup\{x\},N)
-    \cup V_Y(Q_1;Z,N\cup\{x\}).
-\]
-\end{lemma}
-
-\begin{proof}
-Take $a\in V_Y(Q;Z,N)$. If $a_x=0$, then evaluating a polynomial at $a$ is
-unchanged when $x$ is first replaced by zero. Hence
-$a\in V_Y(Q_0;Z\cup\{x\},N)$. If $a_x\neq0$, then every variable in
-$N\cup\{x\}$ is nonzero. Setting
-\[
-    s=\left(a_x\prod_{y\in N}a_y\right)^{-1}
-\]
-satisfies the updated saturation equation, so
-$a\in V_Y(Q_1;Z,N\cup\{x\})$. The converse follows by the same two
-observations: substitution is valid under $a_x=0$, and the saturation equation
-only records the stated nonzero conditions.
-\end{proof}
-
-\begin{theorem}[Variable zeroing]
-\label{thm:zeroing-correctness}
-Suppose Algorithm~\ref{alg:ZeroingBranching} returns $(S,U,C)$ on input $P$.
-Then
-\[
-    V(P)=\operatorname{Sol}(S)
-    \cup\bigcup_{(R,Z_R,N_R)\in U}V_Y(R;Z_R,N_R).
-\]
-In particular, if $U=\emptyset$, then $\operatorname{Sol}(S)=V(P)$.
+\begin{align*}
+    V_Y(Q;Z,N)=V_Y(Q_0;Z\cup\{x\},N) \cup V_Y(Q_1;Z,N\cup\{x\}).
+\end{align*}
 \end{theorem}
 
 \begin{proof}
-We prove a stronger claim. Suppose the call
-\[
-    \operatorname{SolveByZeroing}(Q,X,Z,N,\tau,C)
-\]
-returns $(S',U',C')$. Then
-\begin{equation}
-\label{eq:zeroing-invariant}
-\begin{aligned}
-    V_Y(Q;Z,N)={}&\operatorname{Sol}(S')\\
-    &\cup\bigcup_{(R,Z_R,N_R)\in U'}V_Y(R;Z_R,N_R).
-\end{aligned}
-\end{equation}
-The proof is by induction on $|X|$.
+Take a point in $V_Y(Q;Z,N)$. Its $x$-coordinate is either zero or
+nonzero. In the first case, substituting $x=0$ gives a solution of $Q_0$
+satisfying $Z\cup\{x\}$ and $N$. In the second case, the point satisfies the
+nonzero conditions $N\cup\{x\}$, which are encoded by $Q_1$. Thus it belongs
+to the corresponding set on the right.
 
-If $X=\emptyset$, the procedure cannot split an unresolved branch.
-It returns the representations found by
-\textnormal{\textsc{BranchingWithTimeout}} and places every branch in $T_Q$
-into $U'$. Thus, Equation~\eqref{eq:zeroing-invariant} is exactly
-Equation~\eqref{eq:timeout-decomposition}.
+Conversely, a point in either set on the right satisfies $Q$, together with
+the conditions in $Z$ and $N$. Therefore it belongs to $V_Y(Q;Z,N)$.
+\end{proof}
 
-Now suppose $X\neq\emptyset$ and that the claim holds whenever fewer
-variables are available. Let $(S_Q,T_Q)$ be the result of
-\textnormal{\textsc{BranchingWithTimeout}} on $Q$. For each $R\in T_Q$, the
-procedure chooses some $x\in X$ and recursively processes
+\begin{theorem}[Correctness of variable zeroing]
+\label{thm:zeroing-correctness}
+If Algorithm~\ref{alg:ZeroingBranching} returns $(S,U,C)$ on input $P$, then
+
+\begin{align*}
+    V(P)=\operatorname{Sol}(S) \cup\bigcup_{(R,Z_R,N_R)\in U}V_Y(R;Z_R,N_R).
+\end{align*}
+\end{theorem}
+
+\begin{proof}
+We prove the claim for every call to \Call{SolveByZeroing} by induction on
+the remaining recursion tree. For a call with input $(Q,X,Z,N,\tau,C)$,
+\Call{BranchingWithTimeout} partitions the constrained zero set into the
+solutions it finds and the unresolved hitting sets:
 \[
-    R_0=R|_{x=0}
-    \qquad\text{and}\qquad
-    R_1=\Call{UpdateSaturation}{R,N\cup\{x\}}.
+    V_Y(Q;Z,N)=\operatorname{Sol}(S)
+    \cup\bigcup_{R\in T}V_Y(R;Z,N).
 \]
-Both calls use the smaller set $X\setminus\{x\}$.
-Lemma~\ref{lem:zeroing-split} gives
+This follows from Theorem~\ref{thm:branching-correctness}; a timeout leaves
+the corresponding hitting set in $T$, and pruning by a certified UNSAT core
+removes only an empty zero set.
+
+If $X=\emptyset$, the algorithm adds each $R\in T$ to $U$ with the current
+conditions, so the required equality follows. Otherwise, for every $R\in T$
+the algorithm chooses $x\in X$. By Theorem~\ref{lem:zeroing-split},
 \[
     V_Y(R;Z,N)=V_Y(R_0;Z\cup\{x\},N)
     \cup V_Y(R_1;Z,N\cup\{x\}).
 \]
-Substituting these decompositions into
-Equation~\eqref{eq:timeout-decomposition} gives
-Equation~\eqref{eq:zeroing-invariant}.
+The induction hypothesis applies to both recursive calls. Their solved and
+unresolved sets therefore replace $V_Y(R;Z,N)$ without changing the union.
+Taking the union over all $R\in T$ proves the claim for the current call.
 
-Apply the claim to the initial call with $Q=P$ and $Z=N=\emptyset$. Then
-$V_Y(P;\emptyset,\emptyset)=V(P)$, which proves the stated identity. If $U$
-is empty, the union over $U$ is empty and
-$\operatorname{Sol}(S)=V(P)$.
+The initial call has $Q=P$ and $Z=N=\emptyset$, so its constrained zero set
+is $V(P)$. This gives the stated equality.
 \end{proof}
 
-\begin{theorem}[Termination]
-    \label{thm:zeroing-termination}
-    Algorithm~\ref{alg:ZeroingBranching} terminates in finite time.
+The following corollary is a direct consequence of Theorem~\ref{thm:zeroing-correctness}.
+It states that if all branches are resolved, Algorithm~\ref{alg:ZeroingBranching} returns a complete solution set.
+\begin{corollary}[Completeness of variable zeroing]
+\label{cor:zeroing-completeness}
+If $U = \emptyset$ in the output of Algorithm~\ref{alg:ZeroingBranching}, then
+\[
+    \operatorname{Sol}(S)=V(P).
+\]
+\end{corollary}
+
+Lastly we prove that Algorithm~\ref{alg:ZeroingBranching} terminates.
+\begin{theorem}[Termination of variable zeroing]
+\label{thm:zeroing-termination}
+Algorithm~\ref{alg:ZeroingBranching} terminates.
 \end{theorem}
-\begin{proof}
-Each recursive call removes one variable from $X$, so the recursion depth is at
-most $|X|$. Every polynomial system has finitely many factor hitting sets, and
-the timeout bounds the time spent evaluating each one. The recursion tree is
-therefore finite.
-\end{proof}
 
-The representations returned by the children determine the representation of
-the hitting set on which the solver timed out. If every child is UNSAT, the
-timed-out hitting set is also UNSAT. Otherwise, it represents the union of the
-children's sets.
+\begin{proof}
+We prove that \Call{SolveByZeroing} terminates by induction on $|X|$. First,
+every call to \Call{BranchingWithTimeout} terminates. Indeed,
+Theorem~\ref{thm:refine-termination} shows that Algorithm~\ref{alg:Refine} terminates, and returns finitely many hitting sets.
+On there minimal hitting sets, the solver either returns or is stopped after the timeout $\tau$. Thus the call returns finite sets $S$ and $T$.
+
+If $X=\emptyset$, the algorithm loops over the finite set $T$ and returns.
+Suppose now that $|X|>0$. For each $R\in T$, the algorithm makes two recursive
+calls, both with $X\setminus\{x\}$. These calls terminate by the induction
+hypothesis. Since $T$ is finite, the current call also terminates.
+
+The initial set $\Call{Variables}{P}$ is finite, so the initial call to
+\Call{SolveByZeroing} terminates.
+Therefore Algorithm~\ref{alg:ZeroingBranching} terminates.
+\end{proof}
