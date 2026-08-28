@@ -47,7 +47,7 @@ fn parse_usize(args: &mut impl Iterator<Item = String>, option: &str) -> Result<
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path = None;
     let mut interreduce = true;
-    let mut timeout_ms = 5_000;
+    let mut timeout_ms = 1_000;
     let mut max_runtime_ms = None;
     let mut gb_backend = GbBackend::SingularGb;
     let mut unsat_core_search = false;
@@ -648,6 +648,7 @@ mod tests {
     fn parse_args_uses_fast_defaults() {
         let options = parse_args(std::iter::empty()).expect("arguments");
 
+        assert_eq!(options.timeout_ms, 1_000);
         assert_eq!(options.gb_backend, GbBackend::SingularGb);
         assert!(!options.unsat_core_search);
         assert!(!options.saturate_each_variable);

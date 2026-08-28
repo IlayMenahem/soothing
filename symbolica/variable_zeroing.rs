@@ -72,7 +72,7 @@ impl Default for VariableZeroingOptions {
     fn default() -> Self {
         Self {
             interreduce: true,
-            timeout: Duration::from_secs(5),
+            timeout: Duration::from_millis(1_000),
             max_runtime: None,
             gb_backend: GbBackend::SingularGb,
             unsat_core_search: false,
@@ -949,6 +949,7 @@ mod tests {
     fn options_default_to_singular_without_core_search() {
         let options = VariableZeroingOptions::default();
 
+        assert_eq!(options.timeout, Duration::from_millis(1_000));
         assert_eq!(options.gb_backend, GbBackend::SingularGb);
         assert!(!options.unsat_core_search);
         assert!(!options.saturate_each_variable);

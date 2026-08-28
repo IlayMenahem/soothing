@@ -1,10 +1,11 @@
 //! Factor-branching solver corresponding to Algorithm `Branching` in
 //! `paper/sections/method.tex`.
 //!
-//! The input generators are optionally interreduced and factored. Their
-//! minimal hitting sets are visited lazily in fewest-factors-first order. Each
-//! hitting set is checked by a selectable Gröbner backend; inconsistent sets
-//! yield iteratively refined GB-Cores that prune later supersets.
+//! The input generators are optionally interreduced and factored. Every
+//! minimal hitting set is then interreduced and factored again until no new
+//! subbranches appear. The terminal hitting sets are checked in
+//! fewest-factors-first order by a selectable Gröbner backend; inconsistent
+//! sets yield iteratively refined GB-Cores that prune later supersets.
 //!
 //! Usage: `branching [path] [--unsat-core-search]` — default path:
 //! `systems/system.txt`; default Gröbner backend: Singular.
@@ -12,21 +13,21 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use symbolica::domains::rational::Q;
 use symbolica::LicenseManager;
+use symbolica::domains::rational::Q;
 
 use polynomial_cdcl::cover::{
     build_factor_index, decode_cover, minimal_covers, ordered_cover_masks,
 };
 use polynomial_cdcl::gb_core::iteratively_refined_unsat_core;
 use polynomial_cdcl::gb_search::{
-    evaluate_cover, polynomial_set_contains, solution_dimension, ComputedBasis, Core, GbBackend,
-    Outcome,
+    ComputedBasis, Core, GbBackend, Outcome, evaluate_cover, polynomial_set_contains,
+    solution_dimension,
 };
 use polynomial_cdcl::{
-    default_systems_dir_from_manifest, interreduce_polys,
+    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest, interreduce_polys,
     load_mathematica_system_from_path_with_var_names, polynomials_from_loaded,
-    try_factor_groups_from_polys, LoadedMathematicaSystem, PolyExtLex,
+    try_factor_groups_from_polys,
 };
 
 #[derive(Debug)]
@@ -78,7 +79,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                 })?;
             }
             "--unsat-core-search" => unsat_core_search = true,
-            "--no-unsat-core-search" => unsat_core_search = false,
             "--summary" => summary = true,
             _ if arg.starts_with("--") => return Err(format!("unknown option {arg:?}")),
             _ if path.is_some() => return Err(format!("unexpected positional argument {arg:?}")),
@@ -154,9 +154,128 @@ fn factor_covers(polynomials: Vec<PolyExtLex>) -> (Vec<PolyExtLex>, Vec<u64>) {
 
 struct Component {
     cover_index: usize,
-    cover_mask: u64,
+    candidate: Vec<PolyExtLex>,
     dimension: Option<usize>,
     basis: ComputedBasis,
+}
+
+#[derive(Default)]
+struct RefinementStats {
+    passes: usize,
+    subdivisions: usize,
+    max_depth: usize,
+}
+
+fn normalize_candidate(polynomials: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
+    polynomials
+        .into_iter()
+        .filter(|polynomial| !polynomial.is_zero())
+        .map(PolyExtLex::make_monic)
+        .fold(Vec::new(), |mut normalized, polynomial| {
+            if !normalized.contains(&polynomial) {
+                normalized.push(polynomial);
+            }
+            normalized
+        })
+}
+
+fn same_polynomial_set(left: &[PolyExtLex], right: &[PolyExtLex]) -> bool {
+    left.len() == right.len()
+        && polynomial_set_contains(left, right)
+        && polynomial_set_contains(right, left)
+}
+
+fn factor_cover_candidates(polynomials: Vec<PolyExtLex>) -> Result<Vec<Vec<PolyExtLex>>, String> {
+    let groups = try_factor_groups_from_polys(polynomials)?;
+    let (factors, index_groups) = build_factor_index(&groups);
+    let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
+        format!(
+            "too many distinct factors ({}); the cover enumerator supports at most 63",
+            factors.len()
+        )
+    })?;
+    Ok(ordered_cover_masks(&covers)
+        .into_iter()
+        .map(|cover| decode_cover(&factors, cover))
+        .collect())
+}
+
+fn refine_cover(
+    candidate: Vec<PolyExtLex>,
+    interreduce: bool,
+    depth: usize,
+    ancestors: &mut Vec<Vec<PolyExtLex>>,
+    terminal: &mut Vec<Vec<PolyExtLex>>,
+    stats: &mut RefinementStats,
+) -> Result<(), String> {
+    stats.passes += 1;
+    stats.max_depth = stats.max_depth.max(depth);
+
+    let candidate = normalize_candidate(candidate);
+    let reduced = if interreduce {
+        interreduce_polys(candidate.clone())
+    } else {
+        candidate.clone()
+    };
+    let children = factor_cover_candidates(reduced.clone())?;
+
+    if children.is_empty() {
+        return Ok(());
+    }
+
+    let reduced = normalize_candidate(reduced);
+    if children.len() == 1 && same_polynomial_set(&children[0], &reduced) {
+        if !terminal
+            .iter()
+            .any(|existing| same_polynomial_set(existing, &children[0]))
+        {
+            terminal.push(children.into_iter().next().expect("one child"));
+        }
+        return Ok(());
+    }
+
+    if children.len() > 1 {
+        stats.subdivisions += children.len() - 1;
+    }
+    ancestors.push(candidate);
+    for child in children {
+        if ancestors
+            .iter()
+            .any(|ancestor| same_polynomial_set(ancestor, &child))
+        {
+            if !terminal
+                .iter()
+                .any(|existing| same_polynomial_set(existing, &child))
+            {
+                terminal.push(child);
+            }
+        } else {
+            refine_cover(child, interreduce, depth + 1, ancestors, terminal, stats)?;
+        }
+    }
+    ancestors.pop();
+    Ok(())
+}
+
+fn refine_covers(
+    factors: &[PolyExtLex],
+    covers: &[u64],
+    interreduce: bool,
+) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), String> {
+    let mut terminal = Vec::new();
+    let mut stats = RefinementStats::default();
+    for &cover in covers {
+        refine_cover(
+            decode_cover(factors, cover),
+            interreduce,
+            1,
+            &mut Vec::new(),
+            &mut terminal,
+            &mut stats,
+        )?;
+    }
+    terminal.sort_by_key(Vec::len);
+    Ok((terminal, stats))
 }
 
 struct SearchResult {
@@ -178,12 +297,7 @@ impl SearchResult {
     }
 }
 
-fn run_search(
-    options: &CliOptions,
-    factors: &[PolyExtLex],
-    covers: &[u64],
-    nvars: usize,
-) -> SearchResult {
+fn run_search(options: &CliOptions, covers: &[Vec<PolyExtLex>], nvars: usize) -> SearchResult {
     let timeout = Duration::from_millis(options.timeout_ms);
     let started = Instant::now();
     let mut components = Vec::new();
@@ -201,12 +315,12 @@ fn run_search(
         options.timeout_ms,
         options.gb_backend.label()
     );
-    for (cover_index, &cover_mask) in covers.iter().enumerate() {
+    for (cover_index, candidate) in covers.iter().enumerate() {
         if considered >= options.max_covers {
             break;
         }
         considered += 1;
-        let candidate = decode_cover(factors, cover_mask);
+        let candidate = candidate.clone();
 
         if cores
             .iter()
@@ -236,7 +350,7 @@ fn run_search(
                 );
                 components.push(Component {
                     cover_index,
-                    cover_mask,
+                    candidate,
                     dimension,
                     basis,
                 });
@@ -252,7 +366,7 @@ fn run_search(
                 );
                 components.extend(bases.into_iter().map(|basis| Component {
                     cover_index,
-                    cover_mask,
+                    candidate: candidate.clone(),
                     dimension: solution_dimension(&basis.elements, nvars),
                     basis,
                 }));
@@ -308,7 +422,7 @@ fn run_search(
     }
 }
 
-fn report_results(result: &SearchResult, factors: &[PolyExtLex]) {
+fn report_results(result: &SearchResult) {
     println!(
         "\n  {} of {} cover(s) considered: {} satisfiable, {} unsatisfiable, {} core-pruned, {} timeout(s), complete={}, elapsed {:?}",
         result.considered,
@@ -327,11 +441,10 @@ fn report_results(result: &SearchResult, factors: &[PolyExtLex]) {
         println!(
             "  component from cover #{}: {} factor(s), {} basis element(s), dimension {dimension}",
             component.cover_index,
-            component.cover_mask.count_ones(),
+            component.candidate.len(),
             component.basis.elements.len()
         );
-        let selected = decode_cover(factors, component.cover_mask);
-        for polynomial in selected {
+        for polynomial in &component.candidate {
             println!("\tfactor: {polynomial}");
         }
         if component.basis.leading_monomials_only {
@@ -362,14 +475,22 @@ fn main() {
         .first()
         .map_or(loaded.var_names.len(), PolyExtLex::nvars);
     let (factors, covers) = factor_covers(polynomials);
-    let result = run_search(&options, &factors, &covers, nvars);
+    let (covers, refinement) = refine_covers(&factors, &covers, options.interreduce)
+        .unwrap_or_else(|error| die(format!("hitting-set refinement error: {error}"), 1));
+    println!(
+        "  recursive refinement produced {} terminal hitting set(s) in {} pass(es), {} subdivision(s), maximum depth {}",
+        covers.len(),
+        refinement.passes,
+        refinement.subdivisions,
+        refinement.max_depth
+    );
+    let result = run_search(&options, &covers, nvars);
 
     if options.summary {
-        let first_solution = result
-            .first_solution
-            .map_or_else(|| "unknown".to_string(), |value| {
-                format!("{:.6}", value.as_secs_f64())
-            });
+        let first_solution = result.first_solution.map_or_else(
+            || "unknown".to_string(),
+            |value| format!("{:.6}", value.as_secs_f64()),
+        );
         let largest_dimension = result
             .components
             .iter()
@@ -390,7 +511,7 @@ fn main() {
             result.elapsed.as_secs_f64()
         );
     } else {
-        report_results(&result, &factors);
+        report_results(&result);
     }
 }
 
@@ -435,7 +556,6 @@ mod tests {
                 "250",
                 "--gb",
                 "gvw",
-                "--no-unsat-core-search",
                 "--summary",
             ]
             .into_iter()
@@ -469,14 +589,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_args_rejects_removed_no_unsat_core_search_flag() {
+        let error = parse_args(["--no-unsat-core-search"].into_iter().map(String::from))
+            .expect_err("removed flag should be rejected");
+
+        assert_eq!(error, "unknown option \"--no-unsat-core-search\"");
+    }
+
+    #[test]
     fn branches_over_all_minimal_hitting_sets() {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names("{x*(x - 1) == 0, x*y == 0}")
             .expect("load");
         let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
         let (factors, covers) = factor_covers(polynomials);
+        let (covers, _) = refine_covers(&factors, &covers, false).expect("refinement");
 
-        let result = run_search(&test_options(), &factors, &covers, 2);
+        let result = run_search(&test_options(), &covers, 2);
 
         assert_eq!(covers.len(), 2);
         assert_eq!(result.considered, 2);
@@ -493,8 +622,9 @@ mod tests {
                 .expect("load");
         let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
         let (factors, covers) = factor_covers(polynomials);
+        let (covers, _) = refine_covers(&factors, &covers, false).expect("refinement");
 
-        let result = run_search(&test_options(), &factors, &covers, 3);
+        let result = run_search(&test_options(), &covers, 3);
 
         assert_eq!(result.inconsistent, 1);
         assert_eq!(result.core_pruned, 1);
@@ -510,14 +640,41 @@ mod tests {
                 .expect("load");
         let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
         let (factors, covers) = factor_covers(polynomials);
+        let (covers, _) = refine_covers(&factors, &covers, false).expect("refinement");
         let mut options = test_options();
         options.unsat_core_search = false;
 
-        let result = run_search(&options, &factors, &covers, 3);
+        let result = run_search(&options, &covers, 3);
 
         assert_eq!(result.inconsistent, 2);
         assert_eq!(result.core_pruned, 0);
         assert!(result.cores.is_empty());
         assert!(result.complete());
+    }
+
+    #[test]
+    fn interreduction_subdivides_a_hitting_set_until_stable() {
+        activate_license();
+        let loaded =
+            load_mathematica_system_from_str_with_var_names("{x + y == 0, x + y + y*z == 0}")
+                .expect("load");
+        let candidate = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
+        let mut terminal = Vec::new();
+        let mut stats = RefinementStats::default();
+
+        refine_cover(
+            candidate,
+            true,
+            1,
+            &mut Vec::new(),
+            &mut terminal,
+            &mut stats,
+        )
+        .expect("refinement");
+
+        assert_eq!(terminal.len(), 2);
+        assert_eq!(stats.subdivisions, 1);
+        assert!(stats.max_depth >= 2);
+        assert!(terminal.iter().all(|cover| cover.len() == 2));
     }
 }
