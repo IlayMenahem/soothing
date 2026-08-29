@@ -5,14 +5,18 @@
 \label{subsec:experimental-setup}
 
 We implemented Algorithm~\ref{alg:Branching} in Rust 1.97.1 and used
-Symbolica 1.5 for polynomial arithmetic over the rationals. In all experiments,
-we solve the branches with a Gr\"obner-basis computation. The available
-implementations are M4GB, F5, GVW, F4, and Singular 4.4.1.
+Symbolica 1.5 for polynomial arithmetic over the
+rationals~\cite{ruijl2023symbolica}. In all experiments, we solve the branches
+with a Gr\"obner-basis computation. The available implementations are M4GB,
+F5, GVW, F4, and Singular 4.4.1~\cite{makarim2017m4gb,faugere2002f5,
+gao2016gvw,faugere1999f4,singular2025}.
 A basis containing $1$ certifies that the branch is UNSAT.
-We obtain an UNSAT core by iterative refinement as in Section 5 of \cite{sun2016}. The comparison also includes six direct whole-ideal
+We obtain an UNSAT core by iterative refinement as in Section 5 of
+\cite{sun2016}. The comparison also includes six direct whole-ideal
 Gr\"obner-basis configurations, three decomposition methods from Singular,
 Macaulay2 1.26.06, and a numerical method from HomotopyContinuation.jl under
-Julia 1.12.6.
+Julia 1.12.6~\cite{singular2025,macaulay2,breiding2018homotopy,
+bezanson2017julia}.
 
 For Algorithm~\ref{alg:ZeroingBranching}, we test M4GB, F5, GVW, Symbolica,
 and Singular as branch solvers, disable UNSAT-core learning, and impose a
@@ -39,11 +43,11 @@ The baseline has 20 generated systems in six families.
 \begin{itemize}
     \item Signed-distance cycles and affine-factor hypergraphs test many inexpensive hitting sets.
     \item The overlapping random multiples use seeded dense quadratic factors that recur across equations, with no factor shared by every equation.
-    \item For gated systems, we create a new variable and multiply every equation in Cyclic, Katsura, or dense quadratic by it.
+    \item For gated systems, we create a new variable and multiply every equation in Cyclic, Katsura, or dense quadratic by it~\cite{bjorck1991cyclic,boege1986examples}.
     \item This produces one easy selector cover and one nonlinear residual cover.
 \end{itemize}
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \small
 \setlength{\tabcolsep}{5pt}
@@ -145,8 +149,16 @@ but it does not complete the residual branch.
 \label{subsec:physical-systems}
 
 % A short explanation of the physical systems.
-The system is an order five approximation of the theories that represent a graviton are consistent with experimental results of QFT (quantum field theory).
-Solving this system can lead to a better understanding of how quantum gravity may look like.
+The system is an order five approximation of the theories that represent a
+graviton are consistent with experimental results of QFT (quantum field
+theory)~\cite{rafiezinedine2018simplifying,vacca2010asymptotic}.
+Solving this system can lead to a better understanding of how quantum gravity
+may look like~\cite{vacca2010asymptotic}.
+
+For this larger system, zeroing uses a one-second limit per cover and a
+60-second total runtime limit.  Ordinary branching uses a 60-second limit per
+cover and a 65-second external hard stop.  Thus, an earlier completed cover can
+make the reported branching wall time slightly exceed 60 seconds.
 
 % Performance table of the pipeline by the internal subsolver (i.e F4, F5, etc.)
 \begin{table}[H]
@@ -158,19 +170,21 @@ Solving this system can lead to a better understanding of how quantum gravity ma
 \hline
 Backend & Branching $T/F$ (s) & Branching result & Zeroing $T/F$ (s) & Zeroing result \\
 \hline
-M4GB & $63.365/3.361$ & partial: 1 SAT, 2 UNSAT, 1 timeout; $d=14$ & $timeout/1.040$ & partial: 7 comp., 52 splits, 11 unresolved \\
-F5 & $timeout/\text{--}$ & partial: 2 UNSAT, 1 timeout, 1 unresolved & $timeout/2.066$ & partial: 13 comp., 63 splits, 9 unresolved \\
-GVW & $timeout/\text{--}$ & partial: 2 UNSAT, 1 timeout, 1 unresolved & $timeout/2.077$ & partial: 13 comp., 60 splits, 9 unresolved \\
-Symbolica & $timeout/40.107$ & partial: 1 SAT, 2 UNSAT, 1 unresolved; $d=14$ & $timeout/1.054$ & partial: 7 comp., 56 splits, 12 unresolved \\
-Singular & $60.603/0.599$ & partial: 1 SAT, 2 UNSAT, 1 timeout; $d=14$ & $timeout/0.565$ & partial: 1 comp., 44 splits, 12 unresolved \\
-\texttt{facstd} & $0.796/0.066$ & complete: 1 SAT, 3 UNSAT, 6 comp.; $d=14$ & $0.811/0.076$ & complete: 6 comp., 0 splits, 0 unresolved \\
+M4GB & $60.793/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/1.052$ & partial: 7 comp., 52 splits, 11 unresolved \\
+F5 & $61.422/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/2.059$ & partial: 13 comp., 63 splits, 9 unresolved \\
+GVW & $61.653/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/2.071$ & partial: 13 comp., 60 splits, 9 unresolved \\
+Symbolica & $60.218/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/1.051$ & partial: 7 comp., 56 splits, 12 unresolved \\
+Singular & $60.342/0.039$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/0.566$ & partial: 1 comp., 44 splits, 12 unresolved \\
+\texttt{facstd} & $1.067/0.013$ & complete: 32 SAT, 1 UNSAT; $d=14$ & $0.824/0.077$ & complete: 6 comp., 0 splits, 0 unresolved \\
 \hline
 \end{tabular}%
 }
+\caption{Physical-system results from the fresh single-run benchmark.}
 \label{tab:physical-system}
 \end{table}
 
 % Explain the results
-In the table we note that we get a complete solution when using facstd as the backend, and we get a complete solution when using either branching or zeroing.
-When using any backend with zeroing we get a partial solution, while branching with branching some backends don't find any solutions.
-None of the other benchmarked methods is able to solve the system within 10 minutes, not even partial solutions.
+The \texttt{facstd} backend is the only tested backend that completes its run on
+the physical system, and it does so with both ordinary branching and variable
+zeroing.  Every other backend finds the full solution set, but can't certify
+that the remaining branches are UNSAT.

@@ -50,6 +50,15 @@ A finite set $G\subseteq J$ is a Gr\"obner basis of $J$ if
 \]
 $p \in J$ if and only if its division by $G$ has a 0 remainder, so division decides ideal membership.
 
+For $Q=\{q_1,\ldots,q_m\}$, \emph{interreduction} repeatedly applies
+\[
+    q_i\leftarrow\operatorname{NF}_{Q\setminus\{q_i\}}(q_i),
+\]
+where $\operatorname{NF}$ denotes the remainder under polynomial division,
+until every $q_i$ is unchanged. Since each replacement has the form
+$q_i\leftarrow q_i-\sum_{j\ne i}h_jq_j$, it preserves $\langle Q\rangle$ and
+therefore $V(Q)$.
+
 Every ideal has a unique reduced Gr\"obner basis for a fixed monomial order.
 The reduced basis is $\{1\}$ if and only if $J=\langle1\rangle$. Therefore, a
 Gr\"obner basis computation can describe a branch and detect when it is
