@@ -1,2 +1,25 @@
 \section{Conclusion}
 \label{sec:conclusion}
+
+% Write the problem we solved and how
+We introduced a solver-agnostic framework that decomposes polynomial systems
+into minimal hitting sets of their factors. It prunes branches with certified
+UNSAT cores and splits timed-out branches into the cases $x=0$ and $x\neq0$.
+
+% What we proved about our method
+We proved that refinement and variable zeroing terminate and preserve the full
+solution set. The output is complete whenever all branches are resolved.
+
+% Establish the novelty of our approach
+The method combines a novel yet simple method for breaking down polynomial
+systems into smaller subproblems with factorization and interreduce.
+We add reusable UNSAT cores, and zero/nonzero splitting without depending on a
+particular branch solver.
+
+% Experimental results
+We shown the method's effectiveness on benchmark systems and the larger the
+system, the larger the speedup. additionally, we showed that the method is
+the only one that can solve a QFT system in a reasonable time frame.
+
+% Future work
+Future work will consider better case splitting strategies besides variable zeroing, and better ways to keep track and generate UNSAT cores.
