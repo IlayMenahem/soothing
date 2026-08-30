@@ -5,30 +5,28 @@
 \label{subsec:branching-framework}
 
 % motivation for breaking down a system of polynomial equations
-Solving a system of polynomial equations is double exponential hard~\cite{mayr1982complexity}.
-Thus breaking a system of polynomial equations into smaller subproblems allows for more efficient solving.
+Polynomial-ideal computations can be intractable even for small systems~\cite{mayr1982complexity}. Thus, decomposing a system into smaller and simpler
+subproblems may make the individual solver calls easier.
 
 % How breaking down is done
-We break a system into smaller subproblems by iteratively doing two basic steps for each subproblem:
-\begin{enumerate}
-    \item Interreduce the current subproblems.
-    \item Factor each generator and enumerate the minimal hitting sets of the factor sets.
-\end{enumerate}
+We break a system into smaller subproblems by iteratively doing two basic steps
+for each subproblem: interreduce the current subproblem, and factor each
+generator and enumerate the minimal hitting sets of the factor sets.
 
-Here is the pseudocode for the refinement of a polynomial system $Q$ into a smaller set of subproblems.
+Here is the pseudocode for this refinement of a polynomial system $Q$ into a smaller set of subproblems.
 
 \begin{algorithm}[H]
 \caption{Refinement}
 \label{alg:Refine}
 \begin{algorithmic}[1]
-    \Require A set of polynomials $Q$ and $A$
+    \Require A finite polynomial system $Q$ and a collection $A$ of normalized systems visited on the current recursion path
 
-    \State Interreduce $Q$ \Comment{Optional}
-    \State Factor each generator of $Q$
+    \State $\widetilde Q\gets\Call{Interreduce}{Q}$ \Comment{Optional; otherwise $\widetilde Q\gets Q$}
+    \State Factor each generator of $\widetilde Q$
     \State $\mathcal{H} \gets$ the minimal hitting sets of the factor sets
     \State $T \gets \emptyset$
     \ForAll{$H\in\mathcal H$}
-        \If{$H=Q$ or $H\in A$}
+        \If{$H=\widetilde Q$ or $H\in A$}
             \State $T\gets T\cup\{H\}$
         \Else
             \State $T\gets T\cup\Call{Refine}{H,A\cup\{\widetilde Q\}}$
@@ -44,7 +42,8 @@ Let $\mathcal L(P)$ denote the terminal hitting sets obtained from $P$.
 For each $H\in\mathcal L(P)$, the branch solver must either describe $V(H)$ exactly or certify that $V(H)=\emptyset$.
 
 % UNSAT core learning
-The solver may also return a certified UNSAT core $U\subseteq H$, any later hitting set containing $U$ can be determined to be UNSAT without calling the solver.
+The solver may also return a certified UNSAT core $U\subseteq H$. Any later
+hitting set containing $U$ is UNSAT and does not require another solver call.
 
 \begin{algorithm}[H]
 \caption{Branching}
@@ -77,15 +76,18 @@ The solver may also return a certified UNSAT core $U\subseteq H$, any later hitt
 \end{algorithm}
 
 The order of the terminal hitting sets affects running time but not
-correctness. We use the number of generators in a hitting set as its estimated
-cost and process smaller sets first. An UNSAT core found in a small set may
-then prune larger sets before they reach the solver.
+correctness. Optionally, we can sort the hitting sets by their estimated cost to
+solve. We use the number of generators in a hitting set as a proxy for the
+cost. This ordering can help us find many UNSAT cores quickly which maybe used
+to prune more difficult hitting sets.
 
 % A flow chart of the method
 \begin{figure}[H]
     \centering
     \resizebox{\textwidth}{!}{\input{figs/branching_flowchart.tex}}
-    \caption{Flowchart of the branching procedure of Algorithm~\ref{alg:Branching}.}
+    \caption{Branching procedure of Algorithm~\ref{alg:Branching}. Refinement
+    produces terminal hitting-set branches, which the exact solver either
+    represents or certifies as UNSAT.}
     \label{fig:branching_flowchart}
 \end{figure}
 
@@ -97,20 +99,6 @@ then prune larger sets before they reach the solver.
 Let $S$ be a collection of solution-set representations, and $\operatorname{Sol}(S)$ be the union of the represented sets.
 The theoretical analysis does not require $K$ to be algebraically closed. If a
 system has no solution over the algebraic closure, it has no solution over $K$.
-
-\begin{lemma}[Sufficiency of minimal hitting sets]
-\label{lem:minimal-hitting-suffices}
-Let $T$ be the sets of minimal hitting sets then
-\[
-    \bigcup_{H\in T}V(H)=\bigcup_{minimal\ hitting\ set H\subseteq T}V(H).
-\]
-\end{lemma}
-
-\begin{proof}
-Let there be $S \in T$, repeatedly removing redundant factors from $S$ eventually produces a minimal hitting set $H$.
-Since $H\subseteq S$ we have $V(S)\subseteq V(H)$ and $\bigcup_{H\in T}V(H)\subseteq\bigcup_{minimal\ hitting\ set H\subseteq T}V(H)$.
-The other direction is trivial, so the two unions are equal.
-\end{proof}
 
 For a system $Q$, write $\mathcal H(Q)$ for the minimal hitting sets obtained
 in one factorization round.
@@ -144,17 +132,18 @@ Suppose refinement of $Q$ terminates with the finite collection $\mathcal L(Q)$.
 \end{lemma}
 
 \begin{proof}
-Algorithm~\ref{alg:Refine} is a fixed-point recursion. Let us show that each recursive call preserves the zero set.
-The base case is no step of refinement, in which case the zero set is $V(Q)$.
-Let there be $L_n(Q)$, the collection of terminal hitting sets after $n$ refinement steps.
-
-\begin{align*}
-    V(Q) &= \bigcup_{H\in\mathcal L_n(Q)}V(H) \\
-         &= \bigcup_{H\in\mathcal L_n(Q)}V(\text{interreduction}(H)) \\
-         &= \bigcup_{H\in\mathcal L_n(Q)} \bigcup_{H'\in\mathcal H(\text{interreduction}(H))}V(H') \\
-         &= \bigcup_{H\in\mathcal L_{n+1}(Q)}V(H).
-\end{align*}
-
+Consider the finite recursion tree produced by Algorithm~\ref{alg:Refine}.
+For every internal node $G$, let $\widetilde G$ be its interreduction (or $G$
+itself when interreduction is disabled). Interreduction preserves the generated
+ideal, so $V(G)=V(\widetilde G)$. Theorem~\ref{thm:branch-decomposition} then
+gives
+\[
+    V(G)=\bigcup_{H\in\mathcal H(\widetilde G)}V(H),
+\]
+where the sets in $\mathcal H(\widetilde G)$ are precisely the children of
+$G$. A bottom-up induction on the finite tree shows that the variety of each
+node equals the union of the varieties of the terminal nodes in its subtree.
+Applying this statement at the root $Q$ proves the result.
 \end{proof}
 
 \begin{theorem}[Termination of refinement]
@@ -164,29 +153,51 @@ Algorithm~\ref{alg:Refine} terminates on every finite polynomial system.
 
 \begin{proof}
 If interreduction is disabled, every child consists of irreducible polynomials.
-Factoring it again returns the same system, so the condition $H=Q$ makes it
-terminal.
+Factoring such a child again returns it unchanged, so the condition
+$H=\widetilde Q$ makes it terminal.
 
 Suppose interreduction is enabled. For an interreduced system $Q$, let
 \[
     M(Q)=\langle\operatorname{LM}(q):q\in Q\rangle.
 \]
 For every hitting-set child $H$ and every $q\in Q$, some $h\in H$ divides $q$.
-Hence $M(Q)\subseteq M(H)$. Equality is possible only when every selected
-factor is associate to the generator it hits; after normalization this gives
-$H=Q$, which is terminal. Interreduction can only enlarge $M(H)$, so $M$
-strictly increases along every recursive path.
+Hence $\operatorname{LM}(h)$ divides $\operatorname{LM}(q)$ and
+$M(Q)\subseteq M(H)$.
+
+Suppose equality holds. For any $h\in H$, choose $q\in Q$ having $h$ as a
+factor. Equality gives some $q'\in Q$ such that
+$\operatorname{LM}(q')\mid\operatorname{LM}(h)\mid\operatorname{LM}(q)$.
+Because $Q$ is interreduced, this is possible only for $q'=q$. The two outer
+leading monomials are therefore equal, so the remaining factor of $q$ is a
+unit. Thus $h$ and $q$ are associates, and their monic normalization gives
+$h=q$. Applying this argument to the factor selected for every $q\in Q$ gives
+$H=Q$, which is terminal.
+
+It remains to account for the next interreduction. In an elementary reduction,
+the old leading monomial either remains, or it is already divisible by the
+leading monomial of the reducer. Consequently, interreduction cannot shrink
+the ideal generated by the current leading monomials. Thus, for every
+nonterminal child $H$ and its interreduction $\widetilde H$,
+\[
+    M(Q)\subsetneq M(H)\subseteq M(\widetilde H).
+\]
+Therefore $M$ strictly increases along every recursive path.
 
 The ascending-chain condition for monomial ideals rules out an infinite path.
 Every node has finitely many children, so K\"onig's lemma implies that the
 refinement tree is finite. Therefore Algorithm~\ref{alg:Refine} terminates.
 \end{proof}
 
-Here is a known result that justifies branch pruning using UNSAT cores.
+The definition of an UNSAT core immediately justifies branch pruning.
 \begin{lemma}
 \label{lem:core-pruning}
 Let $U$ be an UNSAT core. If $U \subseteq H$, then $V(H)=\emptyset$.
 \end{lemma}
+
+\begin{proof}
+Since $U\subseteq H$, every solution of $H$ would be a solution of $U$.
+Hence $V(H)\subseteq V(U)=\emptyset$.
+\end{proof}
 
 The following theorem allows the use of Algorithm~\ref{alg:Branching} without loss of correctness.
 \begin{theorem}
@@ -203,12 +214,25 @@ therefore gives
 \[
     V(P)=\bigcup_{H\in\mathcal L(P)}V(H).
 \]
+Consider any $H\in\mathcal L(P)$. If the algorithm prunes $H$, then it contains
+a certified UNSAT core, so $V(H)=\emptyset$ by
+Lemma~\ref{lem:core-pruning}. Otherwise, the exact solver either returns an
+exact representation of $V(H)$, which the algorithm adds to $S$, or certifies
+that $V(H)=\emptyset$. Empty branches therefore make no contribution, while
+every represented branch contributes exactly its variety. Hence
+\[
+    \operatorname{Sol}(S)
+    =\bigcup_{H\in\mathcal L(P)}V(H)
+    =V(P).
+\]
+Every representation added to $S$ is exact, which proves soundness, and the
+equality proves completeness. Every member of $C$ is certified by construction.
 \end{proof}
 
-Now we shall show that the algorithm terminates.
+Finally, we show that the branching algorithm terminates.
 \begin{theorem}
 \label{thm:branching-termination}
-If the exact solver is known to terminate then Algorithm~\ref{alg:Branching} terminates.
+If the exact solver is known to terminate, then Algorithm~\ref{alg:Branching} terminates.
 \end{theorem}
 
 \begin{proof}

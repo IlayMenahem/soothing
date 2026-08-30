@@ -68,8 +68,10 @@
 \draw[arr] (loop.south) -- (learned.north);
 \draw[arr] (learned.east) -- node[above] {Yes} (prune.west);
 \draw[arr] (learned.south) -- node[right] {No} (solve.north);
-\draw[arr, rounded corners=5pt] (solve.south) |- (unsat.east);
-\draw[arr, rounded corners=5pt] (solve.south) |- (sat.west);
+\coordinate (outcome split) at (solve.south |- unsat.east);
+\draw[line width=1pt] (solve.south) -- (outcome split);
+\draw[arr] (outcome split) -- (unsat.east);
+\draw[arr] (outcome split) -- (sat.west);
 
 % ---- bottom rail into return ----
 \draw[line width=1pt] (unsat.south) -- (raill) -- (railr) -- (sat.south);
@@ -79,9 +81,9 @@
 \coordinate (fbcol) at ($(prune.east)+(10mm,0)$);
 \coordinate (feedback) at (fbcol |- loop.east);
 \draw[line width=1pt, rounded corners=5pt]
-    (prune.east) -- (prune.east -| fbcol) |- (feedback);
+    (prune.east) -- (prune.east -| fbcol) -- (feedback);
 \draw[line width=1pt, rounded corners=5pt]
-    (railr) -- node[below] {next $H$} (railr -| fbcol) |- (feedback);
+    (railr) -- node[below] {next $H$} (railr -| fbcol) -- (feedback);
 \draw[arr] (feedback) -- (loop.east);
 
 \end{tikzpicture}

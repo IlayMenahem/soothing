@@ -1,25 +1,28 @@
-\section{Branching with variable zeroing}
+\section{Recursive splitting}
 \label{sec:variable-zeroing}
 
 \subsection{Branching with variable zeroing}
 \label{subsec:zeroing-branching}
 
 % Motivation for splitting
-Lets say that the solver doesn't terminate within reasonable amount of time for an hitting set given by Algorithm~\ref{alg:Branching}.
+Suppose the solver does not terminate within a reasonable amount of time on a
+hitting set produced by Algorithm~\ref{alg:Branching}.
 
 % What is splitting
-In this case, we can further simplify the system by branching further.
-In each branch assume some side condition holds, and letting Algorithm~\ref{alg:Branching} run on the simplified system.
-This splitting can be done recursively until the solver terminates or the computation budget is exhausted.
+Then we can further simplify the system by branching again. In each child
+branch, we assume a side condition and run Algorithm~\ref{alg:Branching} on the
+simplified system. This process continues until the solver terminates or the
+computation budget is exhausted.
 
 % Good properties for conditions on the set of conditions
-For completeness, the union of the side conditions must cover all possibilities.
-A set of conditions is a good choice if it is helpful for your solver, and works well with algorithm~\ref{alg:Refine}.
+For completeness, the side conditions must cover all possibilities. They
+should also simplify the system for the solver input and work well with
+Algorithm~\ref{alg:Refine}.
 
 % What is the condition we use, and why?
-For this work the branching conditions is whether a variable is zero or nonzero.
-This simplification choice is used in other works~\cite{}. % Add citation.
-in this work we considered physical systems and determined through past experience that we expect a variable to be always zero, or always nonzero.
+In this work, the side conditions are whether a specific variable is zero or
+nonzero. Our experience with the physical systems considered here suggests that
+a variable is often always zero or always nonzero.
 
 % Pseudocode for the method with variable zeroing
 \begin{algorithm}[H]
@@ -54,7 +57,8 @@ in this work we considered physical systems and determined through past experien
 \end{algorithmic}
 \end{algorithm}
 
-For Algorithm~\ref{alg:ZeroingBranching} we use a global set $C$ of learned UNSAT cores.
+Algorithm~\ref{alg:ZeroingBranching} uses a global set $C$ of learned UNSAT
+cores.
 
 % How the constraints are encoded into the system.
 Let $N$ be the variables declared nonzero on the current path.
@@ -68,7 +72,8 @@ decisions remain part of the solution-set representation.
 \begin{figure}[H]
     \centering
     \resizebox{0.9\textwidth}{!}{\input{figs/variable_zeroing_flowchart.tex}}
-    \caption{Flowchart of the recursive variable-zeroing procedure of Algorithm~\ref{alg:ZeroingBranching}.}
+    \caption{Flowchart of the recursive variable-zeroing procedure in
+    Algorithm~\ref{alg:ZeroingBranching}.}
     \label{fig:variable_zeroing_flowchart}
 \end{figure}
 
@@ -87,11 +92,11 @@ Figure~\ref{fig:variable_zeroing_tree}.
 \label{subsec:zeroing-variable-choice}
 
 The choice of variable for splitting affects the efficiency of the algorithm.
-Every split creates at least two new hitting sets to check.
-If a variable barely occurs in the current hitting set, both recursive calls may repeat most of the same work.
-A variable that occurs in many generators is a more promising choice. Setting
-it to zero removes all terms containing it at once. In the nonzero branch, it
-is appended to the product in Equation~\eqref{eq:zeroing-saturation}.
+If a variable barely occurs in the current hitting set, recursive calls may
+repeat the same work. A variable that occurs in many generators is a more
+promising choice. Setting it to zero removes all terms containing it at once.
+In the nonzero branch, it is appended to the product in Equation~\eqref
+{eq:zeroing-saturation}.
 
 For each candidate variable $x$ that is still available on the current branch, define
 \begin{align*}
@@ -108,113 +113,95 @@ and scores are compared lexicographically.
 \subsection{Branch contraction}
 \label{subsec:zeroing-branch-contraction}
 
-Let $\mathcal H_0$ and $\mathcal H_1$ be the minimal hitting sets for $x=0$ and $x\neq 0$.
-Suppose, up to exchanging the two children, that
+Let $\mathcal H_0$ and $\mathcal H_1$ be the minimal hitting sets for $x=0$ and
+$x\neq0$. Suppose, up to exchanging the two children, that
 \[
-    \mathcal H_0=\emptyset
-    \qquad\text{and}\qquad
-    \mathcal H_1=\{H\}.
+    \mathcal H_0=\emptyset \qquad \text{and} \qquad \mathcal H_1=\{H\}.
 \]
-The first child is inconsistent, and we have
+The first child is inconsistent. Theorem~\ref{thm:branch-decomposition} and the
+zeroing split give
 \[
-    V_Y(Q)=V_Y(H).
+    V_Y(Q;Z,N)=V_Y(H;Z,N\cup\{x\}).
 \]
 There is no need to run the branch solver on $H$ before choosing the next
 splitting variable.
 
-\subsection{Theoretical analysis of variable zeroing}
+\subsection{Theoretical analysis}
 \label{subsec:zeroing-theoretical-analysis}
 
-We prove the correctness and termination of Algorithm~\ref{alg:ZeroingBranching}.
+The correctness argument uses only that the side conditions cover all
+possibilities. Let $Y$ be the original variables, let $A$ be the conditions on
+the current branch, and let $V_Y(Q;A)$ be the projection onto $Y$ of the
+solutions of $Q$ satisfying $A$. For variable zeroing, we write
+$V_Y(Q;Z,N)$ for the conditions $z=0$ for $z\in Z$ and $y\neq0$ for $y\in N$.
 
-Let $V_Y(Q;Z,N)$ denote the projection onto $Y$ of the solutions of $Q$ satisfying $z=0$ for $z\in Z$ and $y\neq0$ for $y\in N$.
-We also denote $Q_0=Q|_{x=0}$ and $Q_1=\Call{UpdateSaturation}{Q,N\cup\{x\}}$.
-
-\begin{theorem}[Correctness of a zeroing split]
+\begin{theorem}[Correctness of a covering split]
 \label{lem:zeroing-split}
-Let there be $Z,N\subseteq Y$ such that $Z \cap N = \emptyset$, and let $x\in Y\setminus(Z\cup N)$.
-Then
-\begin{align*}
-    V_Y(Q;Z,N)=V_Y(Q_0;Z\cup\{x\},N) \cup V_Y(Q_1;Z,N\cup\{x\}).
-\end{align*}
+Let $D_1,\ldots,D_k$ be side conditions such that every point satisfying $A$
+satisfies at least one $D_i$. If $Q_i$ encodes $Q$ together with $D_i$, then
+\[
+    V_Y(Q;A)=\bigcup_{i=1}^k V_Y(Q_i;A\cup\{D_i\}).
+\]
 \end{theorem}
 
 \begin{proof}
-Take a point in $V_Y(Q;Z,N)$. Its $x$-coordinate is either zero or
-nonzero. In the first case, substituting $x=0$ gives a solution of $Q_0$
-satisfying $Z\cup\{x\}$ and $N$. In the second case, the point satisfies the
-nonzero conditions $N\cup\{x\}$, which are encoded by $Q_1$. Thus it belongs
-to the corresponding set on the right.
-
-Conversely, a point in either set on the right satisfies $Q$, together with
-the conditions in $Z$ and $N$. Therefore it belongs to $V_Y(Q;Z,N)$.
+Every solution on the left satisfies some $D_i$ and therefore belongs to the
+corresponding set on the right. Every set on the right imposes all equations
+and conditions from the parent branch, so the reverse inclusion also holds.
 \end{proof}
 
-\begin{theorem}[Correctness of variable zeroing]
+For variable zeroing, the conditions $x=0$ and $x\neq0$ cover all values of
+$x$. With $Q_0=Q|_{x=0}$ and
+$Q_1=\mathrm{UpdateSaturation}(Q,N\cup\{x\})$, the theorem gives
+\begin{equation}
+\label{eq:zeroing-split}
+    V_Y(Q;Z,N)=V_Y(Q_0;Z\cup\{x\},N)
+    \cup V_Y(Q_1;Z,N\cup\{x\}).
+\end{equation}
+
+If \textsc{BranchingWithTimeout} returns solved representations $S$ and
+timed-out hitting sets $T$, the proof of
+Theorem~\ref{thm:branching-correctness} gives
+\begin{equation}
+\label{eq:branching-timeout-partition}
+    V_Y(Q;A)=\operatorname{Sol}(S)
+    \cup\bigcup_{R\in T}V_Y(R;A).
+\end{equation}
+
+\begin{theorem}[Correctness of recursive splitting]
 \label{thm:zeroing-correctness}
-If Algorithm~\ref{alg:ZeroingBranching} returns $(S,U,C)$ on input $P$, then
-
-\begin{align*}
-    V(P)=\operatorname{Sol}(S) \cup\bigcup_{(R,Z_R,N_R)\in U}V_Y(R;Z_R,N_R).
-\end{align*}
+Suppose every split uses side conditions that cover all possibilities. If the
+recursive procedure returns $(S,U,C)$ on input $P$, where $U$ contains the
+unresolved pairs $(R,A_R)$, then
+\[
+    V(P)=\operatorname{Sol}(S)
+    \cup\bigcup_{(R,A_R)\in U}V_Y(R;A_R).
+\]
 \end{theorem}
 
 \begin{proof}
-We prove the claim for every call to \Call{SolveByZeroing} by induction on
-the remaining recursion tree. For a call with input $(Q,X,Z,N,\tau,C)$,
-\Call{BranchingWithTimeout} partitions the constrained zero set into the
-solutions it finds and the unresolved hitting sets:
-\[
-    V_Y(Q;Z,N)=\operatorname{Sol}(S)
-    \cup\bigcup_{R\in T}V_Y(R;Z,N).
-\]
-This follows from Theorem~\ref{thm:branching-correctness}; a timeout leaves
-the corresponding hitting set in $T$, and pruning by a certified UNSAT core
-removes only an empty zero set.
-
-If $X=\emptyset$, the algorithm adds each $R\in T$ to $U$ with the current
-conditions, so the required equality follows. Otherwise, for every $R\in T$
-the algorithm chooses $x\in X$. By Theorem~\ref{lem:zeroing-split},
-\[
-    V_Y(R;Z,N)=V_Y(R_0;Z\cup\{x\},N)
-    \cup V_Y(R_1;Z,N\cup\{x\}).
-\]
-The induction hypothesis applies to both recursive calls. Their solved and
-unresolved sets therefore replace $V_Y(R;Z,N)$ without changing the union.
-Taking the union over all $R\in T$ proves the claim for the current call.
-
-The initial call has $Q=P$ and $Z=N=\emptyset$, so its constrained zero set
-is $V(P)$. This gives the stated equality.
+Equation~\eqref{eq:branching-timeout-partition} accounts for the solved and
+timed-out hitting sets at each call. An unresolved hitting set is either added
+to $U$ or replaced by child branches. Theorem~\ref{lem:zeroing-split} shows
+that any covering family of child conditions preserves its solution set.
+Applying this argument recursively proves the result.
 \end{proof}
 
-The following corollary is a direct consequence of Theorem~\ref{thm:zeroing-correctness}.
-It states that if all branches are resolved, Algorithm~\ref{alg:ZeroingBranching} returns a complete solution set.
 \begin{corollary}[Completeness of variable zeroing]
 \label{cor:zeroing-completeness}
-If $U = \emptyset$ in the output of Algorithm~\ref{alg:ZeroingBranching}, then
-\[
-    \operatorname{Sol}(S)=V(P).
-\]
+If $U=\emptyset$ in the output of Algorithm~\ref{alg:ZeroingBranching}, then
+$\operatorname{Sol}(S)=V(P)$.
 \end{corollary}
 
-Lastly we prove that Algorithm~\ref{alg:ZeroingBranching} terminates.
 \begin{theorem}[Termination of variable zeroing]
 \label{thm:zeroing-termination}
-Algorithm~\ref{alg:ZeroingBranching} terminates.
+Algorithm~\ref{alg:ZeroingBranching} terminates if each timed solver call
+returns after $\tau$.
 \end{theorem}
 
 \begin{proof}
-We prove that \Call{SolveByZeroing} terminates by induction on $|X|$. First,
-every call to \Call{BranchingWithTimeout} terminates. Indeed,
-Theorem~\ref{thm:refine-termination} shows that Algorithm~\ref{alg:Refine} terminates, and returns finitely many hitting sets.
-On there minimal hitting sets, the solver either returns or is stopped after the timeout $\tau$. Thus the call returns finite sets $S$ and $T$.
-
-If $X=\emptyset$, the algorithm loops over the finite set $T$ and returns.
-Suppose now that $|X|>0$. For each $R\in T$, the algorithm makes two recursive
-calls, both with $X\setminus\{x\}$. These calls terminate by the induction
-hypothesis. Since $T$ is finite, the current call also terminates.
-
-The initial set $\Call{Variables}{P}$ is finite, so the initial call to
-\Call{SolveByZeroing} terminates.
-Therefore Algorithm~\ref{alg:ZeroingBranching} terminates.
+Algorithm~\ref{alg:Refine} terminates by Theorem~\ref{thm:refine-termination}
+and returns finitely many hitting sets. Each zeroing split removes one variable
+from the finite set $X$, so every recursive path is finite. Therefore the whole
+recursion tree is finite.
 \end{proof}

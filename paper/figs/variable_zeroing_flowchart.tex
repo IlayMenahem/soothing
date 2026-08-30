@@ -26,10 +26,12 @@
     $(S,T)\leftarrow\Call{BranchingWithTimeout}{Q,\tau,C}$};
 \node[decision, below=7mm of solve] (next) {Unresolved\\$R\in T$?};
 \node[return box, left=20mm of next] (return) {%
-    \textcolor{violet}{\bfseries Return}\\$(S,C)$};
+    \textcolor{violet}{\bfseries Return}\\$(S,U,C)$};
 
 \node[loop box, below=8mm of next] (choose) {%
-    \textcolor{orange!75!black}{\bfseries Split}\\Choose $x\in X$};
+    \textcolor{orange!75!black}{\bfseries Process $R$}\\
+    If $X=\emptyset$, add $(R,Z,N)$ to $U$\\
+    otherwise choose $x\in X$ and split};
 
 \node[blue box] (zero) at ($(choose.south)+(-40mm,-20mm)$) {%
     \textcolor{blue}{\bfseries Zero branch}\\
@@ -42,7 +44,7 @@
     Recurse with $N\cup\{x\}$};
 
 \node[green box] (merge) at ($(choose.south)+(0,-46mm)$) {%
-    Add both child results to $S$};
+    Add both child results to $S$ and $U$};
 
 \draw[arr] (init) -- (solve);
 \draw[arr] (solve) -- (next);
