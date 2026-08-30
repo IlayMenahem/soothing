@@ -18,10 +18,12 @@ Buchberger developed this framework in his 1965 thesis \cite{buchberger2006thesi
 Later algorithms changed how the expensive reductions are organized.
 F4 replaces individual polynomial reductions with sparse linear algebra, while F5 uses signatures to avoid many reductions to zero \cite{faugere1999f4,faugere2002f5}.
 Primary-decomposition algorithms use Gr\"obner bases and factorization to separate components \cite{gianni1988primary}.
-Numerical algebraic geometry takes a different route: homotopy continuation and witness sets provide isolated roots numerically \cite{sommese2001numerical,sommese2005numerical}.
+Numerical algebraic geometry takes a different route: homotopy continuation
+computes isolated roots numerically, while witness sets represent
+positive-dimensional components \cite{sommese2001numerical,sommese2005numerical}.
 
 % Mention recent works in a sentence; emphasize that the field is still active
-There are recent works that try to use machine learning methods to solve polynomial systems of equations.
+Recent work has also explored machine-learning methods for polynomial systems.
 Peifer et al.\ trained a reinforcement-learning policy for pair selection in
 Buchberger's algorithm \cite{peifer2020learning}. Kera et al.\ trained
 transformers to compute Gr\"obner bases directly for a restricted class of
@@ -30,27 +32,36 @@ zero-dimensional radical ideals \cite{kera2024learning}.
 % A statement on complexity and limit of what is feasible.
 
 % What's the gap?
-Despite the progress in the field, larger systems remain inaccessible to current methods. % give examples.
+Despite this progress, the worst-case complexity of Gr\"obner-basis computation
+is doubly exponential, and large systems can remain inaccessible to monolithic
+methods \cite{mayr1982complexity}. Existing methods do not generally break down
+large systems into smaller subproblems which are much more manageable.
 
 % Technical description of the method - hitting sets
-Our framework divides a polynomial system into simpler systems by factorizing the polynomials.
-The systems we get are the minimal hitting sets of factors, that is a set of factors that include a factor from each equation.
-The output is an exact collection of branch descriptions for the full solution set, including positive-dimensional families.
+Here, we introduce a solver-agnostic framework that divides a polynomial system
+into simpler branches by interreducing and factoring its equations. The
+framework enumerates the minimal hitting sets of the resulting factor sets;
+each hitting set contains at least one factor from every equation and therefore
+defines one branch of the original solution set. An exact branch solver then
+either describes that branch, including any positive-dimensional families, or
+certifies that it is unsatisfiable.
 
 % UNSAT core learning
-The framework uses UNSAT core learning to prune hitting sets that include a set
-of unsatisfiable constraints, adapting ideas from polynomial UNSAT-core
+To avoid repeated work, the framework learns certified UNSAT cores and prunes
+later hitting sets that contain them, adapting ideas from polynomial UNSAT-core
 extraction and conflict-driven learning~\cite{sun2016,marques1999grasp,marques2009cdcl}.
 
-% Genericity of the framework
-Our framework does not require a particular branch solver or UNSAT core-extraction procedure.
-
 % Zeroing branching
-Some factor branches can still be too expensive for the chosen subsolver.
-After a timeout, we branch again splitting a selected variable into the cases $x=0$ and $x\neq 0$.
-Assuming the value of $x$ should help the subsolver.
+If a factor branch remains too expensive for the chosen solver, the framework
+can refine it by splitting a selected variable into the cases $x=0$ and
+$x\neq 0$. This heuristic split can expose additional algebraic structure for
+the branch solver without discarding either case.
 
 % Theortical and experimental backing
-We prove that our methods preserve the complete solution set for any branch solver satisfying the stated conditions.
-We compare the resulting implementation with direct Gr\"obner-basis computation, symbolic decomposition, and numerical homotopy on generated benchmarks.
-We then apply it to two systems from quantum field theory for which the standard methods in our comparison do not find any solutions.
+We prove that refinement and variable zeroing terminate and preserve the full
+solution set. The returned description is complete whenever every branch is
+resolved by the branch solver. We compare the resulting implementation with
+direct Gr\"obner-basis computation, symbolic decomposition, and numerical
+homotopy on generated benchmarks. We also apply the framework to a system from
+quantum field theory: with the \texttt{facstd} backend, the framework completes
+the computation, whereas the other tested backends leave unresolved branches.

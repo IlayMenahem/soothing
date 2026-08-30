@@ -38,7 +38,8 @@ nonempty subset has a least element and
     \qquad (u,v,w\in\mathbb M_n).
 \]
 For a nonzero polynomial $p$, the leading monomial $\operatorname{LM}(p)$ is
-the greatest monomial of $p$ under $\prec$.
+the greatest monomial of $p$ under $\prec$, $\operatorname{LC}(p)$ is its
+coefficient, and $\operatorname{LT}(p)$ is its leading term.
 
 For an ideal $J$, define its leading-monomial ideal by
 \[
@@ -48,16 +49,33 @@ A finite set $G\subseteq J$ is a Gr\"obner basis of $J$ if
 \[
     \operatorname{LM}(J) =\langle\operatorname{LM}(g):g\in G\rangle.
 \]
-$p \in J$ if and only if its division by $G$ has a 0 remainder, so division decides ideal membership.
+A finite set $Q$ is \emph{interreduced} if every element is monic and no term
+of one element is divisible by the leading monomial of another.
+Algorithm~\ref{alg:interreduction} interreduces a finite set of nonzero
+polynomials.
 
-For $Q=\{q_1,\ldots,q_m\}$, \emph{interreduction} repeatedly applies
-\[
-    q_i\leftarrow\operatorname{NF}_{Q\setminus\{q_i\}}(q_i),
-\]
-where $\operatorname{NF}$ denotes the remainder under polynomial division,
-until every $q_i$ is unchanged. Since each replacement has the form
-$q_i\leftarrow q_i-\sum_{j\ne i}h_jq_j$, it preserves $\langle Q\rangle$ and
-therefore $V(Q)$.
+\begin{algorithm}[H]
+\caption{Interreduction}
+\label{alg:interreduction}
+\begin{algorithmic}[1]
+    \Require A finite set $Q\subseteq R\setminus\{0\}$ and a monomial order $\prec$
+    \Ensure An interreduced set that generates $\langle Q\rangle$
+    \While{for $p,q\in Q$ there is a term $cu$ of $p$ such that $\operatorname{LM}(q)\mid u$}
+        \State $r\gets p-\dfrac{cu}{\operatorname{LT}(q)}q$
+        \State $Q\gets Q\setminus\{p\}$
+        \If{$r\neq0$}
+            \State $Q\gets Q\cup\{r\}$
+        \EndIf
+    \EndWhile
+    \State $Q\gets\{p/\operatorname{LC}(p):p\in Q\}$
+    \State \Return $Q$
+\end{algorithmic}
+\end{algorithm}
+
+Each loop iteration cancels one monomial $u$ and introduces only monomials
+strictly smaller than $u$. The multiset extension of the monomial order is
+well-founded, so the loop terminates. interreduction preserves
+$\langle Q\rangle$ and $V(Q)$.
 
 Every ideal has a unique reduced Gr\"obner basis for a fixed monomial order.
 The reduced basis is $\{1\}$ if and only if $J=\langle1\rangle$. Therefore, a
@@ -74,10 +92,10 @@ Fix a factorization of each input polynomial over $K$:
 \[
     p_i=a_i\prod_{f\in C_i}f^{e_{i,f}},
 \]
-where $a_i\in K\setminus\{0\}$, $C_i$ contains the distinct nonconstant
-irreducible factors of $p_i$, and $e_{i,f}\geq1$. Multiplicity does not affect
-the zero set. A point satisfies $p_i=0$ exactly when at least one factor in
-$C_i$ vanishes at that point.
+where $a_i\in K\setminus\{0\}$, $C_i$ contains the distinct monic,
+nonconstant irreducible factors of $p_i$, and $e_{i,f}\geq1$.
+Multiplicity does not affect the zero set. A point satisfies $p_i=0$ exactly
+when at least one factor in $C_i$ vanishes at that point.
 
 A hitting set for $C_1,\ldots,C_m$ is a set $H\subseteq\bigcup_i C_i$ such that $H\cap C_i\neq\emptyset$ for every $i$.
 It is minimal if no proper subset is also a hitting set.
@@ -87,21 +105,36 @@ Each $H\in\mathcal H(P)$ defines a branch in which all factors in $H$ vanish~\ci
 \subsection{Encoding nonzero variables}
 \label{subsec:nonzero-encoding}
 
-There are two standard encodings of nonzero variables as a polynomial equation.
-The first one encodes each $x\neq0$ constraint as
+Let $N\subseteq\{x_1,\ldots,x_n\}$ be the variables required to be nonzero.
+Here are two ways to encode these constraints as polynomial equations.
+
+One encoding introduces a separate auxiliary variable $s_x$ for each $x\in N$
+and works in the extended ring $R_{\mathrm{sep}}=R[s_x:x\in N]$. For each
+$x\in N$, define the polynomial
 \begin{equation}
 \label{eq:single-zeroing-saturation}
-    \sigma_x=1-s_x x.
+    \sigma_x=1-s_x x,
 \end{equation}
-Here $s_x$ is a new variable.
+and impose the equation $\sigma_x=0$.
 
-The second encoding combines the constraints $x\neq0$ for all $x\in N$ into
-one equation
+The second encoding uses one auxiliary variable $s$, works in
+$R_{\mathrm{prod}}=R[s]$, and combines all nonzero constraints into the
+polynomial
 \begin{equation}
 \label{eq:zeroing-saturation}
-    \sigma_N=1-s\prod_{x\in N}x.
+    \sigma_N=1-s\prod_{x\in N}x,
 \end{equation}
+with the equation $\sigma_N=0$.
 
-For the first encoding, we project away the auxiliary variables $s_x$. For the
-second, we project away $s$. In both cases, the remaining points are the
-solutions of the original system that satisfy the nonzero conditions.
+Let $Q\subseteq R$ and let $\pi$ denote the appropriate coordinate projection
+onto the original $x_1,\ldots,x_n$ coordinates. In the first encoding,
+\[
+    \pi\left(V\left(Q\cup\{\sigma_x:x\in N\}\right)\right)
+    =\{a\in V(Q):a_x\neq0\text{ for every }x\in N\}.
+\]
+Indeed, $\sigma_x=0$ has a solution $s_x$ exactly when $a_x\neq0$. Similarly,
+the product encoding satisfies
+\[
+    \pi\left(V\left(Q\cup\{\sigma_N\}\right)\right)
+    =\{a\in V(Q):a_x\neq0\text{ for every }x\in N\}.
+\]
