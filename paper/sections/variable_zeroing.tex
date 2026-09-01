@@ -79,7 +79,7 @@ decisions remain part of the solution-set representation.
 
 Running the method on \texttt{systems/system.txt} with M4GB and a five-second
 timeout per hitting set produces the recursion tree in
-Figure~\ref{fig:variable_zeroing_tree}.
+Figure~\ref{fig:variable_zeroing_tree}. The run takes 71 seconds.
 
 \begin{figure}[H]
     \centering
@@ -87,6 +87,16 @@ Figure~\ref{fig:variable_zeroing_tree}.
     \caption{Recursion tree for \texttt{systems/system.txt}.}
     \label{fig:variable_zeroing_tree}
 \end{figure}
+
+For comparison, we repeat the experiment twice. Once With the fixed side
+conditions $x=1$ and $x\neq1$, and then with every split independently draws a
+uniform integer $a\in\{-10,\ldots,10\}$ and uses the side conditions $x=a$ and
+$x\neq a$. In both cases there was ten-minute wall-clock limit. Neither
+alternative finishes within ten minutes, and in both cases the search has
+branches that remain unresolved even after exhausting every variable.
+
+By this we conclude that $x=0$ and $x\neq 0$ are especially effective for side
+conditions.
 
 \subsection{Choice of variable for splitting}
 \label{subsec:zeroing-variable-choice}

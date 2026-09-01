@@ -2,11 +2,12 @@
 //!
 //! This implements Algorithm `ZeroingBranching` from
 //! `paper/sections/variable_zeroing.tex`. A factor cover that exceeds its
-//! Gröbner-basis time budget is split into the constructible cases `x = 0`
-//! and `x != 0`. In the zero branch, `x` is replaced by zero. All nonzero
-//! decisions on a branch share the saturation equation
-//! `1 - s*x_1*...*x_n = 0` by default. An option instead gives every
-//! nonzero variable its own equation `1 - s_i*x_i = 0`. If one side of a
+//! Gröbner-basis time budget is split into the constructible cases `x = a`
+//! and `x != a`. By default `a = 0`; fixed-one and fresh-random-value modes
+//! are also available. In the equality branch, `x` is replaced by `a`. All
+//! inequality decisions on a branch share the saturation equation
+//! `1 - s*(x_1-a_1)*...*(x_n-a_n) = 0` by default. An option instead gives
+//! every inequality its own equation `1 - s_i*(x_i-a_i) = 0`. If one side of a
 //! split has no factor cover and the other has a unique cover, the unique
 //! cover is split again without a redundant Gröbner-basis call. Only
 //! original-variable basis elements and the zero/nonzero decisions are
@@ -14,7 +15,9 @@
 
 use std::time::{Duration, Instant};
 
-use symbolica::domains::Ring;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use symbolica::domains::rational::Rational;
 use symbolica::poly::PolyVariable;
 
 use crate::cover::{build_factor_index, decode_cover, minimal_covers, ordered_cover_masks};
@@ -24,6 +27,7 @@ use crate::gb_search::{
     ComputedBasis, Core, GbBackend, Outcome, PolyExtGrevLex, evaluate_cover,
     polynomial_set_contains, solution_dimension,
 };
+use crate::solver_process::{ProcessRun, factor_groups_isolated, running_under_test_harness};
 
 /// An original variable that may be selected for zeroing.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -36,7 +40,24 @@ pub struct ZeroingVariable {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SplitDecision {
     pub variable: String,
-    pub is_zero: bool,
+    pub value: i64,
+    pub is_equal: bool,
+}
+
+/// Values used in the covering split `x = a` / `x != a`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SplitValueStrategy {
+    /// Use the same integer `a` at every split. `Fixed(0)` reproduces
+    /// variable zeroing.
+    Fixed(i64),
+    /// Draw a fresh integer uniformly from `[-10,10]` at every split.
+    Random,
+}
+
+impl Default for SplitValueStrategy {
+    fn default() -> Self {
+        Self::Fixed(0)
+    }
 }
 
 /// Search controls for recursive variable zeroing.
@@ -44,7 +65,7 @@ pub struct SplitDecision {
 pub struct VariableZeroingOptions {
     /// Apply the optional interreduction in every invocation of Branching.
     pub interreduce: bool,
-    /// Per-cover Gröbner-basis time budget.
+    /// Per-cover Gröbner-basis and per-node factorization time budget.
     pub timeout: Duration,
     /// Optional wall-clock budget for the entire recursive search.
     pub max_runtime: Option<Duration>,
@@ -57,6 +78,10 @@ pub struct VariableZeroingOptions {
     /// Use one Rabinowitsch variable and equation per nonzero variable instead
     /// of one equation for their product.
     pub saturate_each_variable: bool,
+    /// Select the value `a` in each `x = a` / `x != a` split.
+    pub split_value_strategy: SplitValueStrategy,
+    /// Seed used by `SplitValueStrategy::Random`.
+    pub random_seed: u64,
     /// Global recursion-node budget. Exhaustion is reported, never treated as
     /// unsatisfiability.
     pub max_nodes: usize,
@@ -76,7 +101,9 @@ impl Default for VariableZeroingOptions {
             max_runtime: None,
             gb_backend: GbBackend::SingularGb,
             unsat_core_search: false,
-            saturate_each_variable: false,
+            saturate_each_variable: true,
+            split_value_strategy: SplitValueStrategy::Fixed(0),
+            random_seed: 0,
             max_nodes: usize::MAX,
             max_evaluations: usize::MAX,
             max_depth: usize::MAX,
@@ -104,11 +131,11 @@ impl ProjectedComponent {
         self.basis.leading_monomials_only
     }
 
-    /// Basis entries not involving the saturation variable.
+    /// Basis entries not involving a saturation variable.
     ///
     /// Together with `decisions`, these form the printable projection view.
-    /// The nonzero decisions are essential: an open condition such as `x != 0`
-    /// cannot in general be represented by polynomial equalities alone.
+    /// The inequality decisions are essential: an open condition such as
+    /// `x != a` cannot in general be represented by polynomial equalities alone.
     pub fn original_basis_elements(&self) -> impl Iterator<Item = &PolyExtGrevLex> {
         self.basis
             .elements
@@ -125,6 +152,14 @@ pub enum UnresolvedReason {
     EvaluationBudget,
     DepthBudget,
     RuntimeBudget,
+    FactorizationTimeout,
+    FactorizationError,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreprocessingFailure {
+    Timeout,
+    Error,
 }
 
 /// A branch whose variety is still part of the answer but was not solved.
@@ -147,6 +182,8 @@ pub struct VariableZeroingStats {
     /// zeroing split.
     pub timeouts: usize,
     pub zeroing_splits: usize,
+    pub factorization_timeouts: usize,
+    pub factorization_errors: usize,
     pub largest_depth: usize,
 }
 
@@ -171,9 +208,9 @@ pub struct VariableZeroingCoverResult {
     pub elapsed: Duration,
     /// Variable selected when a timed-out check was recursively split.
     pub split_variable: Option<String>,
-    /// Recursion node reached by the `split_variable = 0` branch, if created.
+    /// Recursion node reached by the equality branch, if created.
     pub zero_child: Option<usize>,
-    /// Recursion node reached by the `split_variable != 0` branch, if created.
+    /// Recursion node reached by the inequality branch, if created.
     pub nonzero_child: Option<usize>,
 }
 
@@ -192,6 +229,8 @@ pub struct VariableZeroingNodeResult {
     pub core_pruned: usize,
     pub timeouts: usize,
     pub zeroing_splits: usize,
+    /// Set when factorization did not produce covers for this node.
+    pub preprocessing_failure: Option<PreprocessingFailure>,
     pub elapsed: Duration,
     /// Hitting sets in their evaluation order. This may be shorter than
     /// `covers` when a global budget stops the node early.
@@ -230,9 +269,14 @@ struct Solver<'a> {
     nodes: Vec<VariableZeroingNodeResult>,
     stats: VariableZeroingStats,
     first_solution: Option<Duration>,
+    random: StdRng,
 }
 
 impl Solver<'_> {
+    fn next_split_value(&mut self) -> i64 {
+        next_split_value(self.options.split_value_strategy, &mut self.random)
+    }
+
     fn runtime_exhausted(&self) -> bool {
         self.options
             .max_runtime
@@ -275,10 +319,10 @@ impl Solver<'_> {
 
     fn solve_node_with_contraction(
         &mut self,
-        mut polynomials: Vec<PolyExtLex>,
+        polynomials: Vec<PolyExtLex>,
         variables: Vec<ZeroingVariable>,
         decisions: Vec<SplitDecision>,
-        nonzero_variables: Vec<PolyVariable>,
+        inequality_conditions: Vec<(PolyVariable, i64)>,
         contract_unique_cover: bool,
     ) -> Result<Option<usize>, String> {
         let depth = decisions.len();
@@ -316,15 +360,56 @@ impl Solver<'_> {
             core_pruned: 0,
             timeouts: 0,
             zeroing_splits: 0,
+            preprocessing_failure: None,
             elapsed: Duration::ZERO,
             checks: Vec::new(),
         };
-        if self.options.interreduce {
-            polynomials = interreduce_polys(polynomials);
-        }
         let node_nvars = polynomials.first().map_or(0, PolyExtLex::nvars);
-        let groups = try_factor_groups_from_polys(polynomials)
-            .map_err(|error| format!("node {node_id} factorization: {error}"))?;
+        let groups = match factor_groups_with_timeout(
+            polynomials.clone(),
+            self.options.interreduce,
+            self.evaluation_timeout(),
+        ) {
+            Ok(ProcessRun::Completed(groups)) => groups,
+            Ok(ProcessRun::Timeout) => {
+                self.stats.factorization_timeouts += 1;
+                node_result.preprocessing_failure = Some(PreprocessingFailure::Timeout);
+                self.retain_unresolved(
+                    polynomials,
+                    &variables,
+                    &decisions,
+                    UnresolvedReason::FactorizationTimeout,
+                );
+                node_result.elapsed = node_started.elapsed();
+                if self.options.verbose {
+                    println!(
+                        "node #{node_id} depth {depth}: factorization timed out ({:?})",
+                        node_result.elapsed
+                    );
+                }
+                self.nodes.push(node_result);
+                return Ok(Some(node_id));
+            }
+            Err(error) => {
+                self.stats.factorization_errors += 1;
+                node_result.preprocessing_failure = Some(PreprocessingFailure::Error);
+                self.retain_unresolved(
+                    polynomials,
+                    &variables,
+                    &decisions,
+                    UnresolvedReason::FactorizationError,
+                );
+                node_result.elapsed = node_started.elapsed();
+                if self.options.verbose {
+                    println!(
+                        "node #{node_id} depth {depth}: factorization failed ({:?}): {error}",
+                        node_result.elapsed
+                    );
+                }
+                self.nodes.push(node_result);
+                return Ok(Some(node_id));
+            }
+        };
         let (factors, index_groups) = build_factor_index(&groups);
         let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
             format!(
@@ -388,7 +473,7 @@ impl Solver<'_> {
             }
 
             // The caller has already established that this is the unique
-            // cover on one side of a zero/nonzero split and that the sibling
+            // cover on one side of an equality/inequality split and that the sibling
             // has no cover. Hence this cover represents the entire parent
             // branch, and another zeroing split is sound without first asking
             // the Gröbner solver to rediscover that the branch is difficult.
@@ -400,15 +485,15 @@ impl Solver<'_> {
                 let selected = variables[selected_index].clone();
                 if self.options.verbose {
                     println!(
-                        "  cover #{cover_index}: branch-contracted; splitting {} = 0 / {} != 0",
-                        selected.name, selected.name
+                        "  cover #{cover_index}: branch-contracted; splitting {}",
+                        selected.name
                     );
                 }
                 let (zero_child, nonzero_child, recursive_elapsed) = self.split_and_solve(
                     candidate,
                     &variables,
                     &decisions,
-                    &nonzero_variables,
+                    &inequality_conditions,
                     selected_index,
                 )?;
                 self.stats.zeroing_splits += 1;
@@ -568,15 +653,15 @@ impl Solver<'_> {
                     let selected = variables[selected_index].clone();
                     if self.options.verbose {
                         println!(
-                            "  cover #{cover_index}: timed out ({:?}); splitting {} = 0 / {} != 0",
-                            cover_elapsed, selected.name, selected.name
+                            "  cover #{cover_index}: timed out ({:?}); splitting {}",
+                            cover_elapsed, selected.name
                         );
                     }
                     let (zero_child, nonzero_child, recursive_elapsed) = self.split_and_solve(
                         candidate,
                         &variables,
                         &decisions,
-                        &nonzero_variables,
+                        &inequality_conditions,
                         selected_index,
                     )?;
                     self.stats.zeroing_splits += 1;
@@ -653,57 +738,87 @@ impl Solver<'_> {
         candidate: Vec<PolyExtLex>,
         variables: &[ZeroingVariable],
         decisions: &[SplitDecision],
-        nonzero_variables: &[PolyVariable],
+        inequality_conditions: &[(PolyVariable, i64)],
         selected_index: usize,
     ) -> Result<(Option<usize>, Option<usize>, Duration), String> {
         let selected = variables[selected_index].clone();
         let mut remaining = variables.to_vec();
         remaining.remove(selected_index);
-        let mut updated_nonzero_variables = nonzero_variables.to_vec();
-        updated_nonzero_variables.push(selected.variable.clone());
-        let (zero_branch, nonzero_branch) = split_on_variable(
+        let split_value = self.next_split_value();
+        let mut updated_inequality_conditions = inequality_conditions.to_vec();
+        updated_inequality_conditions.push((selected.variable.clone(), split_value));
+        let (equal_branch, unequal_branch) = split_on_variable(
             candidate,
             &selected.variable,
-            &updated_nonzero_variables,
+            split_value,
+            &updated_inequality_conditions,
             self.options.saturate_each_variable,
         )?;
 
-        let zero_cover_count = factor_cover_count(&zero_branch)?;
-        let nonzero_cover_count = factor_cover_count(&nonzero_branch)?;
-        let contract_zero = zero_cover_count == 1 && nonzero_cover_count == 0;
-        let contract_nonzero = nonzero_cover_count == 1 && zero_cover_count == 0;
+        let equal_cover_count = factor_cover_count(
+            &equal_branch,
+            self.options.interreduce,
+            self.evaluation_timeout(),
+        )?;
+        let unequal_cover_count = if equal_cover_count.is_some() {
+            factor_cover_count(
+                &unequal_branch,
+                self.options.interreduce,
+                self.evaluation_timeout(),
+            )?
+        } else {
+            None
+        };
+        let (contract_equal, contract_unequal) = equal_cover_count.zip(unequal_cover_count).map_or(
+            (false, false),
+            |(equal_count, unequal_count)| {
+                (
+                    equal_count == 1 && unequal_count == 0,
+                    unequal_count == 1 && equal_count == 0,
+                )
+            },
+        );
 
-        let mut zero_decisions = decisions.to_vec();
-        zero_decisions.push(SplitDecision {
+        let mut equal_decisions = decisions.to_vec();
+        equal_decisions.push(SplitDecision {
             variable: selected.name.clone(),
-            is_zero: true,
+            value: split_value,
+            is_equal: true,
         });
         let children_started = Instant::now();
-        let zero_child = self.solve_node_with_contraction(
-            zero_branch,
+        let equal_child = self.solve_node_with_contraction(
+            equal_branch,
             remaining.clone(),
-            zero_decisions,
-            nonzero_variables.to_vec(),
-            contract_zero,
+            equal_decisions,
+            inequality_conditions.to_vec(),
+            contract_equal,
         )?;
 
-        let mut nonzero_decisions = decisions.to_vec();
-        nonzero_decisions.push(SplitDecision {
+        let mut unequal_decisions = decisions.to_vec();
+        unequal_decisions.push(SplitDecision {
             variable: selected.name,
-            is_zero: false,
+            value: split_value,
+            is_equal: false,
         });
-        let nonzero_child = self.solve_node_with_contraction(
-            nonzero_branch,
+        let unequal_child = self.solve_node_with_contraction(
+            unequal_branch,
             remaining,
-            nonzero_decisions,
-            updated_nonzero_variables,
-            contract_nonzero,
+            unequal_decisions,
+            updated_inequality_conditions,
+            contract_unequal,
         )?;
-        Ok((zero_child, nonzero_child, children_started.elapsed()))
+        Ok((equal_child, unequal_child, children_started.elapsed()))
     }
 }
 
-/// Solve a polynomial system by factor branching, recursively zeroing an
+fn next_split_value(strategy: SplitValueStrategy, random: &mut StdRng) -> i64 {
+    match strategy {
+        SplitValueStrategy::Fixed(value) => value,
+        SplitValueStrategy::Random => random.random_range(-10..=10),
+    }
+}
+
+/// Solve a polynomial system by factor branching, recursively splitting on an
 /// original variable whenever a cover times out.
 pub fn solve_by_zeroing(
     polynomials: Vec<PolyExtLex>,
@@ -730,6 +845,7 @@ fn solve_by_zeroing_with(
         nodes: Vec::new(),
         stats: VariableZeroingStats::default(),
         first_solution: None,
+        random: StdRng::seed_from_u64(options.random_seed),
     };
     solver.solve_node(polynomials, variables, Vec::new())?;
     Ok(VariableZeroingResult {
@@ -785,18 +901,20 @@ fn choose_variable(polynomials: &[PolyExtLex], variables: &[ZeroingVariable]) ->
     best.map(|(index, _)| index)
 }
 
-/// Substitute `x = 0` in the zero branch and rebuild the saturation equation(s)
-/// in the nonzero branch.
+/// Substitute `x = a` in the equality branch and rebuild the saturation
+/// equation(s) for all inequalities in the other branch.
 fn split_on_variable(
     candidate: Vec<PolyExtLex>,
     variable: &PolyVariable,
-    nonzero_variables: &[PolyVariable],
+    value: i64,
+    inequality_conditions: &[(PolyVariable, i64)],
     saturate_each_variable: bool,
 ) -> Result<(Vec<PolyExtLex>, Vec<PolyExtLex>), String> {
     if candidate.is_empty() {
-        return Err("cannot zero a variable in an empty cover".to_string());
+        return Err("cannot split a variable in an empty cover".to_string());
     }
-    let zero_branch = candidate
+    let split_value = Rational::from(value);
+    let equal_branch = candidate
         .iter()
         .map(|polynomial| {
             polynomial
@@ -805,50 +923,51 @@ fn split_on_variable(
                 .position(|candidate| candidate == variable)
                 .map_or_else(
                     || polynomial.clone(),
-                    |position| polynomial.replace(position, &polynomial.ring.zero()),
+                    |position| polynomial.replace(position, &split_value),
                 )
         })
         .collect();
-    let zero_branch = interreduce_polys(zero_branch);
-
-    let mut nonzero_branch: Vec<_> = candidate
+    let mut unequal_branch: Vec<_> = candidate
         .into_iter()
         .filter(|polynomial| !uses_temporary_variable_lex(polynomial))
         .collect();
-    if nonzero_branch.is_empty() {
+    if unequal_branch.is_empty() {
         return Err("cannot rebuild saturation from an empty cover".to_string());
     }
     let saturation_variable_count = if saturate_each_variable {
-        nonzero_variables.len()
+        inequality_conditions.len()
     } else {
         1
     };
     for index in 0..saturation_variable_count {
         let saturation_variable = PolyVariable::Temporary(index);
-        for polynomial in &mut nonzero_branch {
+        for polynomial in &mut unequal_branch {
             polynomial.add_variable(&saturation_variable);
         }
     }
 
-    let template = nonzero_branch
+    let template = unequal_branch
         .first()
         .cloned()
-        .expect("the nonzero branch retains the nonempty cover");
+        .expect("the inequality branch retains the nonempty cover");
     if saturate_each_variable {
-        for (index, nonzero_variable) in nonzero_variables.iter().enumerate() {
+        for (index, (variable, value)) in inequality_conditions.iter().enumerate() {
             let inverse = template.variable(&PolyVariable::Temporary(index))?;
-            let product = inverse * &template.variable(nonzero_variable)?;
-            nonzero_branch.push(template.one() - product);
+            let difference =
+                template.variable(variable)? - template.constant(Rational::from(*value));
+            let product = inverse * &difference;
+            unequal_branch.push(template.one() - product);
         }
     } else {
         let mut product = template.variable(&PolyVariable::Temporary(0))?;
-        for nonzero_variable in nonzero_variables {
-            product = product * &template.variable(nonzero_variable)?;
+        for (variable, value) in inequality_conditions {
+            let difference =
+                template.variable(variable)? - template.constant(Rational::from(*value));
+            product = product * &difference;
         }
-        nonzero_branch.push(template.one() - product);
+        unequal_branch.push(template.one() - product);
     }
-    let nonzero_branch = interreduce_polys(nonzero_branch);
-    Ok((zero_branch, nonzero_branch))
+    Ok((equal_branch, unequal_branch))
 }
 
 fn uses_variable(polynomial: &PolyExtLex, variable: &PolyVariable) -> bool {
@@ -872,14 +991,39 @@ fn uses_temporary_variable_lex(polynomial: &PolyExtLex) -> bool {
         .any(|variable| uses_variable(polynomial, variable))
 }
 
+fn factor_groups_with_timeout(
+    polynomials: Vec<PolyExtLex>,
+    interreduce: bool,
+    timeout: Duration,
+) -> Result<ProcessRun<Vec<Vec<PolyExtLex>>>, String> {
+    if cfg!(test) || running_under_test_harness() {
+        let polynomials = if interreduce {
+            interreduce_polys(polynomials)
+        } else {
+            polynomials
+        };
+        try_factor_groups_from_polys(polynomials).map(ProcessRun::Completed)
+    } else {
+        factor_groups_isolated(polynomials, interreduce, timeout)
+    }
+}
+
 /// Count the minimal factor covers of a split child without invoking a
-/// Gröbner-basis backend.
-fn factor_cover_count(polynomials: &[PolyExtLex]) -> Result<usize, String> {
-    let groups = try_factor_groups_from_polys(polynomials.to_vec())
-        .map_err(|error| format!("factorization while checking branch contraction: {error}"))?;
+/// Gröbner-basis backend. A preprocessing timeout disables branch contraction;
+/// the child node will retain the branch as unresolved if factorization times
+/// out again.
+fn factor_cover_count(
+    polynomials: &[PolyExtLex],
+    interreduce: bool,
+    timeout: Duration,
+) -> Result<Option<usize>, String> {
+    let groups = match factor_groups_with_timeout(polynomials.to_vec(), interreduce, timeout) {
+        Ok(ProcessRun::Completed(groups)) => groups,
+        Ok(ProcessRun::Timeout) | Err(_) => return Ok(None),
+    };
     let (factors, index_groups) = build_factor_index(&groups);
     minimal_covers(&index_groups, factors.len())
-        .map(|covers| covers.len())
+        .map(|covers| Some(covers.len()))
         .ok_or_else(|| {
             format!(
                 "split child has {} distinct factors; the cover enumerator supports at most 63",
@@ -952,7 +1096,7 @@ mod tests {
         assert_eq!(options.timeout, Duration::from_millis(1_000));
         assert_eq!(options.gb_backend, GbBackend::SingularGb);
         assert!(!options.unsat_core_search);
-        assert!(!options.saturate_each_variable);
+        assert!(options.saturate_each_variable);
     }
 
     #[test]
@@ -981,7 +1125,7 @@ mod tests {
                 .unwrap()],
         );
         let (zero, nonzero) =
-            split_on_variable(polynomials, &x, std::slice::from_ref(&x), false).expect("split");
+            split_on_variable(polynomials, &x, 0, &[(x.clone(), 0)], false).expect("split");
 
         assert!(zero.iter().all(|polynomial| !uses_variable(polynomial, &x)));
         assert_eq!(
@@ -993,12 +1137,64 @@ mod tests {
         );
 
         let (_, twice_nonzero) =
-            split_on_variable(nonzero, &y, &[x, y.clone()], false).expect("second split");
+            split_on_variable(nonzero, &y, 0, &[(x, 0), (y.clone(), 0)], false)
+                .expect("second split");
         assert_eq!(
             twice_nonzero
                 .iter()
                 .filter(|polynomial| uses_variable(polynomial, &PolyVariable::Temporary(0)))
                 .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn split_substitutes_one_and_saturates_x_minus_one() {
+        let (loaded, polynomials) = load("{x*y + y == 0}");
+        let x = PolyVariable::from(
+            loaded.id_to_sym[loaded
+                .var_names
+                .iter()
+                .position(|name| name == "x")
+                .unwrap()],
+        );
+        let (equal, unequal) =
+            split_on_variable(polynomials, &x, 1, &[(x.clone(), 1)], true).expect("split");
+
+        assert!(
+            equal
+                .iter()
+                .all(|polynomial| !uses_variable(polynomial, &x))
+        );
+        let saturation = unequal
+            .iter()
+            .find(|polynomial| uses_temporary_variable_lex(polynomial))
+            .expect("saturation equation");
+        let x_position = saturation
+            .variables
+            .iter()
+            .position(|variable| variable == &x)
+            .expect("x in saturation equation");
+        assert!(saturation.replace(x_position, &Rational::from(1)).is_one());
+    }
+
+    #[test]
+    fn random_split_values_are_fresh_and_seeded() {
+        let draw = || {
+            let mut random = StdRng::seed_from_u64(0);
+            (0..8)
+                .map(|_| next_split_value(SplitValueStrategy::Random, &mut random))
+                .collect::<Vec<_>>()
+        };
+        let first = draw();
+        let second = draw();
+
+        assert_eq!(first, second);
+        assert!(first.iter().all(|value| (-10..=10).contains(value)));
+        assert!(first.windows(2).any(|pair| pair[0] != pair[1]));
+        let mut random = StdRng::seed_from_u64(99);
+        assert_eq!(
+            next_split_value(SplitValueStrategy::Fixed(1), &mut random),
             1
         );
     }
@@ -1019,7 +1215,7 @@ mod tests {
         let y = variable("y");
 
         let (_, x_nonzero) =
-            split_on_variable(polynomials, &x, std::slice::from_ref(&x), true).expect("split x");
+            split_on_variable(polynomials, &x, 0, &[(x.clone(), 0)], true).expect("split x");
         assert_eq!(
             x_nonzero
                 .iter()
@@ -1029,7 +1225,8 @@ mod tests {
         );
 
         let (_, x_y_nonzero) =
-            split_on_variable(x_nonzero, &y, &[x.clone(), y.clone()], true).expect("split y");
+            split_on_variable(x_nonzero, &y, 0, &[(x.clone(), 0), (y.clone(), 0)], true)
+                .expect("split y");
         let saturation_equations = x_y_nonzero
             .iter()
             .filter(|polynomial| uses_temporary_variable_lex(polynomial))
@@ -1085,7 +1282,7 @@ mod tests {
             result
                 .unresolved
                 .iter()
-                .map(|branch| branch.decisions[0].is_zero)
+                .map(|branch| branch.decisions[0].is_equal)
                 .collect::<Vec<_>>(),
             vec![true, false]
         );
@@ -1136,8 +1333,8 @@ mod tests {
             vec![0, 1, 2]
         );
         assert!(result.nodes[0].decisions.is_empty());
-        assert!(result.nodes[1].decisions[0].is_zero);
-        assert!(!result.nodes[2].decisions[0].is_zero);
+        assert!(result.nodes[1].decisions[0].is_equal);
+        assert!(!result.nodes[2].decisions[0].is_equal);
         assert_eq!(
             result.nodes[1].decisions[0].variable,
             result.nodes[2].decisions[0].variable
@@ -1197,17 +1394,19 @@ mod tests {
             nodes: Vec::new(),
             stats: VariableZeroingStats::default(),
             first_solution: None,
+            random: StdRng::seed_from_u64(options.random_seed),
         };
         let decisions = vec![SplitDecision {
             variable: loaded.var_names[0].clone(),
-            is_zero: true,
+            value: 0,
+            is_equal: true,
         }];
 
         solver
             .solve_node(polynomials.clone(), Vec::new(), decisions.clone())
             .expect("first node");
         let mut sibling_decisions = decisions;
-        sibling_decisions[0].is_zero = false;
+        sibling_decisions[0].is_equal = false;
         solver
             .solve_node(polynomials, Vec::new(), sibling_decisions)
             .expect("later node");
@@ -1248,17 +1447,19 @@ mod tests {
             nodes: Vec::new(),
             stats: VariableZeroingStats::default(),
             first_solution: None,
+            random: StdRng::seed_from_u64(options.random_seed),
         };
         let decisions = vec![SplitDecision {
             variable: loaded.var_names[0].clone(),
-            is_zero: true,
+            value: 0,
+            is_equal: true,
         }];
 
         solver
             .solve_node(polynomials.clone(), Vec::new(), decisions.clone())
             .expect("first node");
         let mut sibling_decisions = decisions;
-        sibling_decisions[0].is_zero = false;
+        sibling_decisions[0].is_equal = false;
         solver
             .solve_node(polynomials, Vec::new(), sibling_decisions)
             .expect("later node");

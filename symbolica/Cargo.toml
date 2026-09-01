@@ -27,6 +27,7 @@ path = "bin/variable_zeroing.rs"
 
 [dependencies]
 rayon = "1.10"
+rand = "0.9"
 regex = "1"
 symbolica = "1.5"
 thiserror = "1"

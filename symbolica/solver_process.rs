@@ -16,7 +16,7 @@ use symbolica::domains::rational::{Q, Rational};
 use symbolica::poly::polynomial::MultivariatePolynomial;
 use symbolica::poly::{GrevLexOrder, LexOrder, MonomialOrder, PolyVariable};
 
-use crate::factor_prep::PolyExtLex;
+use crate::factor_prep::{PolyExtLex, interreduce_polys, try_factor_groups_from_polys};
 use crate::gb_search::{ComputedBasis, GbBackend, Outcome, PolyExtGrevLex};
 
 const WORKER_REQUEST_ENV: &str = "POLYNOMIAL_CDCL_SOLVER_REQUEST";
@@ -174,6 +174,10 @@ enum WorkerRequest {
     GbCore {
         polynomials: Vec<WirePolynomial>,
     },
+    Factor {
+        polynomials: Vec<WirePolynomial>,
+        interreduce: bool,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -190,6 +194,7 @@ enum WorkerResponse {
     },
     Inconsistent,
     GbCore(Option<WireGbCoreRun>),
+    Factors(Vec<Vec<WirePolynomial>>),
     Error(String),
 }
 
@@ -347,6 +352,23 @@ fn execute_worker(request: WorkerRequest) -> Result<WorkerResponse, String> {
                 });
             Ok(WorkerResponse::GbCore(run))
         }
+        WorkerRequest::Factor {
+            polynomials,
+            interreduce,
+        } => {
+            let variables = temporary_variables(&polynomials)?;
+            let mut candidate = decode_lex_polynomials(polynomials, variables)?;
+            if interreduce {
+                candidate = interreduce_polys(candidate);
+            }
+            let groups = try_factor_groups_from_polys(candidate)?;
+            Ok(WorkerResponse::Factors(
+                groups
+                    .iter()
+                    .map(|group| encode_polynomials(group))
+                    .collect(),
+            ))
+        }
     }
 }
 
@@ -457,6 +479,7 @@ fn run_worker(
         .env(WORKER_PARENT_PID_ENV, std::process::id().to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("could not start solver worker: {error}"))?;
     let mut child = ChildGuard::new(child);
@@ -522,6 +545,9 @@ pub(crate) fn evaluate_cover_isolated(
         Ok(ProcessRun::Completed(WorkerResponse::GbCore(_))) => Outcome::BackendError(
             "solver worker returned a GB-core response for a cover".to_string(),
         ),
+        Ok(ProcessRun::Completed(WorkerResponse::Factors(_))) => Outcome::BackendError(
+            "solver worker returned a factorization response for a cover".to_string(),
+        ),
     }
 }
 
@@ -563,6 +589,57 @@ pub(crate) fn gb_core_once_isolated(
             Err("solver worker returned a cover response for GB-core".to_string())
         }
     }
+}
+
+pub(crate) fn factor_groups_isolated(
+    mut polynomials: Vec<PolyExtLex>,
+    interreduce: bool,
+    timeout: Duration,
+) -> Result<ProcessRun<Vec<Vec<PolyExtLex>>>, String> {
+    MultivariatePolynomial::unify_variables_list(&mut polynomials);
+    let variables = polynomials.first().map_or_else(
+        || Arc::new(Vec::new()),
+        |polynomial| polynomial.variables.clone(),
+    );
+    let request = WorkerRequest::Factor {
+        polynomials: encode_polynomials(&polynomials),
+        interreduce,
+    };
+    let deadline = Instant::now() + timeout;
+    let mut last_error = None;
+    for _ in 0..3 {
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            return Ok(ProcessRun::Timeout);
+        };
+        if remaining.is_zero() {
+            return Ok(ProcessRun::Timeout);
+        }
+        match run_worker(&request, remaining) {
+            Ok(ProcessRun::Timeout) => return Ok(ProcessRun::Timeout),
+            Ok(ProcessRun::Completed(WorkerResponse::Factors(groups))) => {
+                let groups = groups
+                    .into_iter()
+                    .map(|group| {
+                        group
+                            .into_iter()
+                            .map(|polynomial| decode_polynomial(polynomial, variables.clone()))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(ProcessRun::Completed(groups));
+            }
+            Ok(ProcessRun::Completed(WorkerResponse::Error(error))) | Err(error) => {
+                last_error = Some(error);
+            }
+            Ok(ProcessRun::Completed(_)) => {
+                return Err("solver worker returned a non-factorization response".to_string());
+            }
+        }
+    }
+    Err(format!(
+        "factorization worker failed after three attempts: {}",
+        last_error.unwrap_or_else(|| "unknown worker failure".to_string())
+    ))
 }
 
 #[cfg(test)]
