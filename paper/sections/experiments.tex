@@ -186,5 +186,7 @@ Singular & $60.342/0.039$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/0.566$
 % Explain the results
 The \texttt{facstd} backend is the only tested backend that completes its run on
 the physical system, and it does so with both ordinary branching and variable
-zeroing.  Every other backend finds the full solution set, but can't certify
-that the remaining branches are UNSAT.
+zeroing.  The five Gr\"obner-basis backends recover all 32 satisfiable branches
+found by the complete \texttt{facstd} run.  They time out on the remaining
+branch, which \texttt{facstd} certifies as UNSAT.  Thus, they recover the full
+solution set but do not independently certify its completeness.
