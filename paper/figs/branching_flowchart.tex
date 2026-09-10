@@ -17,16 +17,17 @@
 ]
 
 % ---- initialization and refinement ----
-\node[blue box] (init) {%
-    \textcolor{blue}{\bfseries Initialize}\\
-    $P = \{p_1,\ldots,p_m\}$, $C,S \leftarrow \emptyset$};
-
-\node[blue box, right=12mm of init] (factors) {%
+\node[blue box, text width=45mm] (factors) {%
     \textcolor{blue}{\bfseries Refine}\\
-    Interreduce and factor to obtain $\mathcal L(P)$};
+    Interreduce and\\ factor to obtain $\mathcal L(P)$};
+
+\node[blue box, text width=43mm, right=8mm of factors] (init) {%
+    \textcolor{blue}{\bfseries Initialize}\\
+    $P = \{p_1,\ldots,p_m\}$\\
+    $C,S \leftarrow \emptyset$};
 
 % ---- loop over terminal hitting sets ----
-\node[loop box, below=9mm of factors] (loop) {%
+\node[loop box, below=9mm of factors, xshift=22mm] (loop) {%
     \textcolor{orange!75!black}{\bfseries Next set}\\
     $H\in\mathcal L(P)$};
 
@@ -41,25 +42,25 @@
     {\textcolor{blue}{\bfseries Solve $H$}};
 
 % ---- two outcome branches ----
-\node[red box] (unsat) at ($(solve.south)+(-27mm,-14mm)$) {%
+\node[red box, anchor=west] (unsat) at ($(solve.south)+(8mm,-10mm)$) {%
     \textcolor{red}{\bfseries UNSAT}\\
     Learn UNSAT core $U\subseteq H$};
 
-\node[green box] (sat) at ($(solve.south)+(27mm,-14mm)$) {%
+\node[green box, anchor=east] (sat) at ($(solve.south)+(-8mm,-10mm)$) {%
     \textcolor{green!45!black}{\bfseries SAT}\\
     Add solutions to $S$};
 
 % ---- bottom rail ----
-\coordinate (raill) at ($(unsat.south)+(0,-4mm)$);
+\coordinate (raill) at ($(sat.south)+(0,-4mm)$);
 \coordinate (railm) at (raill -| solve.south);
-\coordinate (railr) at (raill -| sat.south);
+\coordinate (railr) at (raill -| unsat.south);
 
 % ---- return ----
 \node[return box] (return) at ($(railm)+(0,-10mm)$)
     {\textcolor{violet}{\bfseries Return $(S,C)$}};
 
 % ---- arrows: top pipeline ----
-\draw[arr] (init) -- (factors);
+\draw[arr] (init.west) -- (factors.east);
 \coordinate (entry) at ($(loop.north)+(0,4mm)$);
 \draw[arr, rounded corners=5pt]
     (factors.south) |- (entry) -- (loop.north);
@@ -68,17 +69,21 @@
 \draw[arr] (loop.south) -- (learned.north);
 \draw[arr] (learned.east) -- node[above] {Yes} (prune.west);
 \draw[arr] (learned.south) -- node[right] {No} (solve.north);
-\coordinate (outcome split) at (solve.south |- unsat.east);
+\coordinate (outcome split) at ($(solve.south)+(0,-6mm)$);
 \draw[line width=1pt] (solve.south) -- (outcome split);
-\draw[arr] (outcome split) -- (unsat.east);
-\draw[arr] (outcome split) -- (sat.west);
+\draw[arr] (outcome split)
+    .. controls +(0,-2.2mm) and +(-2.2mm,0) .. ++(4mm,-4mm)
+    -- (unsat.west);
+\draw[arr] (outcome split)
+    .. controls +(0,-2.2mm) and +(2.2mm,0) .. ++(-4mm,-4mm)
+    -- (sat.east);
 
 % ---- bottom rail into return ----
-\draw[line width=1pt] (unsat.south) -- (raill) -- (railr) -- (sat.south);
+\draw[line width=1pt] (sat.south) -- (raill) -- (railr) -- (unsat.south);
 \draw[arr] (railm) -- node[right] {done} (return);
 
 % ---- feedback: merge both routes before re-entering the loop ----
-\coordinate (fbcol) at ($(prune.east)+(10mm,0)$);
+\coordinate (fbcol) at (init.east |- prune.east);
 \coordinate (feedback) at (fbcol |- loop.east);
 \draw[line width=1pt, rounded corners=5pt]
     (prune.east) -- (prune.east -| fbcol) -- (feedback);
