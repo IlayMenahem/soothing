@@ -55,7 +55,7 @@ extraction and conflict-driven learning~\cite{sun2016,marques1999grasp,marques20
 If a factor branch remains too expensive for the chosen solver, the framework
 can refine it by splitting a selected variable into the cases $x=0$ and
 $x\neq 0$. This heuristic split can expose additional algebraic structure for
-the branch solver without discarding either case.
+the branch solver without discarding either case. The choice of splitting by equating to zero is admittedly arbitrary, but is found to be effective in practical problems arising from quantum field theory that we test for evaluation and comparison with established techniques. This choice is immediately generalizable to more complex splitting conditions. 
 
 % Theortical and experimental backing
 We prove that refinement and variable zeroing terminate and preserve the full
