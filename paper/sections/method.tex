@@ -1,4 +1,4 @@
-\section{Branching framework}
+\section{Factor branching framework}
 \label{sec:method}
 
 \subsection{Framework description}
@@ -46,7 +46,7 @@ The solver may also return a certified UNSAT core $U\subseteq H$. Any later
 hitting set containing $U$ is UNSAT and does not require another solver call.
 
 \begin{algorithm}[H]
-\caption{Branching}
+\caption{Factor branching}
 \label{alg:Branching}
 \begin{algorithmic}[1]
     \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$ and an exact branch solver $\mathcal{B}$.
@@ -85,7 +85,7 @@ to prune more difficult hitting sets.
 \begin{figure}[H]
     \centering
     \resizebox{0.72\textwidth}{!}{\input{figs/branching_flowchart.tex}}
-    \caption{Branching procedure of Algorithm~\ref{alg:Branching}. Refinement
+    \caption{Factor branching procedure of Algorithm~\ref{alg:Branching}. Refinement
     produces terminal hitting-set branches, which the exact solver either
     represents or certifies as UNSAT.}
     \label{fig:branching_flowchart}
@@ -229,7 +229,7 @@ Every representation added to $S$ is exact, which proves soundness, and the
 equality proves completeness. Every member of $C$ is certified by construction.
 \end{proof}
 
-Finally, we show that the branching algorithm terminates.
+Finally, we show that the factor branching algorithm terminates.
 \begin{theorem}
 \label{thm:branching-termination}
 If the exact solver is known to terminate, then Algorithm~\ref{alg:Branching} terminates.

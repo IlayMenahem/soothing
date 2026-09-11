@@ -18,9 +18,9 @@ Macaulay2 1.26.06, and a numerical method from HomotopyContinuation.jl under
 Julia 1.12.6~\cite{singular2025,macaulay2,breiding2018homotopy,
 bezanson2017julia}.
 
-For Algorithm~\ref{alg:ZeroingBranching}, we test M4GB, F5, GVW, Symbolica,
+For Algorithm~\ref{alg:ZeroingBranching}, we test M4GB, F5, GVW, F4,
 and Singular as branch solvers, disable UNSAT-core learning, and impose a
-three-second limit on each cover computation.  We selected this cutoff by
+three-second limit on each hitting-set computation.  We selected this cutoff by
 trying one, two, three, and five seconds on the hard gated systems.  Three
 seconds is the smallest tested value that lets Singular complete the Katsura-8
 residual (about 2.6 seconds); five seconds completes no additional hard system
@@ -28,11 +28,11 @@ and only delays the subsequent splits.
 
 We ran the benchmark on an Apple M4 Pro with 14 CPU cores and 24 GB of memory.
 Every table entry is a single run. Every method received 60 seconds per system;
-the three-second zeroing limit is an inner, per-cover limit within that budget.
+the three-second variable zeroing limit is an inner, per-hitting-set limit within that budget.
 
-For branching and variable zeroing, $T$ is end-to-end wall time and $F$ is the
-time from the start of the minimal-hitting-set search to its first satisfiable
-hitting set.  Factorization and input processing are therefore included in
+For factor branching and variable zeroing, $T$ is end-to-end wall time and $F$ is the
+time to first SAT branch, measured from the start of the
+minimal-hitting-set search.  Factorization and input processing are therefore included in
 $T$ but not in $F$.
 The complete measurements are stored in the appendix.
 
@@ -44,7 +44,7 @@ The baseline has 20 generated systems in six families.
     \item Signed-distance cycles and affine-factor hypergraphs test many inexpensive hitting sets.
     \item The overlapping random multiples use seeded dense quadratic factors that recur across equations, with no factor shared by every equation.
     \item For gated systems, we create a new variable and multiply every equation in Cyclic, Katsura, or dense quadratic by it~\cite{bjorck1991cyclic,boege1986examples}.
-    \item This produces one easy selector cover and one nonlinear residual cover.
+    \item This produces one easy selector hitting set and one nonlinear residual hitting set.
 \end{itemize}
 
 \begin{table}[H]
@@ -71,12 +71,12 @@ Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $31,304$ \\
 
 The overlapping-random-multiple runs disable interreduction so that the
 generated factor-incidence pattern reaches the hitting-set enumerator unchanged.
-All other branching runs use interreduction.  Table~\ref{tab:baseline-comparison}
-selects the fastest completed branching backend, the fastest completed
-zeroing backend observed, and the fastest completed method in each baseline
-class.  A branching or zeroing entry gives $T/F$ in seconds;
+All other factor branching runs use interreduction.  Table~\ref{tab:baseline-comparison}
+selects the fastest completed factor branching backend, the fastest completed
+variable zeroing backend observed, and the fastest completed method in each baseline
+class.  A factor branching or variable zeroing entry gives $T/F$ in seconds;
 the other entries give total wall time.  ``Timeout'' means that every tested
-method in that class timed out.  ``Partial'' means that zeroing returned at
+method in that class timed out.  ``Partial'' means that variable zeroing returned at
 least one unresolved branch, and ``error'' records a failed run rather than a
 mathematical conclusion.
 
@@ -87,18 +87,18 @@ mathematical conclusion.
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{l l l l l l}
 \hline
-System & Best branching $T/F$ & Selected zeroing $T/F$ & Best direct GB & Best decomposition & Numerical \\
+System & Best factor branching $T/F$ & Selected variable zeroing $T/F$ & Best direct GB & Best decomposition & Numerical \\
 \hline
-Signed distance, $n=8$ & Symb. $0.008/0.000$ & Symb. $0.008/0.001$ & Symb. $0.008$ & facstd $0.190$ & $32.410$ \\
-Signed distance, $n=10$ & Symb. $0.025/0.002$ & Symb. $0.025/0.002$ & Symb. $0.029$ & facstd $0.430$ & $29.944$ \\
-Signed distance, $n=12$ & Symb. $0.087/0.002$ & Symb. $0.091/0.003$ & Symb. $0.472$ & primdec $3.056$ & $36.880$ \\
-Overlapping $(4,6,2)$ & F5 $0.008/0.000$ & F5 $0.009/0.001$ & Symb. $0.413$ & facstd $0.265$ & $30.069$ \\
+Signed distance, $n=8$ & F4 $0.008/0.000$ & F4 $0.008/0.001$ & F4 $0.008$ & facstd $0.190$ & $32.410$ \\
+Signed distance, $n=10$ & F4 $0.025/0.002$ & F4 $0.025/0.002$ & F4 $0.029$ & facstd $0.430$ & $29.944$ \\
+Signed distance, $n=12$ & F4 $0.087/0.002$ & F4 $0.091/0.003$ & F4 $0.472$ & primdec $3.056$ & $36.880$ \\
+Overlapping $(4,6,2)$ & F5 $0.008/0.000$ & F5 $0.009/0.001$ & F4 $0.413$ & facstd $0.265$ & $30.069$ \\
 Overlapping $(6,8,3)$ & F5 $0.132/0.001$ & F5 $0.132/0.021$ & timeout & timeout & timeout \\
 Overlapping $(8,10,3)$ & Singular $2.931/0.010$ & Singular $2.892/0.152$ & timeout & timeout & timeout \\
 Positive affine $(8,6,4)$ & F5 $0.008/0.000$ & Singular $0.181/0.012$ & timeout & facstd $0.368$ & $50.934$ \\
-Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & Symb. $0.060/0.007$ & timeout & facstd $1.836$ & timeout \\
+Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & F4 $0.060/0.007$ & timeout & facstd $1.836$ & timeout \\
 Positive affine $(12,10,6)$ & F5 $0.067/0.000$ & Singular $9.600/0.078$ & timeout & facstd $53.318$ & timeout \\
-Gated Cyclic-5 & Symb. $0.009/0.000$ & Symb. $0.011/0.001$ & Symb. $0.008$ & facstd $0.181$ & $35.054$ \\
+Gated Cyclic-5 & F4 $0.009/0.000$ & F4 $0.011/0.001$ & F4 $0.008$ & facstd $0.181$ & $35.054$ \\
 Gated Cyclic-6 & Singular $0.045/0.008$ & Singular $0.043/0.009$ & Singular $0.309$ & M2 $2.620$ & $37.314$ \\
 Gated Cyclic-7 & timeout & Singular partial $24.118/0.009$ & timeout & timeout & $58.287$ \\
 Gated Katsura-6 & Singular $0.049/0.008$ & Singular $0.049/0.009$ & GVW $0.226$ & facstd $0.233$ & $31.532$ \\
@@ -108,40 +108,40 @@ Gated dense, $n=5$ & Singular $0.029/0.008$ & Singular $0.029/0.008$ & M4GB $0.1
 Gated dense, $n=6$ & Singular $0.546/0.008$ & Singular $0.535/0.008$ & M4GB $4.736$ & facstd $0.755$ & $30.053$ \\
 Gated dense, $n=7$ & Singular $42.020/0.017$ & error & timeout & facstd $48.820$ & $32.261$ \\
 Square affine $(8,4)$ & Singular $0.470/0.023$ & Singular $0.445/0.012$ & timeout & facstd $0.601$ & timeout \\
-Square affine $(10,5)$ & Symb. $1.174/0.000$ & Symb. $1.326/0.015$ & timeout & facstd $2.141$ & timeout \\
+Square affine $(10,5)$ & F4 $1.174/0.000$ & F4 $1.326/0.015$ & timeout & facstd $2.141$ & timeout \\
 \hline
 \#systems solved & $19$ & $19$ & $10$ & $17$ & $14$ \\
 \#fastest (ties counted) & $12$ & $10$ & $2$ & $0$ & $2$ \\
 \hline
 \end{tabular}%
 }
-\caption{Best completed baseline results and the fastest completed zeroing
+\caption{Best completed baseline results and the fastest completed variable zeroing
 backend observed. All times are in seconds.}
 \label{tab:baseline-comparison}
 \end{table}
 
-% [Theortical explanation of when branching and variable zeroing are a good choice]
+% [Theortical explanation of when factor branching and variable zeroing are a good choice]
 
-Branching is a good choice when factorization produces branch ideals that are
+Factor branching is a good choice when factorization produces branch ideals that are
 substantially easier than the expanded input ideal.  A large number of hitting
 sets can still be manageable when branch solving and core checks are cheap;
 the positive affine family shows that the hitting-set count alone is not
-decisive.  The method is less effective when one cover retains the difficulty
+decisive.  The method is less effective when one hitting set retains the difficulty
 of the original nonlinear system, as Cyclic-7 does.
 
 % [Back up the explanation with current or new experiments]
 
-The first-solution measurements support this explanation.  On positive affine
+The measurements of time to first SAT branch support this explanation.  On positive affine
 $(12,10,6)$, $F$ rounds to $0.000$ seconds despite the 833 hitting sets.  On
-gated Katsura-8, the first satisfiable cover appears in $0.052$ seconds, but
+gated Katsura-8, the first SAT branch is found in $0.052$ seconds, but
 the full run takes $2.657$ seconds.  Factorization therefore finds the easy
 component quickly, while the nonlinear residual controls completion time.
 
 % [Variable zeroing analysis]
-Variable zeroing is intended for a narrower case: a cover has timed out, but
-branching a variable to zero or nonzero, both simplify it the system.
-The current benchmark gives limited evidence for that mechanism because none of the completed zeroing runs requires a split.
-On Cyclic-7, zeroing continues the stalled search and returns a partial result,
+Variable zeroing is intended for a narrower case: a hitting set has timed out, but
+splitting a variable into zero and nonzero cases simplifies the system in both cases.
+The current benchmark gives limited evidence for that mechanism because none of the completed variable zeroing runs requires a split.
+On Cyclic-7, variable zeroing continues the stalled search and returns a partial result,
 but it does not complete the residual branch.
 
 
@@ -155,10 +155,10 @@ theory)~\cite{rafiezinedine2018simplifying,vacca2010asymptotic}.
 Solving this system can lead to a better understanding of how quantum gravity
 may look like~\cite{vacca2010asymptotic}.
 
-For this larger system, zeroing uses a one-second limit per cover and a
-60-second total runtime limit.  Ordinary branching uses a 60-second limit per
-cover and a 65-second external hard stop.  Thus, an earlier completed cover can
-make the reported branching wall time slightly exceed 60 seconds.
+For this larger system, variable zeroing uses a one-second limit per hitting set and a
+60-second total runtime limit.  Factor branching uses a 60-second limit per
+hitting set and a 65-second external hard stop.  Thus, an earlier completed hitting set can
+make the reported factor branching wall time slightly exceed 60 seconds.
 
 % Performance table of the pipeline by the internal subsolver (i.e F4, F5, etc.)
 \begin{table}[H]
@@ -168,12 +168,12 @@ make the reported branching wall time slightly exceed 60 seconds.
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{l l l l l}
 \hline
-Backend & Branching $T/F$ (s) & Branching result & Zeroing $T/F$ (s) & Zeroing result \\
+Backend & Factor branching $T/F$ (s) & Factor branching result & Variable zeroing $T/F$ (s) & Variable zeroing result \\
 \hline
 M4GB & $60.793/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/1.052$ & partial: 7 comp., 52 splits, 11 unresolved \\
 F5 & $61.422/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/2.059$ & partial: 13 comp., 63 splits, 9 unresolved \\
 GVW & $61.653/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/2.071$ & partial: 13 comp., 60 splits, 9 unresolved \\
-Symbolica & $60.218/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/1.051$ & partial: 7 comp., 56 splits, 12 unresolved \\
+F4 & $60.218/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/1.051$ & partial: 7 comp., 56 splits, 12 unresolved \\
 Singular & $60.342/0.039$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/0.566$ & partial: 1 comp., 44 splits, 12 unresolved \\
 \texttt{facstd} & $1.067/0.013$ & complete: 32 SAT, 1 UNSAT; $d=14$ & $0.824/0.077$ & complete: 6 comp., 0 splits, 0 unresolved \\
 \hline
@@ -185,8 +185,8 @@ Singular & $60.342/0.039$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/0.566$
 
 % Explain the results
 The \texttt{facstd} backend is the only tested backend that completes its run on
-the physical system, and it does so with both ordinary branching and variable
-zeroing.  The five Gr\"obner-basis backends recover all 32 satisfiable branches
+the physical system, and it does so with both factor branching and variable
+zeroing.  The five Gr\"obner-basis backends recover all 32 SAT branches
 found by the complete \texttt{facstd} run.  They time out on the remaining
 branch, which \texttt{facstd} certifies as UNSAT.  Thus, they recover the full
 solution set but do not independently certify its completeness.

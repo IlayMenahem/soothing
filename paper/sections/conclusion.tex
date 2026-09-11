@@ -7,16 +7,15 @@ The framework reuses certified UNSAT cores to prune branches and can recursively
 split timed-out branches into the cases $x=0$ and $x\neq0$.
 
 We proved that refinement terminates and preserves the full solution set.
-Recursive splitting also preserves the solution set and terminates provided
+Variable zeroing also preserves the solution set and terminates provided
 that each timed solver call returns. The output is complete whenever no branches
 remain unresolved.
 
-On the baseline benchmarks, branching completed 19 of 20 systems, compared with
+On the baseline benchmarks, factor branching completed 19 of 20 systems, compared with
 10 for direct Gr\"obner-basis methods, 17 for decomposition methods, and 14 for
 the numerical method. On the QFT system, \texttt{facstd} was the only tested
 backend to certify a complete result; the other backends recovered the
-satisfiable branches but did not certify completeness.
+SAT branches but did not certify completeness.
 
-Current experiments provide limited evidence about when recursive zero/nonzero
-splitting improves completion. Future work will develop more effective splitting
+Current experiments provide limited evidence about when variable zeroing improves completion. Future work will develop more effective splitting
 strategies and more efficient ways to generate and reuse UNSAT cores.

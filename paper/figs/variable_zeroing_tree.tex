@@ -107,7 +107,7 @@
 \draw[branch] (c15z) -- (c19.north);
 \draw[branch] (c15.south) -- node[edge label,sloped,above] {$\ne 0$} (c20.north);
 
-\node[empty branch] (empty1) at (-2.8,-7.05) {\vzNoCovers\ no covers};
+\node[empty branch] (empty1) at (-2.8,-7.05) {\vzNoCovers\ no hitting sets};
 \node[timeout cover] (c11) at (0.2,-7.05)
     {\vzTimeout\\[-1pt]$\mathit{xr}$};
 \draw[branch] (c10.south) -- node[edge label,sloped,above] {$=0$} (empty1.north);
@@ -136,17 +136,17 @@
 \draw[branch] (c11z) -- (c13.north);
 \draw[branch] (c11.south) -- node[edge label,sloped,above] {$\ne 0$} (c14.north);
 
-\node[empty branch] (empty2) at (11.0,-8.95) {\vzNoCovers\ no covers};
+\node[empty branch] (empty2) at (11.0,-8.95) {\vzNoCovers\ no hitting sets};
 \node[cover] (c26) at (13.6,-8.95) {\vzInconsistent};
 \draw[branch] (c25.south) -- node[edge label,sloped,above] {$=0$} (empty2.north);
 \draw[branch] (c25.south) -- node[edge label,sloped,above] {$\ne 0$} (c26.north);
 
 \node[draw=gray!55,fill=white,rounded corners=2pt,inner sep=3pt,anchor=north]
-    at (3.2,-9.75) {\textbf{Cover outcome:}\quad
-    \vzInconsistent\ inconsistent\quad
+    at (3.2,-9.75) {\textbf{Hitting-set outcome:}\quad
+    \vzInconsistent\ UNSAT\quad
     \vzPruned\ core-pruned\quad
-    \vzConsistent\ consistent\quad
+    \vzConsistent\ SAT\quad
     \vzTimeout\ timed out\quad
-    \vzNoCovers\ no covers};
+    \vzNoCovers\ no hitting sets};
 
 \end{tikzpicture}

@@ -1,7 +1,7 @@
 \section{Recursive splitting}
 \label{sec:variable-zeroing}
 
-\subsection{Branching with variable zeroing}
+\subsection{Factor branching with variable zeroing}
 \label{subsec:zeroing-branching}
 
 % Motivation for splitting
@@ -9,7 +9,7 @@ Suppose the solver does not terminate within a reasonable amount of time on a
 hitting set produced by Algorithm~\ref{alg:Branching}.
 
 % What is splitting
-Then we can further simplify the system by branching again. In each child
+Then we can further simplify the system by recursive splitting. In each child
 branch, we assume a side condition and run Algorithm~\ref{alg:Branching} on the
 simplified system. This process continues until the solver terminates or the
 computation budget is exhausted.
@@ -20,14 +20,14 @@ should also simplify the system for the solver input and work well with
 Algorithm~\ref{alg:Refine}.
 
 % What is the condition we use, and why?
-In this work, the side conditions are whether a specific variable is zero or
-nonzero. Our experience with the physical systems considered here suggests that
+In this work, we use \emph{variable zeroing}: recursive splitting with the
+side conditions $x=0$ and $x\neq0$ for a selected variable $x$. Our experience with the physical systems considered here suggests that
 a variable is often always zero or always nonzero.
 
 % Pseudocode for the method with variable zeroing
 \begin{algorithm}[H]
 \small
-\caption{Recursive branching with variable zeroing}
+\caption{Factor branching with variable zeroing}
 \label{alg:ZeroingBranching}
 \begin{algorithmic}[1]
     \Require A polynomial system $P$ and a timeout $\tau$
@@ -36,7 +36,7 @@ a variable is often always zero or always nonzero.
         \State \Return $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,\emptyset}$
     \EndFunction
     \Function{SolveByZeroing}{$Q,X,Z,N,\tau,C$}
-        \State $(S,T) \gets \Call{BranchingWithTimeout}{Q,\tau,C}$
+        \State $(S,T) \gets \Call{FactorBranchingWithTimeout}{Q,\tau,C}$
         \State $U \gets \emptyset$ \Comment{Unresolved branches}
 
         \ForAll{$R \in T$}
@@ -66,7 +66,7 @@ Subsection~\ref{subsec:nonzero-encoding} describes two ways to encode these
 conditions as polynomial equations.
 
 Solutions of the nonzero branch are projected onto the original variables, so
-the saturation variable does not appear in the output. The zero and nonzero
+the auxiliary variable does not appear in the output. The zero and nonzero
 decisions remain part of the solution-set representation.
 
 \begin{figure}[H]
@@ -128,8 +128,8 @@ $x\neq0$. Suppose, up to exchanging the two children, that
 \[
     \mathcal H_0=\emptyset \qquad \text{and} \qquad \mathcal H_1=\{H\}.
 \]
-The first child is inconsistent. Theorem~\ref{thm:branch-decomposition} and the
-zeroing split give
+The first child is UNSAT. Theorem~\ref{thm:branch-decomposition} and the
+variable-zeroing split give
 \[
     V_Y(Q;Z,N)=V_Y(H;Z,N\cup\{x\}).
 \]
@@ -169,8 +169,8 @@ $Q_1=\mathrm{UpdateSaturation}(Q,N\cup\{x\})$, the theorem gives
     \cup V_Y(Q_1;Z,N\cup\{x\}).
 \end{equation}
 
-If \textsc{BranchingWithTimeout} returns solved representations $S$ and
-timed-out hitting sets $T$, the proof of
+If factor branching with a timeout returns solved representations $S$
+and timed-out hitting sets $T$, the proof of
 Theorem~\ref{thm:branching-correctness} gives
 \begin{equation}
 \label{eq:branching-timeout-partition}
@@ -211,7 +211,7 @@ returns after $\tau$.
 
 \begin{proof}
 Algorithm~\ref{alg:Refine} terminates by Theorem~\ref{thm:refine-termination}
-and returns finitely many hitting sets. Each zeroing split removes one variable
+and returns finitely many hitting sets. Each variable-zeroing split removes one variable
 from the finite set $X$, so every recursive path is finite. Therefore the whole
 recursion tree is finite.
 \end{proof}

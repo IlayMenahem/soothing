@@ -23,7 +23,7 @@
     $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,\emptyset}$};
 
 \node[blue box, below=7mm of init] (solve) {%
-    $(S,T)\leftarrow\Call{BranchingWithTimeout}{Q,\tau,C}$};
+    $(S,T)\leftarrow\Call{FactorBranchingWithTimeout}{Q,\tau,C}$};
 \node[decision, below=7mm of solve] (next) {Unresolved\\$R\in T$?};
 \node[return box, left=20mm of next] (return) {%
     \textcolor{violet}{\bfseries Return}\\$(S,U,C)$};

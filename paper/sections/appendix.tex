@@ -11,7 +11,7 @@ end-to-end wall times in seconds.  \textnormal{P} marks a partial run and
 
 Table~\ref{tab:appendix-branching} reports all five branch-solver
 configurations.  A partial entry found the easy component shown in the main
-text but left at least one cover unresolved.
+text but left at least one hitting set unresolved.
 
 \begin{table}[H]
 \centering
@@ -20,7 +20,7 @@ text but left at least one cover unresolved.
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{l r r r r r}
 \hline
-System & M4GB & F5 & GVW & Symbolica & Singular \\
+System & M4GB & F5 & GVW & F4 & Singular \\
 \hline
 Signed distance, $n=8$ & $0.651$ & $0.053$ & $0.122$ & $0.008$ & $0.083$ \\
 Signed distance, $n=10$ & $0.046$ & $10.927$ & $45.797$ & $0.025$ & $0.084$ \\
@@ -52,13 +52,13 @@ Square affine $(10,5)$ & $14.750$ & TO & $47.561$ & $1.174$ & $2.548$ \\
 \subsection{Variable zeroing}
 
 Table~\ref{tab:appendix-zeroing} gives the complete output of the fastest
-completed zeroing configuration used in Table~\ref{tab:baseline-comparison}.
-Every backend receives three seconds per cover and a 60-second outer budget,
+completed variable zeroing configuration used in Table~\ref{tab:baseline-comparison}.
+Every backend receives three seconds per hitting set and a 60-second outer budget,
 and UNSAT-core learning is disabled.
 The overlapping-random-multiple rows disable interreduction, as in the
-ordinary branching experiment.  Here $N$ is the number of recursion nodes,
-$E$ the number of cover evaluations, $O/S$ the numbers of per-cover timeouts
-and zeroing splits, and $C/U$ the numbers of returned components and unresolved
+factor branching experiment.  Here $N$ is the number of recursion nodes,
+$E$ the number of hitting-set evaluations, $O/S$ the numbers of per-hitting-set timeouts
+and variable zeroing splits, and $C/U$ the numbers of returned components and unresolved
 branches.  The time entry is $T/F$.
 
 \begin{table}[H]
@@ -70,16 +70,16 @@ branches.  The time entry is $T/F$.
 \hline
 System & Backend & $T/F$ & $N$ & $E$ & $O/S$ & $C/U$ & Result \\
 \hline
-Signed distance, $n=8$ & Symbolica & $0.008/0.001$ & 1 & 8 & $0/0$ & $8/0$ & complete \\
-Signed distance, $n=10$ & Symbolica & $0.025/0.002$ & 1 & 8 & $0/0$ & $8/0$ & complete \\
-Signed distance, $n=12$ & Symbolica & $0.091/0.003$ & 1 & 32 & $0/0$ & $32/0$ & complete \\
+Signed distance, $n=8$ & F4 & $0.008/0.001$ & 1 & 8 & $0/0$ & $8/0$ & complete \\
+Signed distance, $n=10$ & F4 & $0.025/0.002$ & 1 & 8 & $0/0$ & $8/0$ & complete \\
+Signed distance, $n=12$ & F4 & $0.091/0.003$ & 1 & 32 & $0/0$ & $32/0$ & complete \\
 Overlapping $(4,6,2)$ & F5 & $0.009/0.001$ & 1 & 4 & $0/0$ & $4/0$ & complete \\
 Overlapping $(6,8,3)$ & F5 & $0.132/0.021$ & 1 & 16 & $0/0$ & $16/0$ & complete \\
 Overlapping $(8,10,3)$ & Singular & $2.892/0.152$ & 1 & 28 & $0/0$ & $28/0$ & complete \\
 Positive affine $(8,6,4)$ & Singular & $0.181/0.012$ & 1 & 4 & $0/0$ & $4/0$ & complete \\
-Positive affine $(10,8,5)$ & Symbolica & $0.060/0.007$ & 1 & 242 & $0/0$ & $242/0$ & complete \\
+Positive affine $(10,8,5)$ & F4 & $0.060/0.007$ & 1 & 242 & $0/0$ & $242/0$ & complete \\
 Positive affine $(12,10,6)$ & Singular & $9.600/0.078$ & 1 & 511 & $0/0$ & $511/0$ & complete \\
-Gated Cyclic-5 & Symbolica & $0.011/0.001$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Cyclic-5 & F4 & $0.011/0.001$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
 Gated Cyclic-6 & Singular & $0.043/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
 Gated Cyclic-7 & Singular & $24.118/0.009$ & 15 & 17 & $8/7$ & $1/1$ & partial \\
 Gated Katsura-6 & Singular & $0.049/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
@@ -89,20 +89,20 @@ Gated dense, $n=5$ & Singular & $0.029/0.008$ & 1 & 2 & $0/0$ & $2/0$ & complete
 Gated dense, $n=6$ & Singular & $0.535/0.008$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
 Gated dense, $n=7$ & Singular & $4.797$/-- & -- & -- & -- & -- & error \\
 Square affine $(8,4)$ & Singular & $0.445/0.012$ & 1 & 31 & $0/0$ & $31/0$ & complete \\
-Square affine $(10,5)$ & Symbolica & $1.326/0.015$ & 1 & 304 & $0/0$ & $304/0$ & complete \\
+Square affine $(10,5)$ & F4 & $1.326/0.015$ & 1 & 304 & $0/0$ & $304/0$ & complete \\
 \hline
 \end{tabular}%
 }
 \caption{Selected variable-zeroing result for every system.  Times are
-end-to-end wall time and first-solution latency in seconds.}
+end-to-end wall time and time to first SAT branch in seconds.}
 \label{tab:appendix-zeroing}
 \end{table}
 
 The dense $n=7$ run failed while constructing the first recursive child:
 the expanded Singular program exceeded the operating system's command-line
 argument limit.  This is an implementation error, not an UNSAT result or a
-timeout.  We also tried M4GB, F5, GVW, and Symbolica on this system.  These
-backends execute in-process; after a per-cover timeout their non-cancellable
+timeout.  We also tried M4GB, F5, GVW, and F4 on this system.  These
+backends execute in-process; after a per-hitting-set timeout their non-cancellable
 worker threads continued alongside the recursive children until the process
 was killed under memory pressure.  Singular remains preferable for the hard
 rows because its external worker can be terminated.  The Cyclic-7 run
@@ -118,7 +118,7 @@ one unresolved branch.
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{l r r r r r r}
 \hline
-System & M4GB & F5 & GVW & Symbolica & Singular & Macaulay2 \\
+System & M4GB & F5 & GVW & F4 & Singular & Macaulay2 \\
 \hline
 Signed distance, $n=8$ & $0.646$ & $0.014$ & $0.010$ & $0.008$ & $0.333$ & $0.570$ \\
 Signed distance, $n=10$ & $0.130$ & $0.221$ & $0.112$ & $0.029$ & $0.194$ & $0.518$ \\
