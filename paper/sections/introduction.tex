@@ -6,7 +6,7 @@ Systems of multivariate polynomial equations appear whenever a symbolic model
 contains nonlinear algebraic constraints.
 Applications include robotics, coding theory, optimization, statistics, and physics \cite{sturmfels2002solving}.
 In many of these problems, an isolated solution is not enough.
-One needs the dimension of the solution set, its irreducible components, or exact relations that hold on every solution.
+One needs the dimension of the solution set, its irreducible components, or the exact relations that hold on every solution.
 These are questions about the variety and its defining ideal, rather than about a single point \cite{cox2015ideals,kreuzer2000computational}.
 
 % History of the field and various methods
@@ -34,7 +34,7 @@ zero-dimensional radical ideals \cite{kera2024learning}.
 % What's the gap?
 Despite this progress, the worst-case complexity of Gr\"obner-basis computation
 is doubly exponential, and large systems can remain inaccessible to monolithic
-methods \cite{mayr1982complexity}. Existing methods do not generally break down
+methods \cite{mayr1982complexity}. Existing methods generally do not break down
 large systems into smaller subproblems which are much more manageable.
 
 % Technical description of the method - hitting sets
@@ -55,7 +55,7 @@ extraction and conflict-driven learning~\cite{sun2016,marques1999grasp,marques20
 If a factor branch remains too expensive for the chosen solver, the framework
 can refine it by splitting a selected variable into the cases $x=0$ and
 $x\neq 0$. This heuristic split can expose additional algebraic structure for
-the branch solver without discarding either case. The choice of splitting by equating to zero is admittedly arbitrary, but is found to be effective in practical problems arising from quantum field theory that we test for evaluation and comparison with established techniques. This choice is immediately generalizable to more complex splitting conditions. 
+the branch solver without discarding either case. The choice of splitting by equating to zero is admittedly arbitrary, but is found to be effective in practical problems arising from quantum field theory that we test for evaluation and comparison with established techniques. This choice is immediately generalizable to more complex splitting conditions.
 
 % Theortical and experimental backing
 We prove that refinement and variable zeroing terminate and preserve the full
@@ -64,4 +64,4 @@ resolved by the branch solver. We compare the resulting implementation with
 direct Gr\"obner-basis computation, symbolic decomposition, and numerical
 homotopy on generated benchmarks. We also apply the framework to a system from
 quantum field theory: with the \texttt{facstd} backend, the framework completes
-the computation, whereas the other tested backends leave unresolved branches.
+the computation, whereas the any other standard solver we've used timed out.
