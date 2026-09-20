@@ -32,10 +32,12 @@ zero-dimensional radical ideals \cite{kera2024learning}.
 % A statement on complexity and limit of what is feasible.
 
 % What's the gap?
-Despite this progress, the worst-case complexity of Gr\"obner-basis computation
-is doubly exponential, and large systems can remain inaccessible to monolithic
-methods \cite{mayr1982complexity}. Existing methods generally do not break down
-large systems into smaller subproblems which are much more manageable.
+Despite this progress, 
+%the worst-case complexity of Gr\"obner-basis computation is doubly exponential, and 
+large systems can remain inaccessible 
+%to monolithic methods \cite{mayr1982complexity}
+. 
+Existing methods generally do not break down large systems into smaller subproblems which are much more manageable.
 
 % Technical description of the method - hitting sets
 Here, we introduce a solver-agnostic framework that divides a polynomial system
@@ -45,6 +47,8 @@ each hitting set contains at least one factor from every equation and therefore
 defines one branch of the original solution set. An exact branch solver then
 either describes that branch, including any positive-dimensional families, or
 certifies that it is UNSAT.
+% somewhere inside this paragraph
+The advantage of our approach relative to most existing methods is breaking down a large system into smaller and more manageable subproblems.
 
 % UNSAT core learning
 To avoid repeated work, the framework learns certified UNSAT cores and prunes

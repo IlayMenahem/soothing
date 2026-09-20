@@ -15,7 +15,7 @@ generator and enumerate the minimal hitting sets of the factor sets.
 
 Here is the pseudocode for this refinement of a polynomial system $Q$ into a smaller set of subproblems.
 
-\begin{algorithm}[H]
+\begin{algorithm}[htbp]
 \caption{Refinement}
 \label{alg:Refine}
 \begin{algorithmic}[1]
@@ -45,7 +45,7 @@ For each $H\in\mathcal L(P)$, the branch solver must either describe $V(H)$ exac
 The solver may also return a certified UNSAT core $U\subseteq H$. Any later
 hitting set containing $U$ is UNSAT and does not require another solver call.
 
-\begin{algorithm}[H]
+\begin{algorithm}[htbp]
 \caption{Factor branching}
 \label{alg:Branching}
 \begin{algorithmic}[1]
@@ -82,7 +82,7 @@ cost. This ordering can help us find many UNSAT cores quickly which maybe used
 to prune more difficult hitting sets.
 
 % A flow chart of the method
-\begin{figure}[H]
+\begin{figure}[htbp]
     \centering
     \resizebox{0.72\textwidth}{!}{\input{figs/branching_flowchart.tex}}
     \caption{Factor branching procedure of Algorithm~\ref{alg:Branching}. Refinement
