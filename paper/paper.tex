@@ -1,4 +1,6 @@
-\documentclass[12pt]{article}
+% Elsevier CAS single-column template, bundle version 2.4 (2024/05/04).
+\documentclass[a4paper,fleqn]{cas-sc}
+\usepackage[authoryear,round,sort]{natbib}
 
 % packages
 \usepackage{amsmath, amsfonts, amssymb}
@@ -6,7 +8,6 @@
 \usepackage{algpseudocode}
 \usepackage{float}
 \usepackage{hyperref}
-\usepackage{geometry}
 \usepackage{bookmark}
 \usepackage[T1]{fontenc}
 
@@ -20,14 +21,59 @@
 \newtheorem{theorem}{Theorem}
 \newtheorem{corollary}{Corollary}
 
-\title{Accelerating Polynomial System Solving via Factorization and Unsatisfiable-Core Learning}
-\author{Ilay Menahem, Michael Shalyt, Ido Kaminer}
+% Existing citations are parenthetical references following manuscript prose.
+\let\cite\citep
 
 \begin{document}
+\let\WriteBookmarks\relax
+\def\floatpagepagefraction{1}
+\def\textpagefraction{.001}
+
+\shorttitle{Polynomial System Solving via Factorization and UNSAT-Core Learning}
+\shortauthors{Menahem et al.}
+
+\title[mode=title]{Accelerating Polynomial System Solving via Factorization and Unsatisfiable-Core Learning}
+\author[1]{Ilay Menahem}
+\author[1]{Michael Shalyt}
+\author[1, 2]{Ido Kaminer}
+
+\affiliation[1]{organization={Andrew and Erna Viterbi Faculty of Electrical and Computer Engineering, Technion -- Israel Institute of Technology},
+            city={Haifa},
+            postcode={3200003},
+            country={Israel}}
+\affiliation[2]{organization={Department of Materials Science and Engineering,
+Technion -- Israel Institute of Technology},
+            city={Haifa},
+            postcode={3200003},
+            country={Israel}}
+
+\begin{abstract}
+% [solving large sets of polynomial equations is important for problems in X Y Z]
+Polynomial systems are a fundamental language for describing algebraic and geometric problems in mathematics and its applications.
+Beyond finding individual solutions, one often seeks global properties of the solution space, such as its dimension and irreducible components, or structural properties and decompositions of the underlying polynomial ideal.
+% [many of those problems are still inaccessible \ldots]
+For large polynomial systems with many variables and high degrees, determining these global properties can become intractable.
+% [leading approaches include X Y Z] and [benchmark relative to other methods]
+Leading approaches include variants of Buchberger's algorithm with syzygy, resultants, and cylindrical algebraic decomposition.
+% [however, these approaches are limited by \ldots]
+However, even the most modern approaches still often fail on practical problems or slight perturbations of standard benchmarks.
+% [Here we ..., Describe our approach]
+Here we introduce a framework that divides a polynomial system into simpler sub problems.
+% [broadest strongest claim] and [we demonstrate it on X Y]
+The framework only assumes the solver used on each sub problem describes satisfiable (SAT) branches and certifies unsatisfiable (UNSAT) ones.
+If the solver also returns an UNSAT core, the framework can use it to prune later branches, following the same idea as conflict-driven clause learning (CDCL).
+In our experiments, we use Gr\"obner-basis solvers and apply the method to a system arising from research in quantum field theory for which no standard method in our comparison succeeds.
+% [outlook sentence on what would this contribute to in the figure / extensions for future work]
+Together, these ideas offer a path toward the exact analysis of previously inaccessible polynomial systems.
+\end{abstract}
+
+\begin{keywords}
+Polynomial systems \sep Gr\"obner bases \sep Factorization \sep
+Unsatisfiable cores \sep Conflict-driven learning
+\end{keywords}
 
 \maketitle
 
-\input{sections/abstract.tex}
 \input{sections/introduction.tex}
 \input{sections/preliminaries.tex}
 \input{sections/method.tex}
@@ -35,9 +81,12 @@
 \input{sections/experiments.tex}
 \input{sections/conclusion.tex}
 
-\bibliographystyle{plain}
+\bibliographystyle{cas-model2-names}
 \bibliography{references}
 
 \input{sections/appendix.tex}
 
+% Flush appendix floats before CAS records the last page for its footer.
+\clearpage
+\addtocounter{page}{-1}
 \end{document}
