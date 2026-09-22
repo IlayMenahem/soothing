@@ -72,51 +72,47 @@ Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $31,304$ \\
 The overlapping-random-multiple runs disable interreduction so that the
 generated factor-incidence pattern reaches the hitting-set enumerator unchanged.
 All other factor branching runs use interreduction.  Table~\ref{tab:baseline-comparison}
-selects the fastest completed factor branching backend, the fastest completed
-variable zeroing backend observed, and the fastest completed method in each baseline
-class.  A factor branching or variable zeroing entry gives $T/F$ in seconds;
+selects the fastest completed factor branching backend and the fastest completed method in each baseline
+class.  A factor branching entry gives $T/F$ in seconds;
 the other entries give total wall time.  ``Timeout'' means that every tested
-method in that class timed out.  ``Partial'' means that variable zeroing returned at
-least one unresolved branch, and ``error'' records a failed run rather than a
-mathematical conclusion.
+method in that class timed out.
 
 \begin{table}[pos=htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{l l l l l l}
+\begin{tabular}{l l l l l}
 \hline
-System & Best factor branching $T/F$ & Selected variable zeroing $T/F$ & Best direct GB & Best decomposition & Numerical \\
+System & Best factor branching $T/F$ & Best direct GB & Best decomposition & Numerical \\
 \hline
-Signed distance, $n=8$ & F4 $0.008/0.000$ & F4 $0.008/0.001$ & F4 $0.008$ & facstd $0.190$ & $32.410$ \\
-Signed distance, $n=10$ & F4 $0.025/0.002$ & F4 $0.025/0.002$ & F4 $0.029$ & facstd $0.430$ & $29.944$ \\
-Signed distance, $n=12$ & F4 $0.087/0.002$ & F4 $0.091/0.003$ & F4 $0.472$ & primdec $3.056$ & $36.880$ \\
-Overlapping $(4,6,2)$ & F5 $0.008/0.000$ & F5 $0.009/0.001$ & F4 $0.413$ & facstd $0.265$ & $30.069$ \\
-Overlapping $(6,8,3)$ & F5 $0.132/0.001$ & F5 $0.132/0.021$ & timeout & timeout & timeout \\
-Overlapping $(8,10,3)$ & Singular $2.931/0.010$ & Singular $2.892/0.152$ & timeout & timeout & timeout \\
-Positive affine $(8,6,4)$ & F5 $0.008/0.000$ & Singular $0.181/0.012$ & timeout & facstd $0.368$ & $50.934$ \\
-Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & F4 $0.060/0.007$ & timeout & facstd $1.836$ & timeout \\
-Positive affine $(12,10,6)$ & F5 $0.067/0.000$ & Singular $9.600/0.078$ & timeout & facstd $53.318$ & timeout \\
-Gated Cyclic-5 & F4 $0.009/0.000$ & F4 $0.011/0.001$ & F4 $0.008$ & facstd $0.181$ & $35.054$ \\
-Gated Cyclic-6 & Singular $0.045/0.008$ & Singular $0.043/0.009$ & Singular $0.309$ & M2 $2.620$ & $37.314$ \\
-Gated Cyclic-7 & timeout & Singular partial $24.118/0.009$ & timeout & timeout & $58.287$ \\
-Gated Katsura-6 & Singular $0.049/0.008$ & Singular $0.049/0.009$ & GVW $0.226$ & facstd $0.233$ & $31.532$ \\
-Gated Katsura-7 & Singular $0.283/0.008$ & Singular $0.284/0.009$ & GVW $3.176$ & facstd $0.539$ & $31.980$ \\
-Gated Katsura-8 & Singular $2.657/0.052$ & Singular $2.588/0.009$ & timeout & facstd $3.596$ & $34.264$ \\
-Gated dense, $n=5$ & Singular $0.029/0.008$ & Singular $0.029/0.008$ & M4GB $0.171$ & facstd $0.198$ & $29.289$ \\
-Gated dense, $n=6$ & Singular $0.546/0.008$ & Singular $0.535/0.008$ & M4GB $4.736$ & facstd $0.755$ & $30.053$ \\
-Gated dense, $n=7$ & Singular $42.020/0.017$ & error & timeout & facstd $48.820$ & $32.261$ \\
-Square affine $(8,4)$ & Singular $0.470/0.023$ & Singular $0.445/0.012$ & timeout & facstd $0.601$ & timeout \\
-Square affine $(10,5)$ & F4 $1.174/0.000$ & F4 $1.326/0.015$ & timeout & facstd $2.141$ & timeout \\
+Signed distance, $n=8$ & F4 $0.008/0.000$ & F4 $0.008$ & facstd $0.190$ & $32.410$ \\
+Signed distance, $n=10$ & F4 $0.025/0.002$ & F4 $0.029$ & facstd $0.430$ & $29.944$ \\
+Signed distance, $n=12$ & F4 $0.087/0.002$ & F4 $0.472$ & primdec $3.056$ & $36.880$ \\
+Overlapping $(4,6,2)$ & F5 $0.008/0.000$ & F4 $0.413$ & facstd $0.265$ & $30.069$ \\
+Overlapping $(6,8,3)$ & F5 $0.132/0.001$ & timeout & timeout & timeout \\
+Overlapping $(8,10,3)$ & Singular $2.931/0.010$ & timeout & timeout & timeout \\
+Positive affine $(8,6,4)$ & F5 $0.008/0.000$ & timeout & facstd $0.368$ & $50.934$ \\
+Positive affine $(10,8,5)$ & F5 $0.020/0.000$ & timeout & facstd $1.836$ & timeout \\
+Positive affine $(12,10,6)$ & F5 $0.067/0.000$ & timeout & facstd $53.318$ & timeout \\
+Gated Cyclic-5 & F4 $0.009/0.000$ & F4 $0.008$ & facstd $0.181$ & $35.054$ \\
+Gated Cyclic-6 & Singular $0.045/0.008$ & Singular $0.309$ & M2 $2.620$ & $37.314$ \\
+Gated Cyclic-7 & timeout & timeout & timeout & $58.287$ \\
+Gated Katsura-6 & Singular $0.049/0.008$ & GVW $0.226$ & facstd $0.233$ & $31.532$ \\
+Gated Katsura-7 & Singular $0.283/0.008$ & GVW $3.176$ & facstd $0.539$ & $31.980$ \\
+Gated Katsura-8 & Singular $2.657/0.052$ & timeout & facstd $3.596$ & $34.264$ \\
+Gated dense, $n=5$ & Singular $0.029/0.008$ & M4GB $0.171$ & facstd $0.198$ & $29.289$ \\
+Gated dense, $n=6$ & Singular $0.546/0.008$ & M4GB $4.736$ & facstd $0.755$ & $30.053$ \\
+Gated dense, $n=7$ & Singular $42.020/0.017$ & timeout & facstd $48.820$ & $32.261$ \\
+Square affine $(8,4)$ & Singular $0.470/0.023$ & timeout & facstd $0.601$ & timeout \\
+Square affine $(10,5)$ & F4 $1.174/0.000$ & timeout & facstd $2.141$ & timeout \\
 \hline
-\#systems solved & $19$ & $18$ & $10$ & $17$ & $14$ \\
-\#fastest (ties counted) & $12$ & $10$ & $2$ & $0$ & $2$ \\
+\#systems solved & $19$ & $10$ & $17$ & $14$ \\
+\#fastest (ties counted) & $17$ & $2$ & $0$ & $2$ \\
 \hline
 \end{tabular}%
 }
-\caption{Best completed baseline results and the fastest completed variable zeroing
-backend observed. All times are in seconds.}
+\caption{Best completed baseline results across solver classes. All times are in seconds.}
 \label{tab:baseline-comparison}
 \end{table}
 
@@ -134,14 +130,6 @@ $(12,10,6)$, $F$ rounds to $0.000$ seconds despite the 833 hitting sets.  On
 gated Katsura-8, the first SAT branch is found in $0.052$ seconds, but
 the full run takes $2.657$ seconds.  Factorization therefore finds the easy
 component quickly, while the nonlinear residual controls completion time.
-
-% [Variable zeroing analysis]
-Variable zeroing is intended for a narrower case: a hitting set has timed out, but
-splitting a variable into zero and nonzero cases simplifies the system in both cases.
-The current benchmark gives limited evidence for that mechanism because none of the completed variable zeroing runs requires a split.
-On Cyclic-7, variable zeroing continues the stalled search and returns a partial result,
-but it does not complete the residual branch.
-
 
 \subsection{Physical Systems}
 \label{subsec:physical-systems}
