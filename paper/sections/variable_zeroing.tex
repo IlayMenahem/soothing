@@ -33,10 +33,10 @@ a variable is often always zero or always nonzero.
     \Require A polynomial system $P$ and a timeout $\tau$
     \Function{ZeroingBranching}{$P,\tau$}
         \State $X \gets \Call{Variables}{P}$
-        \State \Return $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,\emptyset}$
+        \State \Return $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau}$
     \EndFunction
-    \Function{SolveByZeroing}{$Q,X,Z,N,\tau,C$}
-        \State $(S,T) \gets \Call{FactorBranchingWithTimeout}{Q,\tau,C}$
+    \Function{SolveByZeroing}{$Q,X,Z,N,\tau$}
+        \State $(S,T) \gets \Call{FactorBranchingWithTimeout}{Q,\tau}$
         \State $U \gets \emptyset$ \Comment{Unresolved branches}
 
         \ForAll{$R \in T$}
@@ -46,19 +46,17 @@ a variable is often always zero or always nonzero.
                 \State $x \gets \Call{ChooseVariable}{R,X}$
                 \State $R_0 \gets \Call{Substitute}{R,x,0}$
                 \State $R_1 \gets \Call{UpdateSaturation}{R,N\cup\{x\}}$
-                \State $(S_0,U_0,C) \gets \Call{SolveByZeroing}{R_0,X\setminus\{x\},Z\cup\{x\},N,\tau,C}$
-                \State $(S_1,U_1,C) \gets \Call{SolveByZeroing}{R_1,X\setminus\{x\},Z,N\cup\{x\},\tau,C}$
+                \State $(S_0,U_0) \gets \Call{SolveByZeroing}{R_0,X\setminus\{x\},Z\cup\{x\},N,\tau}$
+                \State $(S_1,U_1) \gets \Call{SolveByZeroing}{R_1,X\setminus\{x\},Z,N\cup\{x\},\tau}$
                 \State $S \gets S\cup S_0\cup S_1$
                 \State $U \gets U\cup U_0\cup U_1$
             \EndIf
         \EndFor
-        \State \Return $(S,U,C)$
+        \State \Return $(S,U)$
     \EndFunction
 \end{algorithmic}
 \end{algorithm}
 
-Algorithm~\ref{alg:ZeroingBranching} uses a global set $C$ of learned UNSAT
-cores.
 
 % How the constraints are encoded into the system.
 Let $N$ be the variables declared nonzero on the current path.
@@ -84,7 +82,7 @@ decisions remain part of the solution-set representation.
     \caption{Recursion tree of factor branching with variable zeroing on the
     fifth-order graviton QFT system (detailed in
     Section~\ref{subsec:physical-systems}) using M4GB with a five-second
-    timeout per hitting set. The run takes 71 seconds.}
+    timeout per hitting set. The run takes 36.314 seconds.}
     \label{fig:variable_zeroing_tree}
 \end{figure}
 
@@ -181,7 +179,7 @@ Theorem~\ref{thm:branching-correctness} gives
 \begin{theorem}[Correctness of recursive splitting]
 \label{thm:zeroing-correctness}
 Suppose every split uses side conditions that cover all possibilities. If the
-recursive procedure returns $(S,U,C)$ on input $P$, where $U$ contains the
+recursive procedure returns $(S,U)$ on input $P$, where $U$ contains the
 unresolved pairs $(R,A_R)$, then
 \[
     V(P)=\operatorname{Sol}(S)

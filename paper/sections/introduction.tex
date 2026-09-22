@@ -42,11 +42,6 @@ certifies that it is UNSAT.
 % Needs a better justification then just for Gr\"obner basis computation, besides that the complexity is in the number of variables which our method doesn't directly address
 Since the worst-case complexity of computing a Gr\"obner basis is doubly exponential in the number of variables~\cite{mayr1982complexity}, breaking down a large system into smaller subproblems can be substantially faster than solving the original system directly.
 
-% UNSAT core learning
-To avoid repeated work, the framework learns certified UNSAT cores and prunes
-later hitting sets that contain them, adapting ideas from polynomial UNSAT-core
-extraction and conflict-driven learning~\cite{sun2016,marques1999grasp,marques2009cdcl}.
-
 % Zeroing branching
 If a factor branch remains too expensive for the chosen solver, the framework
 can refine it by splitting a selected variable into the cases $x=0$ and

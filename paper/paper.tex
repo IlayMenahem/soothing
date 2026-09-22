@@ -29,10 +29,10 @@
 \def\floatpagepagefraction{1}
 \def\textpagefraction{.001}
 
-\shorttitle{Dynamic programming for solving polynomial systems via factorization and interreduction}
+\shorttitle{Polynomial System Solving via Factor Branching and Recursive Splitting}
 \shortauthors{Menahem et al.}
 
-\title[mode=title]{Accelerating Polynomial System Solving via Factorization and Unsatisfiable-Core Learning}
+\title[mode=title]{Polynomial System Solving via Factor Branching and Recursive Splitting}
 \author[1]{Ilay Menahem}
 \author[1]{Michael Shalyt}
 \author[1, 2]{Ido Kaminer}
@@ -61,7 +61,6 @@ However, even the most modern approaches still often fail on practical problems 
 Here we introduce a framework that divides a polynomial system into simpler subproblems by interreducing and factoring its equations.
 % [broadest strongest claim] and [we demonstrate it on X Y]
 The framework only assumes that the solver used on each subproblem describes satisfiable (SAT) branches and certifies unsatisfiable (UNSAT) ones.
-If the solver also returns an UNSAT core, the framework can use it to prune later branches, following the same idea as conflict-driven clause learning (CDCL).
 When individual branch computations exceed time limits, the framework refines stalled branches through recursive variable splitting, illustrated here by zeroing ($x=0$ versus $x\neq 0$) to isolate simpler sub-varieties.
 In our experiments, we use Gr\"obner-basis solvers and apply the method to a system arising from research in quantum field theory for which no standard method in our comparison succeeds.
 % [outlook sentence on what would this contribute to in the figure / extensions for future work]
@@ -70,7 +69,7 @@ Together, these ideas offer a path toward the exact analysis of previously inacc
 
 \begin{keywords}
 Polynomial systems \sep Gr\"obner bases \sep Factorization \sep
-Unsatisfiable cores \sep Conflict-driven learning
+Minimal hitting sets \sep Recursive splitting
 \end{keywords}
 
 \maketitle

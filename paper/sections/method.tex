@@ -43,36 +43,23 @@ Here is the pseudocode for this refinement of a polynomial system $Q$ into a sma
 Let $\mathcal L(P)$ denote the terminal hitting sets obtained from $P$.
 For each $H\in\mathcal L(P)$, the branch solver must either describe $V(H)$ exactly or certify that $V(H)=\emptyset$.
 
-% UNSAT core learning
-The solver may also return a certified UNSAT core $U\subseteq H$. Any later
-hitting set containing $U$ is UNSAT and does not require another solver call.
-
 \begin{algorithm}[htbp]
 \caption{Factor branching}
 \label{alg:Branching}
 \begin{algorithmic}[1]
     \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$ and an exact branch solver $\mathcal{B}$.
 
-    \State $C \gets \emptyset$ \Comment{Certified UNSAT cores}
     \State $S \gets \emptyset$ \Comment{Solution-set representations}
     \State $R \gets \Call{Refine}{P,\emptyset}$
 
     \ForAll{$H\in R$}
-        \If{$H$ contains an UNSAT core from $C$}
-            \State \textbf{continue}
-        \EndIf
-
         \State Use $\mathcal{B}$ to solve $H$
         \If{$\mathcal{B}$ returns a representation of $V(H)$}
             \State Add the returned representation to $S$
-        \Else
-            \If{$\mathcal{B}$ returns a certified UNSAT core}
-                \State Add the core to $C$
-            \EndIf
         \EndIf
     \EndFor
 
-    \State \Return $S$, $C$
+    \State \Return $S$
 
 \end{algorithmic}
 \end{algorithm}
@@ -80,8 +67,7 @@ hitting set containing $U$ is UNSAT and does not require another solver call.
 The order of the terminal hitting sets affects running time but not
 correctness. Optionally, we can sort the hitting sets by their estimated cost to
 solve. We use the number of generators in a hitting set as a proxy for the
-cost. This ordering can help us find many UNSAT cores quickly, which may be used
-to prune more difficult hitting sets.
+cost, processing smaller hitting sets first.
 
 % A flow chart of the method
 \begin{figure}[pos=htbp]
@@ -93,6 +79,19 @@ to prune more difficult hitting sets.
     \label{fig:branching_flowchart}
 \end{figure}
 
+
+\subsection{UNSAT-core learning}
+\label{subsec:unsat-core-learning}
+
+We also evaluated UNSAT-core learning, following ideas from polynomial
+UNSAT-core extraction and conflict-driven
+learning~\cite{sun2016,marques1999grasp,marques2009cdcl}.
+After certifying a branch $H$ as UNSAT, this extension extracts a subset
+$U\subseteq H$ with $V(U)=\emptyset$ by iterative refinement as in
+Section 5 of~\cite{sun2016}. Any later branch containing $U$ can be
+discarded, since every solution of that branch would also have to solve $U$.
+However, UNSAT-core learning provided no performance benefit on the systems
+we tested. We therefore omit it from the algorithms presented here.
 
 % Theoretical analysis of the method
 \subsection{Theoretical analysis}
@@ -190,17 +189,6 @@ Every node has finitely many children, so K\"onig's lemma implies that the
 refinement tree is finite. Therefore Algorithm~\ref{alg:Refine} terminates.\qed
 \end{proof}
 
-The definition of an UNSAT core immediately justifies branch pruning.
-\begin{lemma}
-\label{lem:core-pruning}
-Let $U$ be an UNSAT core. If $U \subseteq H$, then $V(H)=\emptyset$.
-\end{lemma}
-
-\begin{proof}
-Since $U\subseteq H$, every solution of $H$ would be a solution of $U$.
-Hence $V(H)\subseteq V(U)=\emptyset$.\qed
-\end{proof}
-
 The following theorem allows the use of Algorithm~\ref{alg:Branching} without loss of correctness.
 \begin{theorem}
 \label{thm:branching-correctness}
@@ -216,9 +204,7 @@ therefore gives
 \[
     V(P)=\bigcup_{H\in\mathcal L(P)}V(H).
 \]
-Consider any $H\in\mathcal L(P)$. If the algorithm prunes $H$, then it contains
-a certified UNSAT core, so $V(H)=\emptyset$ by
-Lemma~\ref{lem:core-pruning}. Otherwise, the exact solver either returns an
+Consider any $H\in\mathcal L(P)$. The exact solver either returns an
 exact representation of $V(H)$, which the algorithm adds to $S$, or certifies
 that $V(H)=\emptyset$. Empty branches therefore make no contribution, while
 every represented branch contributes exactly its variety. Hence
@@ -228,7 +214,7 @@ every represented branch contributes exactly its variety. Hence
     =V(P).
 \]
 Every representation added to $S$ is exact, which proves soundness, and the
-equality proves completeness. Every member of $C$ is certified by construction.\qed
+equality proves completeness.\qed
 \end{proof}
 
 Finally, we show that the factor branching algorithm terminates.

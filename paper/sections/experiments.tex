@@ -11,8 +11,7 @@ with a Gr\"obner-basis computation. The available implementations are M4GB,
 F5, GVW, F4, and Singular 4.4.1~\cite{makarim2017m4gb,faugere2002f5,
 gao2016gvw,faugere1999f4,singular2025}.
 A basis containing $1$ certifies that the branch is UNSAT.
-We obtain an UNSAT core by iterative refinement as in Section 5 of
-\cite{sun2016}. The comparison also includes six direct whole-ideal
+The comparison also includes six direct whole-ideal
 Gr\"obner-basis configurations, three decomposition methods from Singular,
 Macaulay2 1.26.06, and a numerical method from HomotopyContinuation.jl under
 Julia 1.12.6~\cite{singular2025,macaulay2,breiding2018homotopy,
@@ -119,7 +118,7 @@ Square affine $(10,5)$ & F4 $1.174/0.000$ & timeout & facstd $2.141$ & timeout \
 % [Theortical explanation of when factor branching and variable zeroing are a good choice]
 Factor branching is a good choice when factorization produces branch ideals that are
 substantially easier than the expanded input ideal.  A large number of hitting
-sets can still be manageable when branch solving and core checks are cheap;
+sets can still be manageable when individual branches are cheap to solve;
 the positive affine family shows that the hitting-set count alone is not
 decisive.  The method is less effective when one hitting set retains the difficulty
 of the original nonlinear system, as Cyclic-7 does.
@@ -140,10 +139,9 @@ asymptotic-safety models to remain consistent with quantum field theory
 system helps determine admissible fixed-point structures in quantum
 gravity~\cite{vacca2010asymptotic}.
 
-For this larger system, variable zeroing uses a one-second limit per hitting set and a
-60-second total runtime limit.  Factor branching uses a 60-second limit per
-hitting set and a 65-second external hard stop.  Thus, an earlier completed hitting set can
-make the reported factor branching wall time slightly exceed 60 seconds.
+For this larger system, variable zeroing uses a five-second limit per hitting set and a
+120-second total runtime limit.  Factor branching uses a 120-second limit per
+hitting set.
 
 \begin{table}[pos=htbp]
 \centering
@@ -154,22 +152,27 @@ make the reported factor branching wall time slightly exceed 60 seconds.
 \hline
 Backend & Factor branching $T/F$ (s) & Factor branching result & Variable zeroing $T/F$ (s) & Variable zeroing result \\
 \hline
-M4GB & $60.793/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/1.052$ & partial: 7 comp., 52 splits, 11 unresolved \\
-F5 & $61.422/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/2.059$ & partial: 13 comp., 63 splits, 9 unresolved \\
-GVW & $61.653/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/2.071$ & partial: 13 comp., 60 splits, 9 unresolved \\
-F4 & $60.218/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/1.051$ & partial: 7 comp., 56 splits, 12 unresolved \\
-Singular & $60.342/0.039$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/0.566$ & partial: 1 comp., 44 splits, 12 unresolved \\
-\texttt{facstd} & $1.067/0.013$ & complete: 32 SAT, 1 UNSAT; $d=14$ & $0.824/0.077$ & complete: 6 comp., 0 splits, 0 unresolved \\
+M4GB & $timeout/0.005$ & partial: 32 SAT, 1 timeout; $d=14$ & $39.762/3.704$ & complete: 1 comp., 8 splits, 0 unresolved \\
+F5 & $timeout/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/10.550$ & partial: 10 comp., 23 splits, 4 unresolved \\
+GVW & $timeout/0.006$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/10.575$ & partial: 10 comp., 23 splits, 4 unresolved \\
+F4 & $timeout/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/5.095$ & partial: 5 comp., 25 splits, 6 unresolved \\
+Singular & $timeout/0.010$ & partial: 32 SAT, 1 timeout; $d=14$ & $28.962/0.611$ & complete: 1 comp., 7 splits, 0 unresolved \\
+\texttt{facstd} & $1.341/0.010$ & complete: 32 SAT, 1 UNSAT; $d=14$ & $0.856/0.099$ & complete: 6 comp., 0 splits, 0 unresolved \\
 \hline
 \end{tabular}%
 }
-\caption{Physical-system results from the fresh single-run benchmark.}
+\caption{Physical-system results from the benchmark with a 5-second inner timeout and 120-second total limit.}
 \label{tab:physical-system}
 \end{table}
 
-When applied directly to the un-decomposed physical system, all tested standalone baselines timed out.
-Within our framework, the \texttt{facstd} backend is the only tested backend
-that completes its run on the physical system, doing so with both factor branching and variable zeroing in around one second.
-The five Gr\"obner-basis backends recover all SAT branches found by the complete \texttt{facstd} run.  They time out on the remaining
-branch, which \texttt{facstd} certifies as UNSAT.  Thus, they recover the full
-solution set but do not independently certify its completeness.
+All standalone baselines timed out on the physical system. Factor branching
+recovers all solutions quickly with every backend, but only
+\texttt{facstd} certifies completeness.
+
+Variable zeroing also completes with M4GB (39.762 seconds, eight splits) and
+Singular (28.962 seconds, seven splits), making completion more robust to
+backend choice on this system: three of six backends succeed, versus one
+with factor branching alone. The \texttt{facstd} run takes 0.856 seconds
+without splitting; F5, GVW, and F4 leave four to six unresolved branches.
+Figure~\ref{fig:variable_zeroing_tree} shows a separate M4GB run with the
+same settings.
