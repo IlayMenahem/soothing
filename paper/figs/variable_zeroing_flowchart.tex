@@ -20,13 +20,13 @@
 \node[blue box] (init) {%
     \textcolor{blue}{\bfseries Initialize}\\
     $X\leftarrow\Call{Variables}{P}$\\
-    $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau,\emptyset}$};
+    $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau}$};
 
 \node[blue box, below=7mm of init] (solve) {%
-    $(S,T)\leftarrow\Call{FactorBranchingWithTimeout}{Q,\tau,C}$};
+    $(S,T)\leftarrow\Call{FactorBranchingWithTimeout}{Q,\tau}$};
 \node[decision, below=7mm of solve] (next) {Unresolved\\$R\in T$?};
 \node[return box, left=20mm of next] (return) {%
-    \textcolor{violet}{\bfseries Return}\\$(S,U,C)$};
+    \textcolor{violet}{\bfseries Return}\\$(S,U)$};
 
 \node[loop box, below=8mm of next] (choose) {%
     \textcolor{orange!75!black}{\bfseries Process $R$}\\

@@ -3,8 +3,7 @@
 
 We introduced a solver-agnostic framework that decomposes polynomial systems
 into smaller branches by enumerating minimal hitting sets of their factor sets.
-The framework reuses certified UNSAT cores to prune branches and can recursively
-split timed-out branches into the cases $x=0$ and $x\neq0$.
+The framework can recursively split timed-out branches into the cases $x=0$ and $x\neq0$.
 
 We proved that refinement terminates and preserves the full solution set.
 Variable zeroing also preserves the solution set and terminates provided
@@ -13,9 +12,9 @@ remain unresolved.
 
 On the baseline benchmarks, factor branching completed 19 of 20 systems, compared with
 10 for direct Gr\"obner-basis methods, 17 for decomposition methods, and 14 for
-the numerical method. On the QFT system, \texttt{facstd} was the only tested
-backend to certify a complete result; the other backends recovered the
-SAT branches but did not certify completeness.
+the numerical method. On the QFT system, variable zeroing extends certified
+completion from \texttt{facstd} alone to M4GB and Singular, improving
+robustness to backend choice: three of six backends complete, versus one
+with factor branching alone.
 
-Current experiments provide limited evidence about when variable zeroing improves completion. Future work will develop more effective splitting
-strategies and more efficient ways to generate and reuse UNSAT cores.
+Future work will test this benefit on other systems, and improve the variable choice for splitting or find better splitting side conditions.

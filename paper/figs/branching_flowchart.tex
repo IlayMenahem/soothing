@@ -24,27 +24,21 @@
 \node[blue box, text width=43mm, right=8mm of factors] (init) {%
     \textcolor{blue}{\bfseries Initialize}\\
     $P = \{p_1,\ldots,p_m\}$\\
-    $C,S \leftarrow \emptyset$};
+    $S \leftarrow \emptyset$};
 
 % ---- loop over terminal hitting sets ----
 \node[loop box, below=9mm of factors, xshift=22mm] (loop) {%
     \textcolor{orange!75!black}{\bfseries Next set}\\
     $H\in\mathcal L(P)$};
 
-% ---- unsat-core decision + prune ----
-\node[decision, below=6mm of loop] (learned) {%
-    Does $H$ contain\\ a core in $C$?};
-
-\node[green box, right=16mm of learned] (prune) {Skip $H$};
-
 % ---- solve ----
-\node[blue box, below=6mm of learned] (solve)
+\node[blue box, below=6mm of loop] (solve)
     {\textcolor{blue}{\bfseries Solve $H$}};
 
 % ---- two outcome branches ----
 \node[red box, anchor=west] (unsat) at ($(solve.south)+(8mm,-10mm)$) {%
     \textcolor{red}{\bfseries UNSAT}\\
-    Learn UNSAT core $U\subseteq H$};
+    Certify $V(H)=\emptyset$};
 
 \node[green box, anchor=east] (sat) at ($(solve.south)+(-8mm,-10mm)$) {%
     \textcolor{green!45!black}{\bfseries SAT}\\
@@ -57,7 +51,7 @@
 
 % ---- return ----
 \node[return box] (return) at ($(railm)+(0,-10mm)$)
-    {\textcolor{violet}{\bfseries Return $(S,C)$}};
+    {\textcolor{violet}{\bfseries Return $S$}};
 
 % ---- arrows: top pipeline ----
 \draw[arr] (init.west) -- (factors.east);
@@ -66,9 +60,7 @@
     (factors.south) |- (entry) -- (loop.north);
 
 % ---- loop body ----
-\draw[arr] (loop.south) -- (learned.north);
-\draw[arr] (learned.east) -- node[above] {Yes} (prune.west);
-\draw[arr] (learned.south) -- node[right] {No} (solve.north);
+\draw[arr] (loop.south) -- (solve.north);
 \coordinate (outcome split) at ($(solve.south)+(0,-6mm)$);
 \draw[line width=1pt] (solve.south) -- (outcome split);
 \draw[arr] (outcome split)
@@ -83,10 +75,8 @@
 \draw[arr] (railm) -- node[right] {done} (return);
 
 % ---- feedback: merge both routes before re-entering the loop ----
-\coordinate (fbcol) at (init.east |- prune.east);
+\coordinate (fbcol) at ($(init.east)+(8mm,0)$);
 \coordinate (feedback) at (fbcol |- loop.east);
-\draw[line width=1pt, rounded corners=5pt]
-    (prune.east) -- (prune.east -| fbcol) -- (feedback);
 \draw[line width=1pt, rounded corners=5pt]
     (railr) -- node[below] {next $H$} (railr -| fbcol) -- (feedback);
 \draw[arr] (feedback) -- (loop.east);

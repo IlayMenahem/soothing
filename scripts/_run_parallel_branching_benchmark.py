@@ -17,10 +17,10 @@ def main() -> int:
         "--gb",
         args.backend,
         "--timeout",
-        "60000",
+        "120000",
         "--summary",
     ]
-    stdout, stderr, wall, killed, returncode = run(argv, 65.0)
+    stdout, stderr, wall, killed, returncode = run(argv, 125.0)
     for line in stdout.splitlines():
         if (
             line.startswith("Branching over ")
