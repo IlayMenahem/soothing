@@ -17,7 +17,7 @@
 \usetikzlibrary{positioning, arrows.meta, shapes.geometric, calc}
 
 \newtheorem{lemma}{Lemma}
-\newtheorem{proof}{Proof}
+\newproof{proof}{Proof}
 \newtheorem{theorem}{Theorem}
 \newtheorem{corollary}{Corollary}
 
@@ -29,7 +29,7 @@
 \def\floatpagepagefraction{1}
 \def\textpagefraction{.001}
 
-\shorttitle{Polynomial System Solving via Factorization and UNSAT-Core Learning}
+\shorttitle{Dynamic programming for solving polynomial systems via factorization and interreduction}
 \shortauthors{Menahem et al.}
 
 \title[mode=title]{Accelerating Polynomial System Solving via Factorization and Unsatisfiable-Core Learning}
@@ -58,10 +58,11 @@ Leading approaches include variants of Buchberger's algorithm with syzygy, resul
 % [however, these approaches are limited by \ldots]
 However, even the most modern approaches still often fail on practical problems or slight perturbations of standard benchmarks.
 % [Here we ..., Describe our approach]
-Here we introduce a framework that divides a polynomial system into simpler sub problems.
+Here we introduce a framework that divides a polynomial system into simpler subproblems by interreducing and factoring its equations.
 % [broadest strongest claim] and [we demonstrate it on X Y]
-The framework only assumes the solver used on each sub problem describes satisfiable (SAT) branches and certifies unsatisfiable (UNSAT) ones.
+The framework only assumes that the solver used on each subproblem describes satisfiable (SAT) branches and certifies unsatisfiable (UNSAT) ones.
 If the solver also returns an UNSAT core, the framework can use it to prune later branches, following the same idea as conflict-driven clause learning (CDCL).
+When individual branch computations exceed time limits, the framework refines stalled branches through recursive variable splitting, illustrated here by zeroing ($x=0$ versus $x\neq 0$) to isolate simpler sub-varieties.
 In our experiments, we use Gr\"obner-basis solvers and apply the method to a system arising from research in quantum field theory for which no standard method in our comparison succeeds.
 % [outlook sentence on what would this contribute to in the figure / extensions for future work]
 Together, these ideas offer a path toward the exact analysis of previously inaccessible polynomial systems.

@@ -9,9 +9,10 @@ Polynomial-ideal computations can be intractable even for small systems~\cite{ma
 subproblems may make the individual solver calls easier.
 
 % How breaking down is done
-We break a system into smaller subproblems by iteratively doing two basic steps
-for each subproblem: interreduce the current subproblem, and factor each
-generator and enumerate the minimal hitting sets of the factor sets.
+We break a system into smaller subproblems by alternating two operations:
+interreducing the current subproblem, and factoring each generator to
+enumerate the minimal hitting sets of the factor sets. Then again do the same
+on each hitting set, until the subproblems can't be further broken down.
 
 Here is the pseudocode for this refinement of a polynomial system $Q$ into a smaller set of subproblems.
 
@@ -21,6 +22,7 @@ Here is the pseudocode for this refinement of a polynomial system $Q$ into a sma
 \begin{algorithmic}[1]
     \Require A finite polynomial system $Q$ and a collection $A$ of normalized systems visited on the current recursion path
 
+    \State $Q\gets Q\setminus\{0\}$
     \State $\widetilde Q\gets\Call{Interreduce}{Q}$ \Comment{Optional; otherwise $\widetilde Q\gets Q$}
     \State Factor each generator of $\widetilde Q$
     \State $\mathcal{H} \gets$ the minimal hitting sets of the factor sets
@@ -78,7 +80,7 @@ hitting set containing $U$ is UNSAT and does not require another solver call.
 The order of the terminal hitting sets affects running time but not
 correctness. Optionally, we can sort the hitting sets by their estimated cost to
 solve. We use the number of generators in a hitting set as a proxy for the
-cost. This ordering can help us find many UNSAT cores quickly which maybe used
+cost. This ordering can help us find many UNSAT cores quickly, which may be used
 to prune more difficult hitting sets.
 
 % A flow chart of the method
@@ -120,7 +122,7 @@ $x$, so $x \in V(H)$.
 
 For the reverse inclusion, take $x \in V(H)$ for some
 $H \in \mathcal{H}(Q)$. The set $H$ intersects every $F_i$, so each $q_i$ has
-a factor that vanishes at $x$. Hence $q_i(x)=0$ for every $i$, and $x \in V(Q)$.
+a factor that vanishes at $x$. Hence $q_i(x)=0$ for every $i$, and $x \in V(Q)$.\qed
 \end{proof}
 
 \begin{lemma}[Recursive refinement]
@@ -143,7 +145,7 @@ gives
 where the sets in $\mathcal H(\widetilde G)$ are precisely the children of
 $G$. A bottom-up induction on the finite tree shows that the variety of each
 node equals the union of the varieties of the terminal nodes in its subtree.
-Applying this statement at the root $Q$ proves the result.
+Applying this statement at the root $Q$ proves the result.\qed
 \end{proof}
 
 \begin{theorem}[Termination of refinement]
@@ -185,7 +187,7 @@ Therefore $M$ strictly increases along every recursive path.
 
 The ascending-chain condition for monomial ideals rules out an infinite path.
 Every node has finitely many children, so K\"onig's lemma implies that the
-refinement tree is finite. Therefore Algorithm~\ref{alg:Refine} terminates.
+refinement tree is finite. Therefore Algorithm~\ref{alg:Refine} terminates.\qed
 \end{proof}
 
 The definition of an UNSAT core immediately justifies branch pruning.
@@ -196,7 +198,7 @@ Let $U$ be an UNSAT core. If $U \subseteq H$, then $V(H)=\emptyset$.
 
 \begin{proof}
 Since $U\subseteq H$, every solution of $H$ would be a solution of $U$.
-Hence $V(H)\subseteq V(U)=\emptyset$.
+Hence $V(H)\subseteq V(U)=\emptyset$.\qed
 \end{proof}
 
 The following theorem allows the use of Algorithm~\ref{alg:Branching} without loss of correctness.
@@ -226,7 +228,7 @@ every represented branch contributes exactly its variety. Hence
     =V(P).
 \]
 Every representation added to $S$ is exact, which proves soundness, and the
-equality proves completeness. Every member of $C$ is certified by construction.
+equality proves completeness. Every member of $C$ is certified by construction.\qed
 \end{proof}
 
 Finally, we show that the factor branching algorithm terminates.
@@ -238,5 +240,5 @@ If the exact solver is known to terminate, then Algorithm~\ref{alg:Branching} te
 \begin{proof}
 By Theorem~\ref{thm:refine-termination}, the call $R=\Call{Refine}{P,\emptyset}$ terminates and returns a finite collection.
 Therefore Algorithm~\ref{alg:Branching} calls the exact solver a finite number of times, and each call terminates by assumption.
-Thus Algorithm~\ref{alg:Branching} terminates.
+Thus Algorithm~\ref{alg:Branching} terminates.\qed
 \end{proof}

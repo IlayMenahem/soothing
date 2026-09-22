@@ -77,26 +77,26 @@ decisions remain part of the solution-set representation.
     \label{fig:variable_zeroing_flowchart}
 \end{figure}
 
-Running the method on \texttt{systems/system.txt} with M4GB and a five-second
-timeout per hitting set produces the recursion tree in
-Figure~\ref{fig:variable_zeroing_tree}. The run takes 71 seconds.
 
 \begin{figure}[pos=htbp]
     \centering
     \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_tree.tex}}
-    \caption{Recursion tree for \texttt{systems/system.txt}.}
+    \caption{Recursion tree of factor branching with variable zeroing on the
+    fifth-order graviton QFT system (detailed in
+    Section~\ref{subsec:physical-systems}) using M4GB with a five-second
+    timeout per hitting set. The run takes 71 seconds.}
     \label{fig:variable_zeroing_tree}
 \end{figure}
 
-For comparison, we repeat the experiment twice. Once With the fixed side
-conditions $x=1$ and $x\neq1$, and then with every split independently draws a
-uniform integer $a\in\{-10,\ldots,10\}$ and uses the side conditions $x=a$ and
-$x\neq a$. In both cases there was ten-minute wall-clock limit. Neither
+For comparison, we repeat the experiment twice: once with the fixed side
+conditions $x=1$ and $x\neq1$, and once with each split independently drawing
+an integer $a$ uniformly from $\{-10,\ldots,10\}$ and using the side conditions
+$x=a$ and $x\neq a$. Both runs have a ten-minute wall-clock limit. Neither
 alternative finishes within ten minutes, and in both cases the search has
 branches that remain unresolved even after exhausting every variable.
 
-By this we conclude that $x=0$ and $x\neq 0$ are especially effective for side
-conditions.
+These comparisons demonstrate that zero/nonzero splits are substantially more
+effective than arbitrary affine splittings on these structured systems.
 
 \subsection{Choice of variable for splitting}
 \label{subsec:zeroing-variable-choice}
@@ -157,7 +157,7 @@ satisfies at least one $D_i$. If $Q_i$ encodes $Q$ together with $D_i$, then
 \begin{proof}
 Every solution on the left satisfies some $D_i$ and therefore belongs to the
 corresponding set on the right. Every set on the right imposes all equations
-and conditions from the parent branch, so the reverse inclusion also holds.
+and conditions from the parent branch, so the reverse inclusion also holds.\qed
 \end{proof}
 
 For variable zeroing, the conditions $x=0$ and $x\neq0$ cover all values of
@@ -194,7 +194,7 @@ Equation~\eqref{eq:branching-timeout-partition} accounts for the solved and
 timed-out hitting sets at each call. An unresolved hitting set is either added
 to $U$ or replaced by child branches. Theorem~\ref{lem:zeroing-split} shows
 that any covering family of child conditions preserves its solution set.
-Applying this argument recursively proves the result.
+Applying this argument recursively proves the result.\qed
 \end{proof}
 
 \begin{corollary}[Completeness of variable zeroing]
@@ -213,5 +213,5 @@ returns after $\tau$.
 Algorithm~\ref{alg:Refine} terminates by Theorem~\ref{thm:refine-termination}
 and returns finitely many hitting sets. Each variable-zeroing split removes one variable
 from the finite set $X$, so every recursive path is finite. Therefore the whole
-recursion tree is finite.
+recursion tree is finite.\qed
 \end{proof}
