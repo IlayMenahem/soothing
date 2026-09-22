@@ -69,7 +69,7 @@ Solutions of the nonzero branch are projected onto the original variables, so
 the auxiliary variable does not appear in the output. The zero and nonzero
 decisions remain part of the solution-set representation.
 
-\begin{figure}[htbp]
+\begin{figure}[pos=htbp]
     \centering
     \resizebox{0.72\textwidth}{!}{\input{figs/variable_zeroing_flowchart.tex}}
     \caption{Flowchart of the recursive variable-zeroing procedure in
@@ -81,7 +81,7 @@ Running the method on \texttt{systems/system.txt} with M4GB and a five-second
 timeout per hitting set produces the recursion tree in
 Figure~\ref{fig:variable_zeroing_tree}. The run takes 71 seconds.
 
-\begin{figure}[htbp]
+\begin{figure}[pos=htbp]
     \centering
     \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_tree.tex}}
     \caption{Recursion tree for \texttt{systems/system.txt}.}

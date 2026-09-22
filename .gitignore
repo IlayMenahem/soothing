@@ -6,8 +6,15 @@
 *.blg
 *.synctex.gz
 *.out
+*.bak
+*.spl
+*.abs
+*.cls
+*.sty
+*.bst
 
 systems/
+els-cas-templates/
 
 temp.**
 /tmp
