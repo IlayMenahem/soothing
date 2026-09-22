@@ -28,8 +28,6 @@ Buchberger's algorithm \cite{peifer2020learning}. Kera et al.\ trained
 transformers to compute Gr\"obner bases directly for a restricted class of
 zero-dimensional radical ideals \cite{kera2024learning}.
 
-% A statement on complexity and limit of what is feasible.
-
 % What's the gap?
 Despite this progress, large systems can remain inaccessible.
 
@@ -41,9 +39,8 @@ each hitting set contains at least one factor from every equation and therefore
 defines one branch of the original solution set. An exact branch solver then
 either describes that branch, including any positive-dimensional families, or
 certifies that it is UNSAT.
-Since the complexity of solving a polynomial system is exponential in the size
-of the system, breaking down the large system into smaller subproblems can be
-much faster to solve than the original system.
+% Needs a better justification then just for Gr\"obner basis computation, besides that the complexity is in the number of variables which our method doesn't directly address
+Since the worst-case complexity of computing a Gr\"obner basis is doubly exponential in the number of variables~\cite{mayr1982complexity}, breaking down a large system into smaller subproblems can be substantially faster than solving the original system directly.
 
 % UNSAT core learning
 To avoid repeated work, the framework learns certified UNSAT cores and prunes
@@ -54,16 +51,13 @@ extraction and conflict-driven learning~\cite{sun2016,marques1999grasp,marques20
 If a factor branch remains too expensive for the chosen solver, the framework
 can refine it by splitting a selected variable into the cases $x=0$ and
 $x\neq 0$. This heuristic split can expose additional algebraic structure for
-the branch solver without discarding either case. The choice of splitting by
-equating to zero is admittedly arbitrary, but is found to be effective in
-practical problems arising from quantum field theory that we test for
-evaluation and comparison with established techniques. This choice is
-immediately generalizable to more complex splitting criteria.
+the branch solver without losing any solutions.
+While this is one of many possible splitting criteria, it proves particularly effective on the quantum field theory problem that we investigate.
 
-% Theortical and experimental backing
+% Theoretical and experimental backing
 We prove that refinement and variable zeroing terminate and preserve the full
 solution set. We compare the resulting implementation with
 direct Gr\"obner-basis computation, symbolic decomposition, and numerical
 homotopy on generated benchmarks. We also apply the framework to a system from
 quantum field theory: with the \texttt{facstd} backend, the framework completes
-the computation, whereas the any other standard solver we've used timed out.
+the computation, whereas standard standalone solvers timed out.

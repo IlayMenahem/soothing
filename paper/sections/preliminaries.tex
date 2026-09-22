@@ -60,7 +60,7 @@ polynomials.
 \begin{algorithmic}[1]
     \Require A finite set $Q\subseteq R\setminus\{0\}$ and a monomial order $\prec$
     \Ensure An interreduced set that generates $\langle Q\rangle$
-    \While{for $p,q\in Q$ there is a term $cu$ of $p$ such that $\operatorname{LM}(q)\mid u$}
+    \While{there exist distinct $p,q\in Q$ and a term $cu$ of $p$ with $\operatorname{LM}(q)\mid u$}
         \State $r\gets p-\dfrac{cu}{\operatorname{LT}(q)}q$
         \State $Q\gets Q\setminus\{p\}$
         \If{$r\neq0$}
@@ -74,7 +74,7 @@ polynomials.
 
 Each loop iteration cancels one monomial $u$ and introduces only monomials
 strictly smaller than $u$. The multiset extension of the monomial order is
-well-founded, so the loop terminates. interreduction preserves
+well-founded, so the loop terminates. Interreduction preserves
 $\langle Q\rangle$ and $V(Q)$.
 
 Every ideal has a unique reduced Gr\"obner basis for a fixed monomial order.

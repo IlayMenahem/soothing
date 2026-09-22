@@ -110,7 +110,7 @@ Gated dense, $n=7$ & Singular $42.020/0.017$ & error & timeout & facstd $48.820$
 Square affine $(8,4)$ & Singular $0.470/0.023$ & Singular $0.445/0.012$ & timeout & facstd $0.601$ & timeout \\
 Square affine $(10,5)$ & F4 $1.174/0.000$ & F4 $1.326/0.015$ & timeout & facstd $2.141$ & timeout \\
 \hline
-\#systems solved & $19$ & $19$ & $10$ & $17$ & $14$ \\
+\#systems solved & $19$ & $18$ & $10$ & $17$ & $14$ \\
 \#fastest (ties counted) & $12$ & $10$ & $2$ & $0$ & $2$ \\
 \hline
 \end{tabular}%
@@ -121,7 +121,6 @@ backend observed. All times are in seconds.}
 \end{table}
 
 % [Theortical explanation of when factor branching and variable zeroing are a good choice]
-
 Factor branching is a good choice when factorization produces branch ideals that are
 substantially easier than the expanded input ideal.  A large number of hitting
 sets can still be manageable when branch solving and core checks are cheap;
@@ -130,7 +129,6 @@ decisive.  The method is less effective when one hitting set retains the difficu
 of the original nonlinear system, as Cyclic-7 does.
 
 % [Back up the explanation with current or new experiments]
-
 The measurements of time to first SAT branch support this explanation.  On positive affine
 $(12,10,6)$, $F$ rounds to $0.000$ seconds despite the 833 hitting sets.  On
 gated Katsura-8, the first SAT branch is found in $0.052$ seconds, but
@@ -148,19 +146,17 @@ but it does not complete the residual branch.
 \subsection{Physical Systems}
 \label{subsec:physical-systems}
 
-% A short explanation of the physical systems.
-The system is an order five approximation of the theories that represent a
-graviton are consistent with experimental results of QFT (quantum field
-theory)~\cite{rafiezinedine2018simplifying,vacca2010asymptotic}.
-Solving this system can lead to a better understanding of how quantum gravity
-may look like~\cite{vacca2010asymptotic}.
+The system is an order-five approximation constraining graviton couplings in
+asymptotic-safety models to remain consistent with quantum field theory
+(QFT)~\cite{rafiezinedine2018simplifying,vacca2010asymptotic}. Solving this
+system helps determine admissible fixed-point structures in quantum
+gravity~\cite{vacca2010asymptotic}.
 
 For this larger system, variable zeroing uses a one-second limit per hitting set and a
 60-second total runtime limit.  Factor branching uses a 60-second limit per
 hitting set and a 65-second external hard stop.  Thus, an earlier completed hitting set can
 make the reported factor branching wall time slightly exceed 60 seconds.
 
-% Performance table of the pipeline by the internal subsolver (i.e F4, F5, etc.)
 \begin{table}[pos=htbp]
 \centering
 \small
@@ -183,10 +179,9 @@ Singular & $60.342/0.039$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/0.566$
 \label{tab:physical-system}
 \end{table}
 
-% Explain the results
-The \texttt{facstd} backend is the only tested backend that completes its run on
-the physical system, and it does so with both factor branching and variable
-zeroing.  The five Gr\"obner-basis backends recover all 32 SAT branches
-found by the complete \texttt{facstd} run.  They time out on the remaining
+When applied directly to the un-decomposed physical system, all tested standalone baselines timed out.
+Within our framework, the \texttt{facstd} backend is the only tested backend
+that completes its run on the physical system, doing so with both factor branching and variable zeroing in around one second.
+The five Gr\"obner-basis backends recover all SAT branches found by the complete \texttt{facstd} run.  They time out on the remaining
 branch, which \texttt{facstd} certifies as UNSAT.  Thus, they recover the full
 solution set but do not independently certify its completeness.
