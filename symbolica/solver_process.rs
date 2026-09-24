@@ -178,6 +178,9 @@ enum WorkerRequest {
         polynomials: Vec<WirePolynomial>,
         interreduce: bool,
     },
+    Interreduce {
+        polynomials: Vec<WirePolynomial>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -195,6 +198,7 @@ enum WorkerResponse {
     Inconsistent,
     GbCore(Option<WireGbCoreRun>),
     Factors(Vec<Vec<WirePolynomial>>),
+    Reduced(Vec<WirePolynomial>),
     Error(String),
 }
 
@@ -368,6 +372,13 @@ fn execute_worker(request: WorkerRequest) -> Result<WorkerResponse, String> {
                     .map(|group| encode_polynomials(group))
                     .collect(),
             ))
+        }
+        WorkerRequest::Interreduce { polynomials } => {
+            let variables = temporary_variables(&polynomials)?;
+            let candidate = decode_lex_polynomials(polynomials, variables)?;
+            Ok(WorkerResponse::Reduced(encode_polynomials(
+                &interreduce_polys(candidate),
+            )))
         }
     }
 }
@@ -548,6 +559,9 @@ pub(crate) fn evaluate_cover_isolated(
         Ok(ProcessRun::Completed(WorkerResponse::Factors(_))) => Outcome::BackendError(
             "solver worker returned a factorization response for a cover".to_string(),
         ),
+        Ok(ProcessRun::Completed(WorkerResponse::Reduced(_))) => Outcome::BackendError(
+            "solver worker returned an interreduction response for a cover".to_string(),
+        ),
     }
 }
 
@@ -640,6 +654,33 @@ pub(crate) fn factor_groups_isolated(
         "factorization worker failed after three attempts: {}",
         last_error.unwrap_or_else(|| "unknown worker failure".to_string())
     ))
+}
+
+/// Interreduce `polynomials` in a worker process, giving up after `timeout`.
+pub(crate) fn interreduce_isolated(
+    mut polynomials: Vec<PolyExtLex>,
+    timeout: Duration,
+) -> Result<ProcessRun<Vec<PolyExtLex>>, String> {
+    MultivariatePolynomial::unify_variables_list(&mut polynomials);
+    let variables = polynomials.first().map_or_else(
+        || Arc::new(Vec::new()),
+        |polynomial| polynomial.variables.clone(),
+    );
+    let request = WorkerRequest::Interreduce {
+        polynomials: encode_polynomials(&polynomials),
+    };
+    match run_worker(&request, timeout)? {
+        ProcessRun::Timeout => Ok(ProcessRun::Timeout),
+        ProcessRun::Completed(WorkerResponse::Reduced(reduced)) => reduced
+            .into_iter()
+            .map(|polynomial| decode_polynomial(polynomial, variables.clone()))
+            .collect::<Result<Vec<_>, _>>()
+            .map(ProcessRun::Completed),
+        ProcessRun::Completed(WorkerResponse::Error(error)) => Err(error),
+        ProcessRun::Completed(_) => {
+            Err("solver worker returned a non-interreduction response".to_string())
+        }
+    }
 }
 
 #[cfg(test)]

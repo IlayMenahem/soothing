@@ -27,8 +27,10 @@ use crate::gb_search::{
     ComputedBasis, Core, GbBackend, Outcome, PolyExtGrevLex, evaluate_cover,
     polynomial_set_contains, solution_dimension,
 };
-use crate::refine::refine_covers;
-use crate::solver_process::{ProcessRun, factor_groups_isolated, running_under_test_harness};
+use crate::refine::{FactorGroups, RefineOps, refine_covers_with};
+use crate::solver_process::{
+    ProcessRun, factor_groups_isolated, interreduce_isolated, running_under_test_harness,
+};
 
 /// An original variable that may be selected for zeroing.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -366,13 +368,14 @@ impl Solver<'_> {
             checks: Vec::new(),
         };
         let node_nvars = polynomials.first().map_or(0, PolyExtLex::nvars);
-        let groups = match factor_groups_with_timeout(
+        let (groups, covers) = match terminal_hitting_sets_with_timeout(
             polynomials.clone(),
             self.options.interreduce,
             self.evaluation_timeout(),
         ) {
-            Ok(ProcessRun::Completed(groups)) => groups,
-            Ok(ProcessRun::Timeout) => {
+            Ok(preprocessed) => preprocessed,
+            Err(HittingSetFailure::Fatal(error)) => return Err(format!("node {node_id}: {error}")),
+            Err(HittingSetFailure::Timeout) => {
                 self.stats.factorization_timeouts += 1;
                 node_result.preprocessing_failure = Some(PreprocessingFailure::Timeout);
                 self.retain_unresolved(
@@ -391,7 +394,7 @@ impl Solver<'_> {
                 self.nodes.push(node_result);
                 return Ok(Some(node_id));
             }
-            Err(error) => {
+            Err(HittingSetFailure::Factorization(error)) => {
                 self.stats.factorization_errors += 1;
                 node_result.preprocessing_failure = Some(PreprocessingFailure::Error);
                 self.retain_unresolved(
@@ -411,27 +414,12 @@ impl Solver<'_> {
                 return Ok(Some(node_id));
             }
         };
-        let (factors, index_groups) = build_factor_index(&groups);
-        let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
-            format!(
-                "node {node_id} has {} distinct factors; the cover enumerator supports at most 63",
-                factors.len()
-            )
-        })?;
-        let covers = refine_covers(
-            &factors,
-            &ordered_cover_masks(&covers),
-            self.options.interreduce,
-        )
-        .map(|(terminal, _)| terminal)
-        .map_err(|err| format!("node {node_id}: refinement failed: {err}"))?;
         self.stats.covers += covers.len();
         node_result.covers = covers.len();
 
         if self.options.verbose {
             println!(
-                "node #{node_id} depth {depth}: {} factor group(s), {} cover(s), {} variable(s) left",
-                groups.len(),
+                "node #{node_id} depth {depth}: {groups} factor group(s), {} cover(s), {} variable(s) left",
                 covers.len(),
                 variables.len()
             );
@@ -1013,6 +1001,99 @@ fn factor_groups_with_timeout(
     } else {
         factor_groups_isolated(polynomials, interreduce, timeout)
     }
+}
+
+/// Why a node's terminal hitting sets could not be computed.
+enum HittingSetFailure {
+    Timeout,
+    Factorization(String),
+    /// A limitation of the search itself; aborts the whole run.
+    Fatal(String),
+}
+
+impl From<String> for HittingSetFailure {
+    fn from(error: String) -> Self {
+        Self::Fatal(error)
+    }
+}
+
+fn remaining_until(deadline: Instant) -> Result<Duration, HittingSetFailure> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|remaining| !remaining.is_zero())
+        .ok_or(HittingSetFailure::Timeout)
+}
+
+fn completed<T>(run: Result<ProcessRun<T>, String>) -> Result<T, HittingSetFailure> {
+    match run {
+        Ok(ProcessRun::Completed(value)) => Ok(value),
+        Ok(ProcessRun::Timeout) => Err(HittingSetFailure::Timeout),
+        Err(error) => Err(HittingSetFailure::Factorization(error)),
+    }
+}
+
+/// Refinement operations run in worker processes that share one deadline.
+struct IsolatedBeforeDeadline {
+    deadline: Instant,
+}
+
+impl RefineOps for IsolatedBeforeDeadline {
+    type Error = HittingSetFailure;
+
+    fn interreduce(
+        &mut self,
+        polynomials: Vec<PolyExtLex>,
+    ) -> Result<Vec<PolyExtLex>, HittingSetFailure> {
+        let remaining = remaining_until(self.deadline)?;
+        if cfg!(test) || running_under_test_harness() {
+            Ok(interreduce_polys(polynomials))
+        } else {
+            completed(interreduce_isolated(polynomials, remaining))
+        }
+    }
+
+    fn factor(&mut self, polynomials: Vec<PolyExtLex>) -> Result<FactorGroups, HittingSetFailure> {
+        factor_before_deadline(polynomials, false, self.deadline)
+    }
+}
+
+fn factor_before_deadline(
+    polynomials: Vec<PolyExtLex>,
+    interreduce: bool,
+    deadline: Instant,
+) -> Result<FactorGroups, HittingSetFailure> {
+    let remaining = remaining_until(deadline)?;
+    completed(factor_groups_with_timeout(
+        polynomials,
+        interreduce,
+        remaining,
+    ))
+}
+
+/// Factor a node's equations and refine its minimal hitting sets into
+/// terminal hitting sets (Algorithm `Refine`), all within `timeout`. Returns
+/// the number of factor groups and the terminal hitting sets.
+fn terminal_hitting_sets_with_timeout(
+    polynomials: Vec<PolyExtLex>,
+    interreduce: bool,
+    timeout: Duration,
+) -> Result<(usize, Vec<Vec<PolyExtLex>>), HittingSetFailure> {
+    let deadline = Instant::now() + timeout;
+    let groups = factor_before_deadline(polynomials, interreduce, deadline)?;
+    let (factors, index_groups) = build_factor_index(&groups);
+    let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
+        HittingSetFailure::Fatal(format!(
+            "{} distinct factors; the cover enumerator supports at most 63",
+            factors.len()
+        ))
+    })?;
+    let (terminal, _) = refine_covers_with(
+        &factors,
+        &ordered_cover_masks(&covers),
+        interreduce,
+        &mut IsolatedBeforeDeadline { deadline },
+    )?;
+    Ok((groups.len(), terminal))
 }
 
 /// Count the minimal factor covers of a split child without invoking a

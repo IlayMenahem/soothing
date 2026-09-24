@@ -3,6 +3,8 @@
 //! Each hitting set is interreduced and factored again; its own minimal
 //! hitting sets replace it until the set no longer changes. The resulting
 //! terminal hitting sets are shared by factor branching and variable zeroing.
+//! Interreduction and factorization are supplied by the caller through
+//! [`RefineOps`] so that they can run in a worker process with a deadline.
 
 use crate::cover::{build_factor_index, decode_cover, minimal_covers, ordered_cover_masks};
 use crate::factor_prep::{PolyExtLex, interreduce_polys, try_factor_groups_from_polys};
@@ -35,14 +37,47 @@ fn same_polynomial_set(left: &[PolyExtLex], right: &[PolyExtLex]) -> bool {
         && polynomial_set_contains(right, left)
 }
 
-fn factor_cover_candidates(polynomials: Vec<PolyExtLex>) -> Result<Vec<Vec<PolyExtLex>>, String> {
-    let groups = try_factor_groups_from_polys(polynomials)?;
+/// Factor groups of a polynomial set: one group of irreducible factors per
+/// nonzero polynomial.
+pub type FactorGroups = Vec<Vec<PolyExtLex>>;
+
+/// The polynomial operations refinement performs. Implementors decide where,
+/// and under which limits, they run.
+pub trait RefineOps {
+    type Error: From<String>;
+
+    fn interreduce(&mut self, polynomials: Vec<PolyExtLex>)
+    -> Result<Vec<PolyExtLex>, Self::Error>;
+
+    fn factor(&mut self, polynomials: Vec<PolyExtLex>) -> Result<FactorGroups, Self::Error>;
+}
+
+/// Runs both operations in the calling process, without a deadline.
+struct InProcess;
+
+impl RefineOps for InProcess {
+    type Error = String;
+
+    fn interreduce(&mut self, polynomials: Vec<PolyExtLex>) -> Result<Vec<PolyExtLex>, String> {
+        Ok(interreduce_polys(polynomials))
+    }
+
+    fn factor(&mut self, polynomials: Vec<PolyExtLex>) -> Result<FactorGroups, String> {
+        try_factor_groups_from_polys(polynomials)
+    }
+}
+
+fn factor_cover_candidates<O: RefineOps>(
+    polynomials: Vec<PolyExtLex>,
+    ops: &mut O,
+) -> Result<Vec<Vec<PolyExtLex>>, O::Error> {
+    let groups = ops.factor(polynomials)?;
     let (factors, index_groups) = build_factor_index(&groups);
     let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
-        format!(
+        O::Error::from(format!(
             "too many distinct factors ({}); the cover enumerator supports at most 63",
             factors.len()
-        )
+        ))
     })?;
     Ok(ordered_cover_masks(&covers)
         .into_iter()
@@ -60,6 +95,7 @@ fn push_unique(terminal: &mut Vec<Vec<PolyExtLex>>, candidate: Vec<PolyExtLex>) 
 }
 
 /// Refine one hitting set, appending its terminal hitting sets to `terminal`.
+/// Factorization runs in-process.
 pub fn refine_cover(
     candidate: Vec<PolyExtLex>,
     interreduce: bool,
@@ -68,16 +104,36 @@ pub fn refine_cover(
     terminal: &mut Vec<Vec<PolyExtLex>>,
     stats: &mut RefinementStats,
 ) -> Result<(), String> {
+    refine_cover_with(
+        candidate,
+        interreduce,
+        depth,
+        ancestors,
+        terminal,
+        stats,
+        &mut InProcess,
+    )
+}
+
+fn refine_cover_with<O: RefineOps>(
+    candidate: Vec<PolyExtLex>,
+    interreduce: bool,
+    depth: usize,
+    ancestors: &mut Vec<Vec<PolyExtLex>>,
+    terminal: &mut Vec<Vec<PolyExtLex>>,
+    stats: &mut RefinementStats,
+    ops: &mut O,
+) -> Result<(), O::Error> {
     stats.passes += 1;
     stats.max_depth = stats.max_depth.max(depth);
 
     let candidate = normalize_candidate(candidate);
     let reduced = if interreduce {
-        interreduce_polys(candidate.clone())
+        ops.interreduce(candidate.clone())?
     } else {
         candidate.clone()
     };
-    let children = factor_cover_candidates(reduced.clone())?;
+    let children = factor_cover_candidates(reduced.clone(), ops)?;
 
     if children.is_empty() {
         return Ok(());
@@ -100,7 +156,15 @@ pub fn refine_cover(
         {
             push_unique(terminal, child);
         } else {
-            refine_cover(child, interreduce, depth + 1, ancestors, terminal, stats)?;
+            refine_cover_with(
+                child,
+                interreduce,
+                depth + 1,
+                ancestors,
+                terminal,
+                stats,
+                ops,
+            )?;
         }
     }
     ancestors.pop();
@@ -108,22 +172,34 @@ pub fn refine_cover(
 }
 
 /// Refine every minimal hitting set in `covers` into terminal hitting sets,
-/// ordered by increasing number of generators.
+/// ordered by increasing number of generators. Factorization runs in-process.
 pub fn refine_covers(
     factors: &[PolyExtLex],
     covers: &[u64],
     interreduce: bool,
 ) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), String> {
+    refine_covers_with(factors, covers, interreduce, &mut InProcess)
+}
+
+/// [`refine_covers`] with caller-supplied operations, e.g. ones that run in
+/// an isolated worker under a deadline.
+pub fn refine_covers_with<O: RefineOps>(
+    factors: &[PolyExtLex],
+    covers: &[u64],
+    interreduce: bool,
+    ops: &mut O,
+) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), O::Error> {
     let mut terminal = Vec::new();
     let mut stats = RefinementStats::default();
     for &cover in covers {
-        refine_cover(
+        refine_cover_with(
             decode_cover(factors, cover),
             interreduce,
             1,
             &mut Vec::new(),
             &mut terminal,
             &mut stats,
+            ops,
         )?;
     }
     terminal.sort_by_key(Vec::len);
