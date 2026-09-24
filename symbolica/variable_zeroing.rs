@@ -20,13 +20,14 @@ use rand::{Rng, SeedableRng};
 use symbolica::domains::rational::Rational;
 use symbolica::poly::PolyVariable;
 
-use crate::cover::{build_factor_index, decode_cover, minimal_covers, ordered_cover_masks};
+use crate::cover::{build_factor_index, minimal_covers, ordered_cover_masks};
 use crate::factor_prep::{PolyExtLex, interreduce_polys, try_factor_groups_from_polys};
 use crate::gb_core::iteratively_refined_unsat_core;
 use crate::gb_search::{
     ComputedBasis, Core, GbBackend, Outcome, PolyExtGrevLex, evaluate_cover,
     polynomial_set_contains, solution_dimension,
 };
+use crate::refine::refine_covers;
 use crate::solver_process::{ProcessRun, factor_groups_isolated, running_under_test_harness};
 
 /// An original variable that may be selected for zeroing.
@@ -417,7 +418,13 @@ impl Solver<'_> {
                 factors.len()
             )
         })?;
-        let covers = ordered_cover_masks(&covers);
+        let covers = refine_covers(
+            &factors,
+            &ordered_cover_masks(&covers),
+            self.options.interreduce,
+        )
+        .map(|(terminal, _)| terminal)
+        .map_err(|err| format!("node {node_id}: refinement failed: {err}"))?;
         self.stats.covers += covers.len();
         node_result.covers = covers.len();
 
@@ -430,9 +437,9 @@ impl Solver<'_> {
             );
         }
 
-        for (cover_index, cover_mask) in covers.iter().copied().enumerate() {
+        for (cover_index, hitting_set) in covers.iter().enumerate() {
             let cover_started = Instant::now();
-            let candidate = decode_cover(&factors, cover_mask);
+            let candidate = hitting_set.clone();
             if self.runtime_exhausted() {
                 self.retain_unresolved(
                     candidate,
@@ -440,9 +447,9 @@ impl Solver<'_> {
                     &decisions,
                     UnresolvedReason::RuntimeBudget,
                 );
-                for &pending_mask in &covers[cover_index + 1..] {
+                for pending in &covers[cover_index + 1..] {
                     self.retain_unresolved(
-                        decode_cover(&factors, pending_mask),
+                        pending.clone(),
                         &variables,
                         &decisions,
                         UnresolvedReason::RuntimeBudget,
@@ -517,9 +524,9 @@ impl Solver<'_> {
                     &decisions,
                     UnresolvedReason::EvaluationBudget,
                 );
-                for &pending_mask in &covers[cover_index + 1..] {
+                for pending in &covers[cover_index + 1..] {
                     self.retain_unresolved(
-                        decode_cover(&factors, pending_mask),
+                        pending.clone(),
                         &variables,
                         &decisions,
                         UnresolvedReason::EvaluationBudget,
@@ -597,9 +604,9 @@ impl Solver<'_> {
                             &decisions,
                             UnresolvedReason::RuntimeBudget,
                         );
-                        for &pending_mask in &covers[cover_index + 1..] {
+                        for pending in &covers[cover_index + 1..] {
                             self.retain_unresolved(
-                                decode_cover(&factors, pending_mask),
+                                pending.clone(),
                                 &variables,
                                 &decisions,
                                 UnresolvedReason::RuntimeBudget,
@@ -1286,6 +1293,22 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![true, false]
         );
+    }
+
+    #[test]
+    fn root_covers_are_the_refined_terminal_hitting_sets() {
+        let (loaded, polynomials) = load("{(x + y*z)*w == 0, x*v == 0}");
+        let options = VariableZeroingOptions {
+            max_nodes: 1,
+            ..VariableZeroingOptions::default()
+        };
+        let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
+
+        let result =
+            solve_by_zeroing_with(polynomials, candidates(&loaded), &options, &always_timeout)
+                .expect("search");
+
+        assert_eq!(result.nodes[0].covers, 5);
     }
 
     #[test]

@@ -8,6 +8,7 @@ pub mod gb_search;
 pub mod m4gb;
 pub mod mathematica;
 pub(crate) mod monom;
+pub mod refine;
 pub mod sig_groebner;
 #[cfg_attr(test, allow(dead_code))]
 mod solver_process;
