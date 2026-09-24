@@ -24,6 +24,29 @@
 % Existing citations are parenthetical references following manuscript prose.
 \let\cite\citep
 
+% Silence "Font shape T1/cmss/m/sc not available" by declaring the same
+% substitution NFSS would pick anyway, without triggering the warning.
+\DeclareFontShape{T1}{cmss}{m}{sc}{<-> ssub * cmr/m/sc}{}
+
+% \printorcid unconditionally prints an "ORCID(s):" footnote even when no
+% \author[...] set an orcid= key; guard it since we have none to report.
+\ExplSyntaxOn
+\RenewDocumentCommand \printorcid { }
+{
+  \seq_if_empty:NF \g_stm_orcid_seq
+  {
+    \group_begin:
+      \tex_let:D \thefootnote \relax \footnotetext
+      {
+        \raggedright
+        \textsc{orcid}(s):\c_space_token
+        \seq_use:Nn \g_stm_orcid_seq { ;~ }
+      }
+    \group_end:
+  }
+}
+\ExplSyntaxOff
+
 \begin{document}
 \let\WriteBookmarks\relax
 \def\floatpagepagefraction{1}
@@ -34,8 +57,11 @@
 
 \title[mode=title]{Polynomial System Solving via Factor Branching and Recursive Splitting}
 \author[1]{Ilay Menahem}
+\credit{Conceptualization, Methodology, Software, Validation, Formal analysis, Data curation, Writing -- original draft, Visualization}
 \author[1]{Michael Shalyt}
+\credit{Writing -- review \& editing}
 \author[1, 2]{Ido Kaminer}
+\credit{Writing -- review \& editing, Visualization}
 
 \affiliation[1]{organization={Andrew and Erna Viterbi Faculty of Electrical and Computer Engineering, Technion -- Israel Institute of Technology},
             city={Haifa},
@@ -72,7 +98,13 @@ Polynomial systems \sep Gr\"obner bases \sep Factorization \sep
 Minimal hitting sets \sep Recursive splitting
 \end{keywords}
 
-\maketitle
+% The 117pt "Overfull \hbox ... detected at line X" warning at \maketitle is
+% an artifact of the cas-sc class's own title-box construction: it reproduces
+% identically, unchanged, when building Elsevier's unmodified cas-sc-template.tex
+% example, so it is not caused by our content. \hfuzz is raised locally, only
+% around \maketitle, to suppress the cosmetic report without masking genuine
+% overfull boxes elsewhere in the document body.
+{\hfuzz=120pt \maketitle}
 
 \input{sections/introduction.tex}
 \input{sections/preliminaries.tex}
@@ -80,6 +112,20 @@ Minimal hitting sets \sep Recursive splitting
 \input{sections/variable_zeroing.tex}
 \input{sections/experiments.tex}
 \input{sections/conclusion.tex}
+
+\printcredits
+
+\section*{Declaration of competing interest}
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper.
+
+\section*{Data availability}
+The code and data associated with this work are publicly available at \url{https://github.com/IlayMenahem/soothing}.
+
+\section*{Acknowledgments}
+This work did not receive any dedicated funding, and the authors have no one to acknowledge beyond those credited as authors above.
+
+\section*{Declaration of generative AI and AI-assisted technologies in the writing process}
+During the preparation of this work, the authors used generative AI tools to assist with drafting and editing portions of the manuscript text. After using these tools, the authors reviewed and edited the content as needed and take full responsibility for the content of the publication.
 
 \bibliographystyle{cas-model2-names}
 \bibliography{references}

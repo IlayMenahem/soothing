@@ -325,18 +325,6 @@ This produces "Peifer et al. trained … (Peifer et al., 2020)" (`introduction.t
 
 ---
 
-## G. Build and JSC submission checks
-
-- **LaTeX warnings:**
-  - `Overfull \hbox (117pt too wide)` at `\maketitle` (`paper.tex:75`).
-  - Font shape `T1/cmss/m/sc` is not available.
-  - An empty "ORCID(s):" footnote on p. 1. Add the ORCIDs or remove the footnote.
-- **Abstract and keywords:** the abstract has 208 words (limit 250), with no citations and with SAT/UNSAT defined. The 5 keywords are within the allowed 1–7. Highlights are optional; if you supply them, give 3–5 bullets of at most 85 characters each.
-- **Research data and code:** JSC's data policy covers code, algorithms, and benchmark generators. Deposit them, then cite and link them, or explain why not.
-- **Declarations are missing:** CRediT author contributions, competing interests, funding and acknowledgments, and a generative-AI use declaration if one applies.
-- **Leftover drafting comments** in `paper.tex` (abstract), `introduction.tex`, `method.tex`, `variable_zeroing.tex`, and `experiments.tex`. They don't appear in the PDF, but they will reach the editor with the source files.
-
----
 
 ## Suggested order of work
 1. Settle the physical-system inconsistencies and report standalone `facstd` (A5). This may change the headline claim.
