@@ -17,6 +17,9 @@ Buchberger developed this framework in his 1965 thesis \cite{buchberger2006thesi
 Later algorithms changed how the expensive reductions are organized.
 F4 replaces individual polynomial reductions with sparse linear algebra, while F5 uses signatures to avoid many reductions to zero \cite{faugere1999f4,faugere2002f5}.
 Primary-decomposition algorithms use Gr\"obner bases and factorization to separate components \cite{gianni1988primary}.
+Factorizing Gr\"obner-basis methods, split on individual polynomial
+factorizations and preserve the solution set; earlier methods also interreduce
+and prune redundant branches~\cite{graebe1995factorized,singular2025}.
 Numerical algebraic geometry takes a different route: homotopy continuation
 computes isolated roots numerically, while witness sets represent
 positive-dimensional components \cite{sommese2001numerical,sommese2005numerical}.
