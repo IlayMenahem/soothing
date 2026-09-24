@@ -14,22 +14,22 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use symbolica::domains::rational::Q;
 use symbolica::LicenseManager;
+use symbolica::domains::rational::Q;
 
 use polynomial_cdcl::cover::{
     build_factor_index, decode_cover, minimal_covers, ordered_cover_masks, ordered_hint_masks,
 };
 use polynomial_cdcl::gb_core::{iteratively_refined_unsat_core, paper_gb_core};
 use polynomial_cdcl::gb_search::{
-    evaluate_cover, polynomial_set_contains, solution_dimension, ComputedBasis, Core, GbBackend,
-    Outcome,
+    ComputedBasis, Core, GbBackend, Outcome, evaluate_cover, polynomial_set_contains,
+    solution_dimension,
 };
 use polynomial_cdcl::sparse::{decode_hint_mask, resolve_candidates, usable_sparse_variables};
 use polynomial_cdcl::{
-    default_systems_dir_from_manifest, interreduce_polys,
+    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest, interreduce_polys,
     load_mathematica_system_from_path_with_var_names, polynomials_from_loaded,
-    try_factor_groups_from_polys, LoadedMathematicaSystem, PolyExtLex,
+    try_factor_groups_from_polys,
 };
 
 #[derive(Debug)]

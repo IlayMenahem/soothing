@@ -130,8 +130,8 @@ gated Katsura-8, the first SAT branch is found in $0.052$ seconds, but
 the full run takes $2.657$ seconds.  Factorization therefore finds the easy
 component quickly, while the nonlinear residual controls completion time.
 
-\subsection{Physical Systems}
-\label{subsec:physical-systems}
+\subsection{Physical System}
+\label{subsec:physical-system}
 
 The system is an order-five approximation constraining graviton couplings in
 asymptotic-safety models to remain consistent with quantum field theory
@@ -139,9 +139,9 @@ asymptotic-safety models to remain consistent with quantum field theory
 system helps determine admissible fixed-point structures in quantum
 gravity~\cite{vacca2010asymptotic}.
 
-For this larger system, variable zeroing uses a five-second limit per hitting set and a
-120-second total runtime limit.  Factor branching uses a 120-second limit per
-hitting set.
+For this larger system, every run, including the standalone baselines, has a
+120-second total limit.  Within it, variable zeroing uses a five-second limit per
+hitting set; factor branching places no further limit on a hitting set.
 
 \begin{table}[pos=htbp]
 \centering
@@ -152,27 +152,35 @@ hitting set.
 \hline
 Backend & Factor branching $T/F$ (s) & Factor branching result & Variable zeroing $T/F$ (s) & Variable zeroing result \\
 \hline
-M4GB & $timeout/0.005$ & partial: 32 SAT, 1 timeout; $d=14$ & $39.762/3.704$ & complete: 1 comp., 8 splits, 0 unresolved \\
-F5 & $timeout/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/10.550$ & partial: 10 comp., 23 splits, 4 unresolved \\
-GVW & $timeout/0.006$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/10.575$ & partial: 10 comp., 23 splits, 4 unresolved \\
-F4 & $timeout/0.003$ & partial: 32 SAT, 1 timeout; $d=14$ & $timeout/5.095$ & partial: 5 comp., 25 splits, 6 unresolved \\
-Singular & $timeout/0.010$ & partial: 32 SAT, 1 timeout; $d=14$ & $28.962/0.611$ & complete: 1 comp., 7 splits, 0 unresolved \\
-\texttt{facstd} & $1.341/0.010$ & complete: 32 SAT, 1 UNSAT; $d=14$ & $0.856/0.099$ & complete: 6 comp., 0 splits, 0 unresolved \\
+M4GB & $timeout/0.005$ & partial: 32 SAT, 1 timeout & $34.053/0.452$ & complete: 8 splits \\
+F5 & $timeout/0.003$ & partial: 32 SAT, 1 timeout & $timeout/0.457$ & partial: 24 splits, 8 unresolved \\
+GVW & $timeout/0.006$ & partial: 32 SAT, 1 timeout & $timeout/0.463$ & partial: 24 splits, 8 unresolved \\
+F4 & $timeout/0.003$ & partial: 32 SAT, 1 timeout & $timeout/0.471$ & partial: 23 splits, 7 unresolved \\
+Singular & $timeout/0.010$ & partial: 32 SAT, 1 timeout & $27.750/0.470$ & complete: 7 splits \\
+\texttt{facstd} & $1.341/0.010$ & complete: 32 SAT, 1 UNSAT & $1.566/0.470$ & complete: 0 splits \\
 \hline
 \end{tabular}%
 }
-\caption{Physical-system results from the benchmark with a 5-second inner timeout and 120-second total limit.}
+\caption{Physical-system results with a 120-second total limit per run; variable
+zeroing also uses a 5-second limit per hitting set.  Both methods refine the
+system into the same 33 terminal hitting sets; the factor branching result column
+counts them by outcome.
+A split is one $x=0$ versus $x\neq0$ case split; an unresolved branch is one
+still open when the total limit expires.  The ten standalone baselines, including
+standalone \texttt{facstd}, all time out and are omitted.}
 \label{tab:physical-system}
 \end{table}
 
-All standalone baselines timed out on the physical system. Factor branching
-recovers all solutions quickly with every backend, but only
-\texttt{facstd} certifies completeness.
+All ten standalone baselines time out after 120 seconds on the physical system:
+M4GB, F5, GVW, and F4 in grevlex order, Singular and Macaulay2 lex Gr\"obner
+bases, Singular \texttt{facstd} and \texttt{primdecGTZ}, Macaulay2
+\texttt{decompose}, and HomotopyContinuation.jl.  Factor branching with
+\texttt{facstd} completes in 1.341 seconds.  Every backend solves the same 32
+of the 33 terminal hitting sets as SAT within 0.13 seconds in total, and times out on
+the last one.  Only \texttt{facstd} shows that this hitting set is UNSAT, so
+only in hindsight do we know that the 32 SAT branches found by the other
+backends already contain every solution.
 
-Variable zeroing also completes with M4GB (39.762 seconds, eight splits) and
-Singular (28.962 seconds, seven splits), making completion more robust to
-backend choice on this system: three of six backends succeed, versus one
-with factor branching alone. The \texttt{facstd} run takes 0.856 seconds
-without splitting; F5, GVW, and F4 leave four to six unresolved branches.
-Figure~\ref{fig:variable_zeroing_tree} shows a separate M4GB run with the
-same settings.
+Variable zeroing also completes with M4GB and Singular, making completion more
+robust to backend choice on this system: three of six backends succeed, versus
+one with factor branching alone.

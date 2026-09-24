@@ -1,6 +1,6 @@
+% Input: system.txt
 % Source: results/physical_system_m4gb_5s_figure_run.json
 % Plot-only changes: omit unused core-pruning legend; label outcomes SAT/UNSAT.
-% Input: system.txt
 \providecommand{\vzInconsistent}{\ensuremath{\textcolor{red!75!black}{\boldsymbol{\times}}}}
 \providecommand{\vzConsistent}{\ensuremath{\textcolor{green!45!black}{\boldsymbol{\checkmark}}}}
 \providecommand{\vzNoCovers}{\ensuremath{\textcolor{gray!75!black}{\boldsymbol{\varnothing}}}}
@@ -15,100 +15,83 @@
   contracted cover/.style={cover,draw=violet!75!black,fill=violet!5,minimum width=18mm,minimum height=10mm},
   error cover/.style={cover,draw=red!75!black,fill=red!5,minimum width=18mm,minimum height=10mm},
   empty branch/.style={draw=gray!65,dashed,fill=gray!5,rounded corners=2pt,minimum width=15mm,minimum height=7mm,inner sep=2pt,align=center},
+  dots/.style={inner sep=0pt,font=\large},
   input/.style={draw=blue!70!black,fill=blue!8,circle,line width=0.7pt,minimum size=8mm},
   branch/.style={-{Stealth[length=1.8mm]},line width=0.65pt},
   stem/.style={line width=0.65pt},
   edge label/.style={fill=white,inner sep=1pt,font=\scriptsize}
 ]
-\coordinate (group-0) at (0.000,-0.730);
-\node[cover] (cover-0-0) at (-3.300,-1.450) {\vzInconsistent};
-\node[cover] (cover-0-1) at (-1.100,-1.450) {\vzInconsistent};
-\node[cover] (cover-0-2) at (1.100,-1.450) {\vzConsistent};
-\node[timeout cover] (cover-0-3) at (3.300,-1.450) {\vzTimeout\\[-1pt]$\mathit{pph}$};
+\coordinate (group-0-0) at (-6.600,-0.730);
+\coordinate (group-0-dots) at (-4.400,-0.730);
+\coordinate (group-0-31) at (-2.200,-0.730);
+\coordinate (group-0-32) at (0.000,-0.730);
+\node[cover] (cover-0-0) at (-6.600,-1.450) {\vzConsistent};
+\node[dots] (cover-0-dots) at (-4.400,-1.450) {$\cdots$};
+\node[cover] (cover-0-31) at (-2.200,-1.450) {\vzConsistent};
+\node[timeout cover] (cover-0-32) at (0.000,-1.450) {\vzTimeout\\[-1pt]$\mathit{pph}$};
 \coordinate (group-1) at (-1.500,-2.630);
-\node[cover] (cover-1-0) at (-2.600,-3.350) {\vzInconsistent};
-\node[timeout cover] (cover-1-1) at (-0.400,-3.350) {\vzTimeout\\[-1pt]$\mathit{DpDph2}$};
-\coordinate (group-2) at (-7.800,-4.530);
-\node[cover] (cover-2-0) at (-10.000,-5.250) {\vzInconsistent};
-\node[cover] (cover-2-1) at (-7.800,-5.250) {\vzInconsistent};
-\node[cover] (cover-2-2) at (-5.600,-5.250) {\vzInconsistent};
-\coordinate (group-3) at (-2.600,-4.530);
-\node[timeout cover] (cover-3-0) at (-2.600,-5.250) {\vzTimeout\\[-1pt]$\mathit{DpDph1}$};
-\coordinate (group-4) at (-7.800,-6.430);
-\node[empty branch] (pending-4) at (-7.800,-7.150) {\vzNoCovers\ no covers};
-\coordinate (group-5) at (-4.800,-6.430);
-\node[contracted cover] (cover-5-0) at (-4.800,-7.150) {\vzContracted\\[-1pt]$\mathit{xr}$};
+\node[timeout cover] (cover-1-0) at (-1.500,-3.350) {\vzTimeout\\[-1pt]$\mathit{DpDph2}$};
+\coordinate (group-2) at (-4.500,-4.530);
+\node[empty branch] (pending-2) at (-4.500,-5.250) {\vzNoCovers\ no covers};
+\coordinate (group-3) at (-1.500,-4.530);
+\node[timeout cover] (cover-3-0) at (-1.500,-5.250) {\vzTimeout\\[-1pt]$\mathit{DpDph1}$};
+\coordinate (group-4) at (-4.500,-6.430);
+\node[empty branch] (pending-4) at (-4.500,-7.150) {\vzNoCovers\ no covers};
+\coordinate (group-5) at (-1.500,-6.430);
+\node[contracted cover] (cover-5-0) at (-1.500,-7.150) {\vzContracted\\[-1pt]$\mathit{xr}$};
 \coordinate (group-6) at (-4.500,-8.330);
-\node[cover] (cover-6-0) at (-5.600,-9.050) {\vzInconsistent};
-\node[cover] (cover-6-1) at (-3.400,-9.050) {\vzInconsistent};
-\coordinate (group-7) at (-0.400,-8.330);
-\node[cover] (cover-7-0) at (-0.400,-9.050) {\vzInconsistent};
-\coordinate (group-8) at (2.600,-2.630);
-\node[timeout cover] (cover-8-0) at (2.600,-3.350) {\vzTimeout\\[-1pt]$\mathit{DpDph2}$};
-\coordinate (group-9) at (3.700,-4.530);
-\node[cover] (cover-9-0) at (0.400,-5.250) {\vzInconsistent};
-\node[cover] (cover-9-1) at (2.600,-5.250) {\vzInconsistent};
-\node[cover] (cover-9-2) at (4.800,-5.250) {\vzInconsistent};
-\node[cover] (cover-9-3) at (7.000,-5.250) {\vzInconsistent};
-\coordinate (group-10) at (10.000,-4.530);
-\node[timeout cover] (cover-10-0) at (10.000,-5.250) {\vzTimeout\\[-1pt]$\mathit{xr}$};
+\node[empty branch] (pending-6) at (-4.500,-9.050) {\vzNoCovers\ no covers};
+\coordinate (group-7) at (-1.500,-8.330);
+\node[cover] (cover-7-0) at (-1.500,-9.050) {\vzInconsistent};
+\coordinate (group-8) at (1.500,-2.630);
+\node[timeout cover] (cover-8-0) at (1.500,-3.350) {\vzTimeout\\[-1pt]$\mathit{DpDph2}$};
+\coordinate (group-9) at (1.500,-4.530);
+\node[cover] (cover-9-0) at (1.500,-5.250) {\vzInconsistent};
+\coordinate (group-10) at (4.500,-4.530);
+\node[timeout cover] (cover-10-0) at (4.500,-5.250) {\vzTimeout\\[-1pt]$\mathit{xr}$};
 \coordinate (group-11) at (1.500,-6.430);
-\node[cover] (cover-11-0) at (-1.800,-7.150) {\vzInconsistent};
-\node[cover] (cover-11-1) at (0.400,-7.150) {\vzInconsistent};
-\node[cover] (cover-11-2) at (2.600,-7.150) {\vzInconsistent};
-\node[cover] (cover-11-3) at (4.800,-7.150) {\vzInconsistent};
-\coordinate (group-12) at (7.800,-6.430);
-\node[timeout cover] (cover-12-0) at (7.800,-7.150) {\vzTimeout\\[-1pt]$\mathit{DpDph1}$};
-\coordinate (group-13) at (2.600,-8.330);
-\node[empty branch] (pending-13) at (2.600,-9.050) {\vzNoCovers\ no covers};
-\coordinate (group-14) at (5.600,-8.330);
-\node[contracted cover] (cover-14-0) at (5.600,-9.050) {\vzContracted\\[-1pt]$\mathit{DpDphh3}$};
+\node[empty branch] (pending-11) at (1.500,-7.150) {\vzNoCovers\ no covers};
+\coordinate (group-12) at (4.500,-6.430);
+\node[timeout cover] (cover-12-0) at (4.500,-7.150) {\vzTimeout\\[-1pt]$\mathit{DpDph1}$};
+\coordinate (group-13) at (1.500,-8.330);
+\node[empty branch] (pending-13) at (1.500,-9.050) {\vzNoCovers\ no covers};
+\coordinate (group-14) at (4.500,-8.330);
+\node[contracted cover] (cover-14-0) at (4.500,-9.050) {\vzContracted\\[-1pt]$\mathit{DpDphh3}$};
 \coordinate (group-15) at (-1.500,-10.230);
-\node[cover] (cover-15-0) at (-5.900,-10.950) {\vzInconsistent};
-\node[cover] (cover-15-1) at (-3.700,-10.950) {\vzInconsistent};
-\node[cover] (cover-15-2) at (-1.500,-10.950) {\vzInconsistent};
-\node[cover] (cover-15-3) at (0.700,-10.950) {\vzInconsistent};
-\node[cover] (cover-15-4) at (2.900,-10.950) {\vzInconsistent};
-\coordinate (group-16) at (5.900,-10.230);
-\node[cover] (cover-16-0) at (5.900,-10.950) {\vzInconsistent};
-\node[input] (input) at (0.000,0) {$P$};
-\draw[stem] (input) -- (group-0);
-\draw[branch] (group-0) -- (cover-0-0.north);
-\draw[branch] (group-0) -- (cover-0-1.north);
-\draw[branch] (group-0) -- (cover-0-2.north);
-\draw[branch] (group-0) -- (cover-0-3.north);
-\draw[stem] (cover-0-3.south) -- node[edge label,sloped,above] {$= 0$} (group-1);
+\node[empty branch] (pending-15) at (-1.500,-10.950) {\vzNoCovers\ no covers};
+\coordinate (group-16) at (1.500,-10.230);
+\node[cover] (cover-16-0) at (1.500,-10.950) {\vzInconsistent};
+\node[input] (input) at (-0.000,0.500) {$P$};
+\draw[stem] (input.south) -- (group-0-0);
+\draw[branch] (group-0-0) -- (cover-0-0.north);
+\draw[stem] (input.south) -- (group-0-dots);
+\draw[branch] (group-0-dots) -- (cover-0-dots.north);
+\draw[stem] (input.south) -- (group-0-31);
+\draw[branch] (group-0-31) -- (cover-0-31.north);
+\draw[stem] (input.south) -- (group-0-32);
+\draw[branch] (group-0-32) -- (cover-0-32.north);
+\draw[stem] (cover-0-32.south) -- node[edge label,sloped,above] {$= 0$} (group-1);
 \draw[branch] (group-1) -- (cover-1-0.north);
-\draw[branch] (group-1) -- (cover-1-1.north);
-\draw[stem] (cover-0-3.south) -- node[edge label,sloped,above] {$\ne 0$} (group-8);
+\draw[stem] (cover-0-32.south) -- node[edge label,sloped,above] {$\ne 0$} (group-8);
 \draw[branch] (group-8) -- (cover-8-0.north);
-\draw[stem] (cover-1-1.south) -- node[edge label,sloped,above] {$= 0$} (group-2);
-\draw[branch] (group-2) -- (cover-2-0.north);
-\draw[branch] (group-2) -- (cover-2-1.north);
-\draw[branch] (group-2) -- (cover-2-2.north);
-\draw[stem] (cover-1-1.south) -- node[edge label,sloped,above] {$\ne 0$} (group-3);
+\draw[stem] (cover-1-0.south) -- node[edge label,sloped,above] {$= 0$} (group-2);
+\draw[branch] (group-2) -- (pending-2.north);
+\draw[stem] (cover-1-0.south) -- node[edge label,sloped,above] {$\ne 0$} (group-3);
 \draw[branch] (group-3) -- (cover-3-0.north);
 \draw[stem] (cover-3-0.south) -- node[edge label,sloped,above] {$= 0$} (group-4);
 \draw[branch] (group-4) -- (pending-4.north);
 \draw[stem] (cover-3-0.south) -- node[edge label,sloped,above] {$\ne 0$} (group-5);
 \draw[branch] (group-5) -- (cover-5-0.north);
 \draw[stem] (cover-5-0.south) -- node[edge label,sloped,above] {$= 0$} (group-6);
-\draw[branch] (group-6) -- (cover-6-0.north);
-\draw[branch] (group-6) -- (cover-6-1.north);
+\draw[branch] (group-6) -- (pending-6.north);
 \draw[stem] (cover-5-0.south) -- node[edge label,sloped,above] {$\ne 0$} (group-7);
 \draw[branch] (group-7) -- (cover-7-0.north);
 \draw[stem] (cover-8-0.south) -- node[edge label,sloped,above] {$= 0$} (group-9);
 \draw[branch] (group-9) -- (cover-9-0.north);
-\draw[branch] (group-9) -- (cover-9-1.north);
-\draw[branch] (group-9) -- (cover-9-2.north);
-\draw[branch] (group-9) -- (cover-9-3.north);
 \draw[stem] (cover-8-0.south) -- node[edge label,sloped,above] {$\ne 0$} (group-10);
 \draw[branch] (group-10) -- (cover-10-0.north);
 \draw[stem] (cover-10-0.south) -- node[edge label,sloped,above] {$= 0$} (group-11);
-\draw[branch] (group-11) -- (cover-11-0.north);
-\draw[branch] (group-11) -- (cover-11-1.north);
-\draw[branch] (group-11) -- (cover-11-2.north);
-\draw[branch] (group-11) -- (cover-11-3.north);
+\draw[branch] (group-11) -- (pending-11.north);
 \draw[stem] (cover-10-0.south) -- node[edge label,sloped,above] {$\ne 0$} (group-12);
 \draw[branch] (group-12) -- (cover-12-0.north);
 \draw[stem] (cover-12-0.south) -- node[edge label,sloped,above] {$= 0$} (group-13);
@@ -116,11 +99,7 @@
 \draw[stem] (cover-12-0.south) -- node[edge label,sloped,above] {$\ne 0$} (group-14);
 \draw[branch] (group-14) -- (cover-14-0.north);
 \draw[stem] (cover-14-0.south) -- node[edge label,sloped,above] {$= 0$} (group-15);
-\draw[branch] (group-15) -- (cover-15-0.north);
-\draw[branch] (group-15) -- (cover-15-1.north);
-\draw[branch] (group-15) -- (cover-15-2.north);
-\draw[branch] (group-15) -- (cover-15-3.north);
-\draw[branch] (group-15) -- (cover-15-4.north);
+\draw[branch] (group-15) -- (pending-15.north);
 \draw[stem] (cover-14-0.south) -- node[edge label,sloped,above] {$\ne 0$} (group-16);
 \draw[branch] (group-16) -- (cover-16-0.north);
 \node[draw=gray!55,fill=white,rounded corners=2pt,inner sep=3pt,anchor=north] at (0,-11.750) {\textbf{Hitting-set outcome:}\quad \vzInconsistent\ UNSAT\quad \vzConsistent\ SAT\quad \vzTimeout\ timed out\quad \vzContracted\ contracted\quad \vzNoCovers\ no covers};

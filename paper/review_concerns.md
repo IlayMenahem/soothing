@@ -1,8 +1,6 @@
 # Review of `paper/paper.tex`
 
-**Reviewed:** commit `37e949f` ("Mention Grabe's method in the introduction"), all files under `paper/sections/`, `paper/figs/`, `references.bib`, and the compiled 17-page `paper.pdf`. Numbers were also checked against `results/physical_system_120s_results.json`.
-**Criteria:** the `scientific-article-writing` house style, plus the Journal of Symbolic Computation (JSC) requirements. I assumed JSC because the paper uses the Elsevier CAS template and cites mostly JSC work. Skip §G if the paper is going somewhere else.
-**Line references** are `file:line`, relative to `paper/`.
+**Criteria:** the `scientific-article-writing` house style, plus the Journal of Symbolic Computation (JSC) requirements. I assumed JSC because the paper uses the Elsevier CAS template and cites mostly JSC work.
 
 ---
 
@@ -69,7 +67,6 @@ Seven issues most affect whether a referee would accept the paper:
 - **`d = 14` is never defined.** In the results file it is `largest_dimension`. Define it in the text.
 - **Time limits are unclear.** The caption says "5-second inner timeout and 120-second total limit", which describes variable zeroing only. The factor-branching column uses 120 s per hitting set, and its overall limit is not stated.
 - **The system is described in one sentence.** Give the number of variables and equations, the degrees, the number of terms, the coefficient field, and the physical meaning of each variable (Fig. 3 uses `pph`, `DpDph2`, and `xr`). Also state which paper the equations come from; currently a master's thesis is cited. The phrase "constraining graviton couplings … to remain consistent with QFT" is vague. If these are fixed-point (beta-function) equations of a truncated RG flow, say so, and say whether the physics question needs real solutions.
-- **Heading.** "Physical Systems" is plural, but there is one system. It should also be in sentence case, like "Baseline systems".
 
 ### A6. The evidence for variable zeroing is thin, and the wording claims more (`variable_zeroing.tex:24-25, 89-97`; `introduction.tex:53`)
 - **Scope.** On the 20 baseline systems, variable zeroing never helped. Every row has 0 splits except Cyclic-7, which stayed partial, and dense n=7, which failed with an error (Table 5). Its only positive result is two extra backends completing on one physical system. The best configuration there, FB+`facstd`, needs no splits.
@@ -328,8 +325,8 @@ This produces "Peifer et al. trained … (Peifer et al., 2020)" (`introduction.t
 
 ## Suggested order of work
 1. Settle the physical-system inconsistencies and report standalone `facstd` (A5). This may change the headline claim.
-2. Define `UpdateSaturation`, `FactorBranchingWithTimeout`, contraction, and the budget handling, and check that B1 is sound (B1–B3).
+2. Define `UpdateSaturation`, `FactorBranchingWithTimeout`, contraction, and check that B1 is sound (B1–B3).
 3. Write the comparison with factorizing Gröbner bases and the contribution statement, and fix what the abstract says the output is (A1, A2, C1, C2).
 4. Add the fixed-backend comparison, a disclosure of how the benchmark was built, and repeated runs (A4, A7).
 5. Add the worked example, the discussion and limitations section, and move the ablation to §5 (C3, C6, C7, A6).
-6. Fix the tables, figures, references, and prose (D, E, F, G).
+6. Fix the tables, figures, references, and prose (D, E, F).

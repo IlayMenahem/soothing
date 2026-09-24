@@ -19,6 +19,7 @@ thumbnails/
 
 temp.**
 /tmp
+.tmpread
 *.prof
 *.lock
 .DS_Store
