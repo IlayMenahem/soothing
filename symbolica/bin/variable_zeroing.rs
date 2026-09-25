@@ -77,12 +77,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
             }
             "--gb" => {
                 let value = args.next().ok_or_else(|| {
-                    "--gb requires m4gb, f5, gvw, symbolica, singular-gb, or singular-facstd"
+                    "--gb requires m4gb, f5, gvw, symbolica, singular-gb, singular-facstd, singular-gb-sat, or singular-facstd-sat"
                         .to_string()
                 })?;
                 gb_backend = GbBackend::parse(&value).ok_or_else(|| {
                     format!(
-                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, singular-gb, or singular-facstd"
+                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, singular-gb, singular-facstd, singular-gb-sat, or singular-facstd-sat"
                     )
                 })?;
             }
@@ -272,6 +272,9 @@ fn main() {
                 branch.remaining_variables.len(),
                 format_decisions(&branch.decisions)
             );
+            for (index, polynomial) in branch.polynomials.iter().enumerate() {
+                println!("    u{index} = {polynomial}");
+            }
         }
     }
 

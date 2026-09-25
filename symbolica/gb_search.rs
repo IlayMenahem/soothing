@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use symbolica::domains::Ring;
 use symbolica::domains::rational::Q;
 use symbolica::poly::polynomial::MultivariatePolynomial;
-use symbolica::poly::{GrevLexOrder, MonomialOrder};
+use symbolica::poly::{GrevLexOrder, MonomialOrder, PolyVariable};
 
 use crate::cover::minimal_covers;
 use crate::factor_prep::PolyExtLex;
@@ -75,6 +75,12 @@ pub enum GbBackend {
     Symbolica,
     SingularGb,
     SingularFacstd,
+    /// `SingularGb` after replacing each Rabinowitsch generator by an ideal
+    /// saturation.
+    SingularGbSat,
+    /// `SingularFacstd` after replacing each Rabinowitsch generator by an
+    /// ideal saturation.
+    SingularFacstdSat,
 }
 
 impl GbBackend {
@@ -86,6 +92,8 @@ impl GbBackend {
             "symbolica" => Some(Self::Symbolica),
             "singular-gb" | "singular" => Some(Self::SingularGb),
             "singular-facstd" | "facstd" => Some(Self::SingularFacstd),
+            "singular-gb-sat" | "singular-sat" => Some(Self::SingularGbSat),
+            "singular-facstd-sat" | "facstd-sat" => Some(Self::SingularFacstdSat),
             _ => None,
         }
     }
@@ -98,6 +106,8 @@ impl GbBackend {
             Self::Symbolica => "symbolica",
             Self::SingularGb => "singular-gb",
             Self::SingularFacstd => "singular-facstd",
+            Self::SingularGbSat => "singular-gb-sat",
+            Self::SingularFacstdSat => "singular-facstd-sat",
         }
     }
 }
@@ -118,19 +128,109 @@ fn singular_polynomial(poly: &PolyExtLex) -> String {
     terms.join("+")
 }
 
-fn singular_program(cover: &[PolyExtLex]) -> String {
+/// Split a cover into ordinary generators and Rabinowitsch generators. A
+/// Rabinowitsch generator is the unique generator containing a temporary
+/// variable `s`, is linear in `s`, and contains no other temporary; it is
+/// returned with the position of `s`. Any other generator stays ordinary,
+/// which keeps the encoding sound.
+fn rabinowitsch_generators(cover: &[PolyExtLex]) -> (Vec<&PolyExtLex>, Vec<(usize, &PolyExtLex)>) {
+    let temporaries: Vec<usize> = cover[0]
+        .variables
+        .iter()
+        .enumerate()
+        .filter_map(|(index, variable)| {
+            matches!(variable, PolyVariable::Temporary(_)).then_some(index)
+        })
+        .collect();
+    let degree = |poly: &PolyExtLex, position: usize| {
+        poly.exponents_iter()
+            .map(|exponents| exponents[position])
+            .max()
+            .unwrap_or(0)
+    };
+    let uses_one_temporary = |poly: &PolyExtLex| {
+        temporaries
+            .iter()
+            .filter(|&&position| degree(poly, position) > 0)
+            .count()
+            == 1
+    };
+    let rabinowitsch: Vec<(usize, &PolyExtLex)> = temporaries
+        .iter()
+        .filter_map(|&position| {
+            let users: Vec<&PolyExtLex> = cover
+                .iter()
+                .filter(|poly| degree(poly, position) > 0)
+                .collect();
+            match users.as_slice() {
+                [poly] if degree(poly, position) == 1 && uses_one_temporary(poly) => {
+                    Some((position, *poly))
+                }
+                _ => None,
+            }
+        })
+        .collect();
+    let ordinary = cover
+        .iter()
+        .filter(|poly| {
+            !rabinowitsch
+                .iter()
+                .any(|(_, generator)| std::ptr::eq(*generator, *poly))
+        })
+        .collect();
+    (ordinary, rabinowitsch)
+}
+
+/// Declare the ring and the cover's ideal `I`. With `saturate`, each
+/// Rabinowitsch generator `c*(1 - s*h)` is replaced by the saturation
+/// `I:h^oo` (Singular `sat`, applied to `diff(g,s) = -c*h`), and `s` is then
+/// set to zero so the dimension over all ring variables equals the dimension
+/// over the original ones.
+fn singular_ideal(cover: &[PolyExtLex], saturate: bool) -> String {
     let variables = (0..cover[0].nvars())
         .map(|index| format!("x{index}"))
         .collect::<Vec<_>>()
         .join(",");
-    let generators = cover
+    let (ordinary, rabinowitsch) = if saturate {
+        rabinowitsch_generators(cover)
+    } else {
+        (cover.iter().collect(), Vec::new())
+    };
+    let generators = if ordinary.is_empty() {
+        "0".to_string()
+    } else {
+        ordinary
+            .into_iter()
+            .map(singular_polynomial)
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let ring = format!("ring r=0,({variables}),dp;\nideal I={generators};\n");
+    if rabinowitsch.is_empty() {
+        return ring;
+    }
+    let saturations: String = rabinowitsch
         .iter()
-        .map(singular_polynomial)
+        .map(|(position, generator)| {
+            format!(
+                "S=sat(I,ideal(diff({},x{position})));\n\
+                 if(typeof(S)==\"list\"){{I=S[1];}}else{{I=S;}}\n",
+                singular_polynomial(generator)
+            )
+        })
+        .collect();
+    let pinned = rabinowitsch
+        .iter()
+        .map(|(position, _)| format!("x{position}"))
         .collect::<Vec<_>>()
         .join(",");
+    format!("LIB \"elim.lib\";\n{ring}def S;\n{saturations}I=I+ideal({pinned});\n")
+}
+
+fn singular_program(cover: &[PolyExtLex], saturate: bool) -> String {
+    let ideal = singular_ideal(cover, saturate);
     format!(
-        "ring r=0,({variables}),dp;\n\
-         ideal I={generators};\n\
+        "{ideal}\
          option(redSB);\n\
          ideal G=std(I);\n\
          print(\"IDOS_UNIT \"+string(reduce(1,G)==0));\n\
@@ -141,19 +241,10 @@ fn singular_program(cover: &[PolyExtLex]) -> String {
     )
 }
 
-fn singular_facstd_program(cover: &[PolyExtLex]) -> String {
-    let variables = (0..cover[0].nvars())
-        .map(|index| format!("x{index}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let generators = cover
-        .iter()
-        .map(singular_polynomial)
-        .collect::<Vec<_>>()
-        .join(",");
+fn singular_facstd_program(cover: &[PolyExtLex], saturate: bool) -> String {
+    let ideal = singular_ideal(cover, saturate);
     format!(
-        "ring r=0,({variables}),dp;\n\
-         ideal I={generators};\n\
+        "{ideal}\
          ideal FI=interred(I);\n\
          list F=facstd(FI);\n\
          int i; ideal J; ideal G;\n\
@@ -251,8 +342,8 @@ fn run_singular(program: &str, timeout: Duration) -> Result<SingularRun, String>
 /// computation instead of leaving an abandoned worker thread behind.  IDOS
 /// only needs the basis length and leading-monomial ideal, so the compact
 /// `leadexp` output is reconstructed as monomials in the original ring.
-fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
-    let program = singular_program(&cover);
+fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration, saturate: bool) -> Outcome {
+    let program = singular_program(&cover, saturate);
     let (status, stdout, stderr) = match run_singular(&program, timeout) {
         Ok(SingularRun::Completed {
             status,
@@ -297,8 +388,12 @@ fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome
     })
 }
 
-fn evaluate_cover_singular_facstd(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
-    let program = singular_facstd_program(&cover);
+fn evaluate_cover_singular_facstd(
+    cover: Vec<PolyExtLex>,
+    timeout: Duration,
+    saturate: bool,
+) -> Outcome {
+    let program = singular_facstd_program(&cover, saturate);
     let (status, stdout, stderr) = match run_singular(&program, timeout) {
         Ok(SingularRun::Completed {
             status,
@@ -394,8 +489,12 @@ pub fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBack
         return Outcome::Inconsistent;
     }
     match backend {
-        GbBackend::SingularGb => return evaluate_cover_singular(cover, timeout),
-        GbBackend::SingularFacstd => return evaluate_cover_singular_facstd(cover, timeout),
+        GbBackend::SingularGb => return evaluate_cover_singular(cover, timeout, false),
+        GbBackend::SingularFacstd => return evaluate_cover_singular_facstd(cover, timeout, false),
+        GbBackend::SingularGbSat => return evaluate_cover_singular(cover, timeout, true),
+        GbBackend::SingularFacstdSat => {
+            return evaluate_cover_singular_facstd(cover, timeout, true);
+        }
         _ => {}
     }
     if cfg!(test) || crate::solver_process::running_under_test_harness() {
@@ -414,7 +513,10 @@ pub(crate) fn evaluate_cover_in_process(cover: Vec<PolyExtLex>, backend: GbBacke
         GbBackend::Symbolica => {
             symbolica::poly::groebner::GroebnerBasis::new(&grevlex, false).system
         }
-        GbBackend::SingularGb | GbBackend::SingularFacstd => {
+        GbBackend::SingularGb
+        | GbBackend::SingularFacstd
+        | GbBackend::SingularGbSat
+        | GbBackend::SingularFacstdSat => {
             return Outcome::BackendError(
                 "Singular cannot run through the in-process worker entry point".to_string(),
             );
@@ -588,6 +690,52 @@ mod tests {
             ),
             Outcome::Inconsistent
         ));
+    }
+
+    fn rabinowitsch_cover() -> Vec<PolyExtLex> {
+        let mut product = test_poly("x*y");
+        product.add_variable(&PolyVariable::Temporary(0));
+        let x = poly_like(&product, "x");
+        let inverse = product
+            .variable(&PolyVariable::Temporary(0))
+            .expect("temporary");
+        let sigma = product.one() - inverse * &x;
+        vec![product, sigma]
+    }
+
+    #[test]
+    fn saturation_backends_round_trip_through_labels() {
+        for backend in [GbBackend::SingularGbSat, GbBackend::SingularFacstdSat] {
+            assert_eq!(GbBackend::parse(backend.label()), Some(backend));
+        }
+    }
+
+    #[test]
+    fn singular_saturates_only_rabinowitsch_generators() {
+        let plain = test_poly("x*y");
+        assert!(!singular_program(&[plain], true).contains("sat("));
+        let cover = rabinowitsch_cover();
+        assert!(!singular_program(&cover, false).contains("sat("));
+        let program = singular_program(&cover, true);
+        assert!(program.contains("sat("));
+        assert_eq!(rabinowitsch_generators(&cover).0.len(), 1);
+    }
+
+    #[test]
+    fn singular_saturation_backend_projects_out_the_temporary() {
+        if Command::new("Singular").arg("--version").output().is_err() {
+            return;
+        }
+
+        let cover = rabinowitsch_cover();
+        let nvars = cover[0].nvars();
+        match evaluate_cover(cover, Duration::from_secs(5), GbBackend::SingularGbSat) {
+            Outcome::Consistent(basis) => {
+                assert_eq!(basis.elements.len(), 2);
+                assert_eq!(solution_dimension(&basis.elements, nvars), Some(1));
+            }
+            _ => panic!("the saturated ideal (y, s) should be consistent"),
+        }
     }
 
     #[test]
