@@ -99,7 +99,9 @@ decisions remain part of the solution-set representation.
     \caption{Recursion tree of factor branching with variable zeroing on the
     fifth-order graviton QFT system (detailed in
     Section~\ref{subsec:physical-system}) using M4GB with a five-second
-    timeout per hitting set. The run takes 33.768 seconds.}
+    timeout per hitting set. The run takes 33.768 seconds.
+    "contracted" branches are caused by an optimization specified in Subsection~\ref{subsec:zeroing-branch-contraction}
+    }
     \label{fig:variable_zeroing_tree}
 \end{figure}
 
@@ -138,18 +140,17 @@ and scores are compared lexicographically.
 \subsection{Branch contraction}
 \label{subsec:zeroing-branch-contraction}
 
-Let $\mathcal H_0$ and $\mathcal H_1$ be the minimal hitting sets for $x=0$ and
-$x\neq0$. Suppose, up to exchanging the two children, that
+Suppose that one child of a split on $x$ has no hitting sets (i.e., UNSAT) and the other has exactly one, $H$.
+Theorem~\ref{thm:branch-decomposition} and the variable-zeroing split give
 \[
-    \mathcal H_0=\emptyset \qquad \text{and} \qquad \mathcal H_1=\{H\}.
+    V_Y(Q;Z,N)=
+    \begin{cases}
+        V_Y(H;Z,N\cup\{x\}) & \text{if the $x=0$ child is UNSAT,}\\
+        V_Y(H;Z\cup\{x\},N) & \text{if the $x\neq0$ child is UNSAT.}
+    \end{cases}
 \]
-The first child is UNSAT. Theorem~\ref{thm:branch-decomposition} and the
-variable-zeroing split give
-\[
-    V_Y(Q;Z,N)=V_Y(H;Z,N\cup\{x\}).
-\]
-There is no need to run the branch solver on $H$ before choosing the next
-splitting variable.
+Thus we can choose the next splitting variable without running the branch solver on $H$, or losing solutions.
+This optimization may save a solver call that is likely to fail.
 
 \subsection{Theoretical analysis}
 \label{subsec:zeroing-theoretical-analysis}

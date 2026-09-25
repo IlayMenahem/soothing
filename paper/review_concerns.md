@@ -81,12 +81,6 @@ Seven issues most affect whether a referee would accept the paper:
 
 ## B. Correctness and precision of the theory
 
-### B2. Branch contraction (§4.3)
-- "There is no need to run the branch solver on H" (`variable_zeroing.tex:134-135`) is a heuristic, not a consequence of the theory. H could still be solvable within τ. Say that the step skips a solver call H would probably fail, and that correctness is unaffected.
-- Contraction is not in Algorithm 4, even though Fig. 3 shows contracted nodes. Add it to the algorithm, or label it as an optimization in the implementation.
-- "Up to exchanging the two children" leaves only one of the two cases displayed. If the x ≠ 0 child is the UNSAT one, the right-hand side becomes V_Y(H; Z∪{x}, N).
-- "Let 𝓗₀ and 𝓗₁ be the minimal hitting sets" should read "the families of minimal hitting sets".
-
 ### B3. Algorithm 4 does not match the procedure that was run or analyzed
 - `FactorBranchingWithTimeout`, `ChooseVariable`, `Substitute`, and `Variables` have no definitions and no pseudocode. Equation (4) rests on the first of these.
 - §4.1 says splitting runs "until … the computation budget is exhausted", and the experiments use a 120-s total limit. Algorithm 4 has no global budget. Branches cut off by the budget must go into U, or Theorem 6 does not cover the reported runs.
