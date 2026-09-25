@@ -61,10 +61,27 @@ a variable is often always zero or always nonzero.
 % How the constraints are encoded into the system.
 Let $N$ be the variables declared nonzero on the current path.
 Subsection~\ref{subsec:nonzero-encoding} describes two ways to encode these
-conditions as polynomial equations.
+conditions; the experiments use Equation~\eqref{eq:single-zeroing-saturation}.
+Since refinement may rewrite each $\sigma_x$, $\mathrm{UpdateSaturation}(R,N')$
+removes every generator of $R$ containing an auxiliary variable and adds
+$\sigma_x$ for $x\in N'$.
+
+\begin{lemma}
+\label{lem:auxiliary-generators}
+Refinement keeps exactly one generator containing $s_x$, of the form
+$c(1-s_xh_x)$ with $h_x\equiv x$ modulo the auxiliary-free generators $R'$.
+Hence $\pi(V(R))=\{a\in V(R'):a_x\neq0,\ x\in N\}$, and
+$\mathrm{UpdateSaturation}$ loses no constraint.
+\end{lemma}
+
+\begin{proof}
+The leading monomial of $1-s_xh_x$ contains $s_x$, so it reduces no other
+generator, is reduced only by $R'$ (changing $h_x$ by an element of
+$\langle R'\rangle$), and, being linear in $s_x$, does not factor.\qed
+\end{proof}
 
 Solutions of the nonzero branch are projected onto the original variables, so
-the auxiliary variable does not appear in the output. The zero and nonzero
+the auxiliary variables do not appear in the output. The zero and nonzero
 decisions remain part of the solution-set representation.
 
 \begin{figure}[pos=htbp]
@@ -103,8 +120,8 @@ The choice of variable for splitting affects the efficiency of the algorithm.
 If a variable barely occurs in the current hitting set, recursive calls may
 repeat the same work. A variable that occurs in many generators is a more
 promising choice. Setting it to zero removes all terms containing it at once.
-In the nonzero branch, it is appended to the product in Equation~\eqref
-{eq:zeroing-saturation}.
+In the nonzero branch, $\mathrm{UpdateSaturation}$ adds the equation
+$\sigma_x=0$.
 
 For each candidate variable $x$ that is still available on the current branch, define
 \begin{align*}

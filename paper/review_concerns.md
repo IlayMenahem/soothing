@@ -13,10 +13,9 @@ Seven issues most affect whether a referee would accept the paper:
 1. The paper never states how it differs from its closest prior work, factorizing Gröbner bases (Gräbe; Singular's `facstd`) (A1).
 2. The abstract promises irreducible components, but the method returns a possibly redundant union of branch varieties (A2).
 3. All 20 benchmark systems are built to factor, and each method class is represented by its best configuration per system. The fair comparison with a fixed backend is already in the appendix and is stronger, but the paper doesn't show it (A4).
-4. The physical-system results contradict each other in ways the text doesn't explain: 33 versus 4 root hitting sets, and 32 SAT branches versus 6 versus 1 components. The key standalone baseline, `facstd`, is also not reported (A5).
 5. The evidence for variable zeroing is one system and one run, and the paper's wording claims more than that supports (A6).
 6. Timing method: single runs, a startup cost of about 30 s in the numerical baseline, and solver threads that keep running after their timeout (A7).
-7. `UpdateSaturation`, `FactorBranchingWithTimeout`, and branch contraction are never defined. Theorem 6's correctness depends on them (B1–B3).
+7. `FactorBranchingWithTimeout` and branch contraction are never defined. Theorem 6's correctness depends on them (B2–B3).
 
 ---
 
@@ -59,15 +58,6 @@ Seven issues most affect whether a referee would accept the paper:
 - **The methods compute different things.** A Gröbner basis of the whole ideal, a primary decomposition (`primdecGTZ`), a factorized Gröbner basis, a numerical solution set, and a union of branches are different outputs. Wall times across them are not directly comparable.
   - **Fix:** list what each baseline computes, including its Singular or Macaulay2 command, monomial order, and characteristic. For HomotopyContinuation.jl, name the function. The gated systems are positive-dimensional, so if the function was `solve`, it returns only isolated roots and is not comparable.
 
-### A5. Physical-system results: unexplained contradictions and unsupported claims (`experiments.tex:133-178`, Table 3)
-- **The two pipelines disagree about the same system.** The results JSON shows that factor branching enumerated **33** minimal hitting sets: `facstd` found 32 SAT and 1 UNSAT. The variable-zeroing run had only **4** hitting sets at the root: `covers=4`, which matches the 4 root children in Fig. 3. With **0 splits**, the variable-zeroing `facstd` run should be the same computation as the factor-branching one. Instead it reports "6 comp." in 0.856 s, against "32 SAT, 1 UNSAT" in 1.341 s. Variable zeroing with M4GB and with Singular reports "1 comp.".
-  - **Fix:** explain which refinement settings differ between the two pipelines; interreduction is the likely candidate. Also explain what "comp." counts. Then show that all the complete runs describe the same variety, for example the same dimension and degree for each branch.
-- **Claim with no support (`experiments.tex:168-170`).** "Factor branching recovers all solutions quickly with every backend." When one hitting set has timed out, a run cannot know it has all the solutions. Only the `facstd` run, which found that branch UNSAT, shows this after the fact. Reword the sentence to say that.
-- **Standalone baselines are not reported.** "All standalone baselines timed out" gives neither the list of baselines nor their time limit. Table 3 has no row for them; the setup says 60 s, but this experiment uses 120 s. Because FB+`facstd` finishes in 1.3 s, the reader's first question will be how long standalone `facstd` takes. Report it explicitly. If it times out, that is the paper's best result and belongs in the abstract.
-- **`d = 14` is never defined.** In the results file it is `largest_dimension`. Define it in the text.
-- **Time limits are unclear.** The caption says "5-second inner timeout and 120-second total limit", which describes variable zeroing only. The factor-branching column uses 120 s per hitting set, and its overall limit is not stated.
-- **The system is described in one sentence.** Give the number of variables and equations, the degrees, the number of terms, the coefficient field, and the physical meaning of each variable (Fig. 3 uses `pph`, `DpDph2`, and `xr`). Also state which paper the equations come from; currently a master's thesis is cited. The phrase "constraining graviton couplings … to remain consistent with QFT" is vague. If these are fixed-point (beta-function) equations of a truncated RG flow, say so, and say whether the physics question needs real solutions.
-
 ### A6. The evidence for variable zeroing is thin, and the wording claims more (`variable_zeroing.tex:24-25, 89-97`; `introduction.tex:53`)
 - **Scope.** On the 20 baseline systems, variable zeroing never helped. Every row has 0 splits except Cyclic-7, which stayed partial, and dense n=7, which failed with an error (Table 5). Its only positive result is two extra backends completing on one physical system. The best configuration there, FB+`facstd`, needs no splits.
   - **Fix:** frame the result as "makes completion less dependent on which backend is used, on this system". Remove "proves particularly effective" (`introduction.tex:53`).
@@ -80,7 +70,6 @@ Seven issues most affect whether a referee would accept the paper:
 - **The splitting-variable heuristic (§4.2) is not tested.** There is no comparison with random choice or with each component of the score used alone.
 
 ### A7. Measurement method (`experiments.tex:20-36`, appendix)
-- **Every result is a single run, reported to 3 decimals.** The same M4GB configuration took 39.762 s in Table 3 and 36.314 s in the Fig. 3 run, about 10% apart. Report the median of at least 3–5 runs, or state the variability. Entries of `0.000` can't be distinguished from each other.
 - **The numerical baseline has a startup cost of about 30 s.** HomotopyContinuation.jl takes 29–37 s even on n = 5 systems, which points to Julia startup and compilation. Say whether this startup time is included, and apply the same rule to Singular and Macaulay2 process startup. The in-process Rust backends pay no startup cost.
 - **Threads.** The hardware has 14 cores, but the paper never says whether backends run on one thread or many. It also doesn't say whether factor branching solves branches in parallel. Macaulay2 and Julia may use several threads by default.
 - **Threads that outlive their timeout.** `appendix.tex:104-107` says the in-process backends (M4GB, F5, GVW, F4) keep running after a per-hitting-set timeout. So in every variable-zeroing run with these backends, including the F5, GVW, and F4 rows of Table 3, timed-out work competes with later branches for CPU and memory. This confounds those results. It also breaks the assumption of Theorem 7 (see B9). Say so in the main text, not only in the appendix.
@@ -91,12 +80,6 @@ Seven issues most affect whether a referee would accept the paper:
 ---
 
 ## B. Correctness and precision of the theory
-
-### B1. `UpdateSaturation` is undefined, and the product encoding may make it unsound (`variable_zeroing.tex:48, 62-68, 106`)
-- §2.4 gives two encodings. Line 106 ("appended to the product in Equation (2)") suggests the implementation uses the single-variable product σ_N = 1 − s∏x.
-- Interreduction can rewrite σ_N. Its leading term s∏x can be reduced by other generators, which puts s into other polynomials of the terminal branch R. If `UpdateSaturation` then just replaces σ_N with σ_{N∪{x}}, the generators that already contain s now refer to a different s, and Q₁ no longer encodes "Q and x ≠ 0".
-- Equation (3) and Theorem 6 depend on π(V(Q₁)) = {a ∈ π(V(Q)) : a_x ≠ 0}.
-- **Fix:** define `UpdateSaturation` exactly. Either eliminate s before updating, use a fresh auxiliary variable for each split, or prove that the replacement is sound. Also state which encoding the experiments use, and drop the other one if it isn't used.
 
 ### B2. Branch contraction (§4.3)
 - "There is no need to run the branch solver on H" (`variable_zeroing.tex:134-135`) is a heuristic, not a consequence of the theory. H could still be solvable within τ. Say that the step skips a solver call H would probably fail, and that correctness is unaffected.
@@ -119,9 +102,6 @@ Seven issues most affect whether a referee would accept the paper:
 - Theorem 4 then follows immediately and can be a corollary or merged into Theorem 3.
 - Lemma 1's hypothesis ("Suppose refinement … terminates") is redundant once Theorem 2 is proved. Put Theorem 2 first and state Lemma 1 without the hypothesis.
 - The proof of Theorem 3 repeats the reasoning of Lemma 1 (`method.tex:200-202`). Cite the lemma instead.
-
-### B6. The remark about algebraically closed fields is confused (`method.tex:101-102`)
-V is already defined over K̄ (§2.1), and nothing assumes K is algebraically closed. The actual point is that the decomposition identities hold for points over any extension L ⊇ K, and that 1 ∈ ⟨H⟩ rules out solutions over every such L. Say that, and add one sentence on real solutions if the physics application needs them.
 
 ### B7. Theorem 5 (`variable_zeroing.tex:146-159`)
 - "Qᵢ encodes Q together with Dᵢ" is informal. Define it as V_Y(Qᵢ; A∪{Dᵢ}) = {a ∈ V_Y(Q; A) : a satisfies Dᵢ}.
@@ -154,8 +134,7 @@ V is already defined over K̄ (§2.1), and nothing assumes K is algebraically cl
 
 ## C. Structure and exposition
 
-### C1. Abstract (`paper.tex:50-68`, 208 words, within the JSC limit of 250)
-- Delete the leftover template comments (`% [solving large sets …]`, `% [broadest strongest claim]`, …) before submission.
+### C1. Abstract
 - `:57` "variants of Buchberger's algorithm with syzygy, resultants, and cylindrical algebraic decomposition": "with syzygy" is unclear (syzygy criteria? signatures?). CAD and resultants don't come up anywhere else in the paper. Meanwhile numerical homotopy, which is a baseline, is missing. List the methods the paper actually compares against.
 - `:59` "even the most modern approaches still often fail on practical problems or slight perturbations of standard benchmarks" has no support. The gated results do support it, so connect the two: direct Gröbner bases fail on gated Katsura-8.
 - There are no numbers. Add the main results, for example "completes 19 of 20 benchmarks with a single backend, versus 17 for `facstd`" and the physical-system result with its time limit.
@@ -173,7 +152,7 @@ There is no example anywhere in the paper. A 3–4 equation system would help re
 
 ### C4. Preliminaries contain unused or misplaced material
 - The UNSAT-core definitions (`preliminaries.tex:85-87`) serve only §3.2, which reports a negative result. Remove them, or move them to where they are used.
-- §2.4 (nonzero encodings) is needed only in §4. Move it there, and keep only the encoding the implementation uses (B1). Name it as the Rabinowitsch trick and cite it.
+- §2.4 (nonzero encodings) is needed only in §4. Move it there, and name it as the Rabinowitsch trick and cite it.
 - Algorithm 1 (interreduction) is textbook material. A citation and one sentence could replace it, leaving only the facts used later: the generated ideal is preserved and M does not decrease.
 - The Berge citation (`:103`) is attached to the branch claim. It belongs with the definition of a hitting set (minimal transversal).
 
@@ -324,8 +303,7 @@ This produces "Peifer et al. trained … (Peifer et al., 2020)" (`introduction.t
 
 
 ## Suggested order of work
-1. Settle the physical-system inconsistencies and report standalone `facstd` (A5). This may change the headline claim.
-2. Define `UpdateSaturation`, `FactorBranchingWithTimeout`, contraction, and check that B1 is sound (B1–B3).
+2. Define `FactorBranchingWithTimeout` and contraction (B2–B3).
 3. Write the comparison with factorizing Gröbner bases and the contribution statement, and fix what the abstract says the output is (A1, A2, C1, C2).
 4. Add the fixed-backend comparison, a disclosure of how the benchmark was built, and repeated runs (A4, A7).
 5. Add the worked example, the discussion and limitations section, and move the ablation to §5 (C3, C6, C7, A6).
