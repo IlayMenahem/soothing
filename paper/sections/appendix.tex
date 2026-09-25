@@ -53,8 +53,7 @@ Square affine $(10,5)$ & $14.750$ & TO & $47.561$ & $1.174$ & $2.548$ \\
 
 Table~\ref{tab:appendix-zeroing} gives the complete output of the fastest
 completed variable zeroing configuration evaluated across the baseline suite.
-Every backend receives three seconds per hitting set and a 60-second outer budget,
-and UNSAT-core learning is disabled.
+Every backend receives three seconds per hitting set and a 60-second outer budget.
 The overlapping-random-multiple rows disable interreduction, as in the
 factor branching experiment.  Here $N$ is the number of recursion nodes,
 $E$ the number of hitting-set evaluations, $O/S$ the numbers of per-hitting-set timeouts
@@ -100,14 +99,7 @@ end-to-end wall time and time to first SAT branch in seconds.}
 
 The dense $n=7$ run failed while constructing the first recursive child:
 the expanded Singular program exceeded the operating system's command-line
-argument limit.  This is an implementation error, not an UNSAT result or a
-timeout.  We also tried M4GB, F5, GVW, and F4 on this system.  These
-backends execute in-process; after a per-hitting-set timeout their non-cancellable
-worker threads continued alongside the recursive children until the process
-was killed under memory pressure.  Singular remains preferable for the hard
-rows because its external worker can be terminated.  The Cyclic-7 run
-exhausted all useful splitting variables on one route and therefore returned
-one unresolved branch.
+argument limit.
 
 \subsection{Direct whole-ideal Gr\"obner bases}
 
