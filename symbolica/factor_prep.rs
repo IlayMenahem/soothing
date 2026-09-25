@@ -171,6 +171,48 @@ fn heuristic_variable_order(loaded: &LoadedMathematicaSystem) -> Arc<Vec<PolyVar
     variable_order(&symbols)
 }
 
+/// Re-express `polys` in the min-fill variable order of their own supports,
+/// the order [`polynomials_from_loaded`] derives for a loaded system. Ties are
+/// broken by variable name, matching the loader's sorted-identifier ids.
+///
+/// Lex interreduction and factorization depend on the order, so a subsystem
+/// is best refined under an order derived from its own structure rather than
+/// one inherited from the system it was split from.
+pub fn reorder_by_min_fill(mut polys: Vec<PolyExtLex>) -> Result<Vec<PolyExtLex>, String> {
+    if polys.is_empty() {
+        return Ok(polys);
+    }
+    MultivariatePolynomial::unify_variables_list(&mut polys);
+    let variables = polys[0].variables.clone();
+    let mut by_name: Vec<usize> = (0..variables.len()).collect();
+    by_name.sort_by_cached_key(|&position| variables[position].to_string());
+    let canonical_id: Vec<usize> =
+        by_name
+            .iter()
+            .enumerate()
+            .fold(vec![0; variables.len()], |mut ids, (id, &position)| {
+                ids[position] = id;
+                ids
+            });
+    let supports: Vec<Vec<usize>> = polys
+        .iter()
+        .map(|polynomial| {
+            (0..variables.len())
+                .filter(|&position| polynomial.contains(position))
+                .map(|position| canonical_id[position])
+                .collect()
+        })
+        .collect();
+    let order: Vec<PolyVariable> = min_fill_order(variables.len(), &supports)
+        .into_iter()
+        .map(|id| variables[by_name[id]].clone())
+        .collect();
+    polys
+        .iter()
+        .map(|polynomial| polynomial.rearrange_with_growth(&order))
+        .collect()
+}
+
 pub fn ideal_ext_lex(
     system: &PolynomialSystem,
     field: &Q,
@@ -347,6 +389,19 @@ mod tests {
         let names: Vec<String> = order.iter().map(|variable| variable.to_string()).collect();
 
         assert_eq!(names, vec!["a", "b", "c", "d"]);
+    }
+
+    #[test]
+    fn reorder_by_min_fill_matches_loader_order_and_preserves_polynomials() {
+        let loaded = load("{a*b + c == 0, b*c == 0, c*d - a == 0, d*a == 0}");
+        let expected = polynomials_from_loaded(&loaded, &Q).expect("heuristic order");
+        let alphabetical = ideal_ext_lex(&loaded.system, &Q, variable_order(&loaded.id_to_sym))
+            .expect("alphabetical order");
+
+        let reordered = reorder_by_min_fill(alphabetical).expect("reorder");
+
+        assert_eq!(reordered, expected);
+        assert_eq!(reordered[0].variables, expected[0].variables);
     }
 
     #[test]

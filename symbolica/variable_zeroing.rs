@@ -21,7 +21,9 @@ use symbolica::domains::rational::Rational;
 use symbolica::poly::PolyVariable;
 
 use crate::cover::{build_factor_index, minimal_covers, ordered_cover_masks};
-use crate::factor_prep::{PolyExtLex, interreduce_polys, try_factor_groups_from_polys};
+use crate::factor_prep::{
+    PolyExtLex, interreduce_polys, reorder_by_min_fill, try_factor_groups_from_polys,
+};
 use crate::gb_core::iteratively_refined_unsat_core;
 use crate::gb_search::{
     ComputedBasis, Core, GbBackend, Outcome, PolyExtGrevLex, evaluate_cover,
@@ -367,6 +369,8 @@ impl Solver<'_> {
             elapsed: Duration::ZERO,
             checks: Vec::new(),
         };
+        let polynomials =
+            reorder_by_min_fill(polynomials).map_err(|error| format!("node {node_id}: {error}"))?;
         let node_nvars = polynomials.first().map_or(0, PolyExtLex::nvars);
         let (groups, covers) = match terminal_hitting_sets_with_timeout(
             polynomials.clone(),
