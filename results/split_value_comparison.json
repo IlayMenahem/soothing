@@ -1,0 +1,44 @@
+{
+  "one": {
+    "argv": [
+      "/private/tmp/claude-501/-Users-ilaymenahem-Documents-university-nosync-Reasearch-soothing/9403c0f3-94fc-4b57-925f-8092a439ef4a/scratchpad/wt/symbolica/target/release/variable_zeroing",
+      "/private/tmp/claude-501/-Users-ilaymenahem-Documents-university-nosync-Reasearch-soothing/9403c0f3-94fc-4b57-925f-8092a439ef4a/scratchpad/wt/systems/system.txt",
+      "--gb",
+      "m4gb",
+      "--timeout",
+      "5000",
+      "--max-runtime",
+      "600000",
+      "--split-value",
+      "1",
+      "--summary"
+    ],
+    "summary": "ZEROING_SUMMARY nodes=172 covers=168 evaluations=161 components=32 inconsistent=20 timeouts=109 splits=89 factorization_timeouts=2 factorization_errors=0 unresolved=36 complete=false largest_depth=22 first_solution_secs=0.487214 elapsed_secs=600.002798",
+    "wall_secs": 600.0176762909978,
+    "killed": false,
+    "returncode": 0,
+    "stderr_tail": ""
+  },
+  "random": {
+    "argv": [
+      "/private/tmp/claude-501/-Users-ilaymenahem-Documents-university-nosync-Reasearch-soothing/9403c0f3-94fc-4b57-925f-8092a439ef4a/scratchpad/wt/symbolica/target/release/variable_zeroing",
+      "/private/tmp/claude-501/-Users-ilaymenahem-Documents-university-nosync-Reasearch-soothing/9403c0f3-94fc-4b57-925f-8092a439ef4a/scratchpad/wt/systems/system.txt",
+      "--gb",
+      "m4gb",
+      "--timeout",
+      "5000",
+      "--max-runtime",
+      "600000",
+      "--split-value",
+      "random",
+      "--random-seed",
+      "0",
+      "--summary"
+    ],
+    "summary": "ZEROING_SUMMARY nodes=163 covers=154 evaluations=134 components=32 inconsistent=5 timeouts=97 splits=85 factorization_timeouts=10 factorization_errors=0 unresolved=50 complete=false largest_depth=22 first_solution_secs=0.475491 elapsed_secs=600.003528",
+    "wall_secs": 600.0199040000443,
+    "killed": false,
+    "returncode": 0,
+    "stderr_tail": ""
+  }
+}
