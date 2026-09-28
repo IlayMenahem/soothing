@@ -1,17 +1,18 @@
 //! Recursive factor branching with variable zeroing.
 //!
-//! This implements Algorithm `ZeroingBranching` from
-//! `paper/sections/variable_zeroing.tex`. A factor cover that exceeds its
-//! Gröbner-basis time budget is split into the constructible cases `x = a`
-//! and `x != a`. By default `a = 0`; fixed-one and fresh-random-value modes
-//! are also available. In the equality branch, `x` is replaced by `a`. All
+//! This implements Algorithm `Factor branching with variable zeroing`
+//! (`alg:ZeroingBranching` in `paper/sections/variable_zeroing.tex`). A
+//! factor cover that exceeds its Gröbner-basis time budget is split into the
+//! constructible cases `x = a` and `x != a`. By default `a = 0`; fixed-one
+//! and fresh-random-value modes are also available. In the equality branch,
+//! `x` is replaced by `a`. Each inequality decision gets its own equation
+//! `1 - s_i*(x_i-a_i) = 0` by default. An option instead makes all
 //! inequality decisions on a branch share the saturation equation
-//! `1 - s*(x_1-a_1)*...*(x_n-a_n) = 0` by default. An option instead gives
-//! every inequality its own equation `1 - s_i*(x_i-a_i) = 0`. If one side of a
-//! split has no factor cover and the other has a unique cover, the unique
-//! cover is split again without a redundant Gröbner-basis call. Only
-//! original-variable basis elements and the zero/nonzero decisions are
-//! exposed by the projected result.
+//! `1 - s*(x_1-a_1)*...*(x_n-a_n) = 0`. If one side of a split has no factor
+//! cover and the other has a unique cover, the unique cover is split again
+//! without a redundant Gröbner-basis call. Only original-variable basis
+//! elements and the zero/nonzero decisions are exposed by the projected
+//! result.
 
 use std::time::{Duration, Instant};
 

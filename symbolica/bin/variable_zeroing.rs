@@ -1,9 +1,11 @@
-//! CLI for recursive factor branching with variable-value splitting.
+//! CLI for factor branching with variable zeroing (`alg:ZeroingBranching`
+//! in `paper/sections/variable_zeroing.tex`).
 //!
-//! Usage: `variable_zeroing [path]
+//! Usage: `variable_zeroing [path] [--no-interreduce] [--timeout MS]
+//! [--max-runtime MS] [--gb BACKEND]
 //! [--saturate-each-variable|--shared-product-saturation]
-//! [--split-value INTEGER|random]
-//! [--random-seed N]` (default path: `systems/system.txt`; default
+//! [--split-value INTEGER|random] [--random-seed N] [--summary]
+//! [--plot OUT.tex]` (default path: `systems/system.txt`; default
 //! Gröbner backend: Singular).
 
 use std::collections::{BTreeMap, HashMap};

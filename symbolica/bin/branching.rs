@@ -1,5 +1,5 @@
-//! Factor-branching solver corresponding to Algorithm `Branching` in
-//! `paper/sections/method.tex`.
+//! Factor-branching solver corresponding to Algorithm `Factor branching`
+//! (`alg:Branching` in `paper/sections/method.tex`).
 //!
 //! The input generators are optionally interreduced and factored. Every
 //! minimal hitting set is then interreduced and factored again until no new

@@ -1,4 +1,5 @@
-//! Recursive refinement of minimal hitting sets (Algorithm `Refine`).
+//! Recursive refinement of minimal hitting sets (Algorithm `Refinement`,
+//! `alg:Refine` in `paper/sections/method.tex`).
 //!
 //! Each hitting set is interreduced and factored again; its own minimal
 //! hitting sets replace it until the set no longer changes. The resulting
