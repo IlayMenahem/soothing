@@ -8,7 +8,7 @@ Tasks:
                  reports ``num_components`` and ``max_dim``.
 
 The historical ``gb`` and ``decompose`` modes treat every free symbol as a
-polynomial-ring variable.  To match the Rust parser used by ``idos``, the
+polynomial-ring variable.  To match the Rust loader (`mathematica.rs`), the
 ``facstd`` mode instead treats ``pi`` as a transcendental coefficient in
 ``Q(pi)`` and all other free symbols (including ``e``) as ring variables.
 
@@ -41,7 +41,7 @@ def _poly_to_singular(poly: sp.Basic) -> str:
 
 
 def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str) -> str:
-    # The Rust loader used by idos recognizes Mathematica's \[Pi] as the
+    # The Rust loader recognizes Mathematica's \[Pi] as the
     # coefficient ``pi`` and excludes it from the polynomial variable order.
     # Match that interpretation for facstd with the transcendental coefficient
     # field Q(pi).  The older baseline modes retain their historical behavior.

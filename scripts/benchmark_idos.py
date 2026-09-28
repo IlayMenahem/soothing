@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Generate and run the consolidated IDOS benchmark matrix.
+"""Generate the 20-system benchmark matrix and run the baseline solvers.
 
-This is the single entry point for the IDOS experiments. It generates every
-system once and atomically checkpoints results in one Markdown matrix.
+The generated systems are shared with ``benchmark_branching.py``. Baseline
+results are checkpointed atomically in one Markdown matrix.
 
 Examples:
 
-    python3 scripts/benchmark_idos.py --timeout 10 --jobs 1
-    python3 scripts/benchmark_idos.py --only idos-symbolica,singular-gb-lex
+    python3 scripts/benchmark_idos.py --timeout 60 --jobs 1
+    python3 scripts/benchmark_idos.py --only singular-gb-lex,m2-decompose
     python3 scripts/benchmark_idos.py --rerun-all
-    python3 scripts/benchmark_idos.py --generate-only --output-dir systems/idos
+    python3 scripts/benchmark_idos.py --generate-only --output-dir systems/benchmarks
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ REPO = Path(__file__).resolve().parent.parent
 SYMBOLICA = REPO / "symbolica"
 RESULTS = REPO / "results"
 BASELINES = Path(__file__).with_name("baselines")
-IDOS = SYMBOLICA / "target" / "release" / "idos"
 SIG = SYMBOLICA / "target" / "release" / "sig_groebner"
 MATRIX_REPORT = RESULTS / "idos_engine_comparison.md"
 
@@ -45,11 +44,6 @@ def subprocess_limit() -> int:
     return max(1, cores - 2)
 
 
-SUMMARY_RE = re.compile(
-    r"IDOS_SUMMARY branches=(\d+) candidates=(\d+) satisfiable=(\d+) unsatisfiable=(\d+) "
-    r"timeouts=(\d+) largest_dimension=(\d+|unknown) largest_basis_len=(\d+) "
-    r"elapsed_secs=([0-9.]+)"
-)
 FINISHED_RE = re.compile(
     r"^\s*(\w+) finished in ([0-9.]+)(ns|µs|ms|s)", re.MULTILINE
 )
@@ -62,7 +56,7 @@ class Instance:
     path: str
     variables: int
     equations: int
-    idos_args: list[str]
+    solver_args: list[str]
     description: str
     tier: str | None = None
     raw_factor_choices: int | None = None
@@ -105,9 +99,9 @@ def gated_cyclic(output: Path, order: int) -> Instance:
         path=path.name,
         variables=order + 1,
         equations=order,
-        idos_args=["--max-covers", "2", "--gb", "m4gb"],
+        solver_args=["--gb", "m4gb"],
         description=(
-            "I = gate*Cyclic-n. IDOS exhausts both minimal covers: the hyperplane "
+            "I = gate*Cyclic-n. Two minimal hitting sets: the hyperplane "
             "{gate} and the full residual Cyclic-n ideal."
         ),
     )
@@ -145,9 +139,9 @@ def gated_katsura(output: Path, order: int) -> Instance:
         path=path.name,
         variables=order + 2,
         equations=order + 1,
-        idos_args=["--max-covers", "2", "--gb", "m4gb"],
+        solver_args=["--gb", "m4gb"],
         description=(
-            "I = k_gate*Katsura-n. IDOS exhausts both minimal covers: the common "
+            "I = k_gate*Katsura-n. Two minimal hitting sets: the common "
             "hyperplane {k_gate} and the full residual Katsura-n ideal."
         ),
     )
@@ -195,10 +189,10 @@ def gated_random_dense_quadratic(
         path=path.name,
         variables=variables + 1,
         equations=variables,
-        idos_args=["--max-covers", "2", "--gb", "m4gb"],
+        solver_args=["--gb", "m4gb"],
         description=(
             "A selector gates a seeded generic dense quadratic complete intersection. "
-            "IDOS exhausts the common hyperplane and full residual-system covers."
+            "Hitting sets: the common hyperplane and the full residual system."
         ),
     )
 
@@ -255,13 +249,7 @@ def overlapping_random_multiples(
         path=path.name,
         variables=variables,
         equations=variables,
-        idos_args=[
-            "--no-interreduce",
-            "--max-covers",
-            str(len(covers)),
-            "--gb",
-            "symbolica",
-        ],
+        solver_args=["--no-interreduce", "--gb", "symbolica"],
         description=(
             f"Each equation is the product of {factors_per_equation} factors "
             f"selected from a pool of {factor_pool} seeded dense quadratics; "
@@ -326,15 +314,13 @@ def affine_factor_hypergraph(
         path=path.name,
         variables=variables,
         equations=equation_count,
-        idos_args=[
+        solver_args=[
             *(["--no-interreduce"] if suite == "positive-dimensional" else []),
-            "--max-covers",
-            "2000",
             "--gb",
             "symbolica",
         ],
         description=(
-            "Overlapping sparse affine factors. IDOS finishes every minimal cover; "
+            "Overlapping sparse affine factors; "
             "each candidate is linear while the expanded full ideal is dense."
         ),
         expected_largest_component=(
@@ -364,7 +350,7 @@ def signed_distance_cycle(output: Path, vertices: int) -> Instance:
         variables=vertices,
         equations=vertices,
         raw_factor_choices=1 << vertices,
-        idos_args=["--max-covers", str(1 << vertices), "--gb", "m4gb"],
+        solver_args=["--gb", "m4gb"],
         description=(
             "Every edge of a closed one-dimensional linkage has signed length +1 or "
             "-1. Balanced choices give translation lines."
@@ -449,7 +435,7 @@ def run(
 
 def build() -> None:
     result = subprocess.run(  # noqa: S603
-        ["cargo", "build", "--release", "--bin", "idos", "--bin", "sig_groebner"],
+        ["cargo", "build", "--release", "--bin", "sig_groebner"],
         cwd=SYMBOLICA,
     )
     if result.returncode:
@@ -485,10 +471,8 @@ def parse_baseline(
     }
 
 
-def idos_args_with_engine(idos_args: list[str], engine: str | None) -> list[str]:
-    if engine is None:
-        return idos_args
-    args = idos_args.copy()
+def solver_args_with_engine(solver_args: list[str], engine: str) -> list[str]:
+    args = solver_args.copy()
     try:
         gb_index = args.index("--gb")
     except ValueError:
@@ -498,66 +482,6 @@ def idos_args_with_engine(idos_args: list[str], engine: str | None) -> list[str]
             raise ValueError("--gb in instance arguments has no engine")
         args[gb_index + 1] = engine
     return args
-
-
-def run_idos(
-    path: Path, idos_args: list[str], timeout: int, engine: str | None = None
-) -> dict[str, object]:
-    method = "idos" if engine is None else f"idos-{engine}"
-    stdout, stderr, wall, killed, returncode = run(
-        [
-            str(IDOS),
-            str(path),
-            *idos_args_with_engine(idos_args, engine),
-            "--timeout",
-            str(timeout * 1000),
-            "--summary",
-        ],
-        timeout + 2,
-    )
-    if killed:
-        return {
-            "method": method,
-            "status": "timeout",
-            "solve_secs": float(timeout),
-            "wall_secs": wall,
-        }
-    match = SUMMARY_RE.search(stdout)
-    if match is None:
-        return {
-            "method": method,
-            "status": "error",
-            "solve_secs": wall,
-            "wall_secs": wall,
-            "error": (stderr or stdout)[-600:],
-        }
-    (
-        branches,
-        candidates,
-        satisfiable,
-        unsatisfiable,
-        cover_timeouts,
-        largest_dimension,
-        largest_basis_len,
-        solve,
-    ) = match.groups()
-    return {
-        "method": method,
-        "status": (
-            "ok" if returncode == 0 and int(cover_timeouts) == 0 else "partial"
-        ),
-        "solve_secs": float(solve),
-        "wall_secs": wall,
-        "branches": int(branches),
-        "candidates": int(candidates),
-        "satisfiable": int(satisfiable),
-        "unsatisfiable": int(unsatisfiable),
-        "cover_timeouts": int(cover_timeouts),
-        "largest_basis_len": int(largest_basis_len),
-        "largest_dimension": (
-            None if largest_dimension == "unknown" else int(largest_dimension)
-        ),
-    }
 
 
 def run_direct(path: Path, algorithm: str, timeout: int) -> dict[str, object]:
@@ -664,11 +588,6 @@ def run_external(
 
 
 MATRIX_METHODS = {
-    "idos-m4gb",
-    "idos-f5",
-    "idos-gvw",
-    "idos-symbolica",
-    "idos-singular-gb",
     "m4gb-grevlex",
     "f5-grevlex",
     "gvw-grevlex",
@@ -761,8 +680,6 @@ class MatrixReport:
 def run_matrix_method(
     instance: Instance, path: Path, method: str, timeout: int
 ) -> dict[str, object]:
-    if method.startswith("idos-"):
-        return run_idos(path, instance.idos_args, timeout, method.removeprefix("idos-"))
     if method.endswith("-grevlex"):
         return run_direct(path, method.removesuffix("-grevlex"), timeout)
     rows = run_external(path, timeout, {method})
@@ -784,20 +701,7 @@ def format_matrix_result(
 
     value = f"{solve:.3f}/{wall:.3f}"
     dimension = row.get("largest_dimension", row.get("max_dim"))
-    if method.startswith("idos-"):
-        candidates = int(row.get("candidates", 0))
-        required = MATRIX_REQUIRED_COVERS[instance]
-        if status == "partial":
-            completed = int(row.get("satisfiable", 0)) + int(
-                row.get("unsatisfiable", 0)
-            )
-            prefix = "CAP" if not row.get("cover_timeouts") else "P"
-            value = f"{prefix} {completed}/{required}; {value}"
-        elif candidates < required:
-            value = f"CAP {candidates}/{required}; {value}"
-    if (
-        method.startswith("idos-") or method in DECOMPOSITION_METHODS
-    ) and dimension not in (None, ""):
+    if method in DECOMPOSITION_METHODS and dimension not in (None, ""):
         value += f"; d={dimension}"
     return value
 
@@ -829,12 +733,7 @@ def benchmark_matrix(
     def execute(task: tuple[str, str]) -> tuple[str, str, dict[str, object]]:
         instance_name, method = task
         instance = by_name[instance_name]
-        method_timeout = (
-            20 if instance.suite == "adversarial" else 45
-        ) if method.startswith("idos-") else timeout
-        row = run_matrix_method(
-            instance, output / instance.path, method, method_timeout
-        )
+        row = run_matrix_method(instance, output / instance.path, method, timeout)
         return instance_name, method, row
 
     print(f"running {len(tasks)} matrix checks with {jobs} workers")
@@ -877,7 +776,7 @@ def parse_args() -> argparse.Namespace:
         "--only",
         help=(
             "comma-separated exact matrix method labels, such as "
-            "idos-symbolica,singular-gb-lex,m2-decompose"
+            "singular-gb-lex,m2-decompose"
         ),
     )
     args = parser.parse_args()
@@ -904,7 +803,7 @@ def main() -> int:
 
     temporary: tempfile.TemporaryDirectory[str] | None = None
     if args.output_dir is None:
-        temporary = tempfile.TemporaryDirectory(prefix="idos_benchmarks_")
+        temporary = tempfile.TemporaryDirectory(prefix="baseline_benchmarks_")
         root = Path(temporary.name)
     else:
         root = args.output_dir

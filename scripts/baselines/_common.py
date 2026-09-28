@@ -4,8 +4,8 @@ Each baseline driver (Singular / Macaulay2 / HomotopyContinuation.jl) loads a
 Mathematica-style polynomial system from a `.txt` file, translates it into the
 syntax of its target tool, runs the tool as a subprocess with a wall-clock
 timeout, and prints a single JSON line in the unified ``BaselineResult`` shape
-below. ``scripts/benchmark_idos.py`` consumes those JSON lines when comparing
-IDOS with external computer-algebra systems.
+below. ``scripts/benchmark_idos.py`` consumes those JSON lines as the
+external computer-algebra baselines.
 """
 
 from __future__ import annotations

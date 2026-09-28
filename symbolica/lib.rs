@@ -12,7 +12,6 @@ pub mod refine;
 pub mod sig_groebner;
 #[cfg_attr(test, allow(dead_code))]
 mod solver_process;
-pub mod sparse;
 pub mod system;
 pub mod var_id;
 pub mod variable_zeroing;

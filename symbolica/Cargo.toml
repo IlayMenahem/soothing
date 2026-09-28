@@ -14,10 +14,6 @@ name = "sig_groebner"
 path = "bin/sig_groebner.rs"
 
 [[bin]]
-name = "idos"
-path = "bin/idos.rs"
-
-[[bin]]
 name = "branching"
 path = "bin/branching.rs"
 

@@ -28,7 +28,7 @@ from benchmark_idos import (
     SYMBOLICA,
     Instance,
     generate_matrix,
-    idos_args_with_engine,
+    solver_args_with_engine,
     run,
     subprocess_limit,
 )
@@ -67,7 +67,7 @@ def run_branching(
         [
             str(BRANCHING),
             str(path),
-            *idos_args_with_engine(branching_args, engine),
+            *solver_args_with_engine(branching_args, engine),
             "--timeout",
             str(timeout * 1000),
             "--summary",
@@ -271,7 +271,7 @@ def benchmark_matrix(
         instance = by_name[instance_name]
         row = run_branching(
             output / instance.path,
-            instance.idos_args,
+            instance.solver_args,
             METHOD_TIMEOUT_SECS,
             method.removeprefix("branching-"),
         )
