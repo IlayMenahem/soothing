@@ -34,9 +34,6 @@ struct CliOptions {
     saturate_each_variable: bool,
     split_value_strategy: SplitValueStrategy,
     random_seed: u64,
-    max_nodes: usize,
-    max_evaluations: usize,
-    max_depth: usize,
     variable_names: Vec<String>,
     summary: bool,
     plot: Option<PathBuf>,
@@ -59,9 +56,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut saturate_each_variable = true;
     let mut split_value_strategy = SplitValueStrategy::Fixed(0);
     let mut random_seed = 0;
-    let mut max_nodes = usize::MAX;
-    let mut max_evaluations = usize::MAX;
-    let mut max_depth = usize::MAX;
     let mut variable_names = Vec::new();
     let mut summary = false;
     let mut plot = None;
@@ -109,11 +103,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     .parse()
                     .map_err(|error| format!("invalid --random-seed: {error}"))?;
             }
-            "--max-nodes" => max_nodes = parse_usize(&mut args, "--max-nodes")?,
-            "--max-covers" | "--max-evaluations" => {
-                max_evaluations = parse_usize(&mut args, "--max-evaluations")?;
-            }
-            "--max-depth" => max_depth = parse_usize(&mut args, "--max-depth")?,
             "--variable" => variable_names.push(
                 args.next()
                     .ok_or_else(|| "--variable requires a name".to_string())?,
@@ -140,9 +129,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         saturate_each_variable,
         split_value_strategy,
         random_seed,
-        max_nodes,
-        max_evaluations,
-        max_depth,
         variable_names,
         summary,
         plot,
@@ -193,7 +179,7 @@ fn main() {
         load_started.elapsed()
     );
     println!(
-        "Recursive branching: {}ms/cover, {} backend, unsat core search {}, saturation equations {}, split values {}, max runtime {}, max nodes {}, max evaluations {}, max depth {}",
+        "Recursive branching: {}ms/cover, {} backend, unsat core search {}, saturation equations {}, split values {}, max runtime {}",
         cli.timeout_ms,
         cli.gb_backend.label(),
         if cli.unsat_core_search {
@@ -211,10 +197,7 @@ fn main() {
             SplitValueStrategy::Random => format!("random in [-10,10] (seed {})", cli.random_seed),
         },
         cli.max_runtime_ms
-            .map_or_else(|| "unlimited".to_string(), |value| format!("{value}ms")),
-        display_limit(cli.max_nodes),
-        display_limit(cli.max_evaluations),
-        display_limit(cli.max_depth)
+            .map_or_else(|| "unlimited".to_string(), |value| format!("{value}ms"))
     );
 
     let options = VariableZeroingOptions {
@@ -226,9 +209,6 @@ fn main() {
         saturate_each_variable: cli.saturate_each_variable,
         split_value_strategy: cli.split_value_strategy,
         random_seed: cli.random_seed,
-        max_nodes: cli.max_nodes,
-        max_evaluations: cli.max_evaluations,
-        max_depth: cli.max_depth,
         verbose: !cli.summary,
     };
     let result = solve_by_zeroing(polynomials, variables, &options)
@@ -618,14 +598,6 @@ fn format_condition_list<'a>(
     }
 }
 
-fn display_limit(value: usize) -> String {
-    if value == usize::MAX {
-        "unlimited".to_string()
-    } else {
-        value.to_string()
-    }
-}
-
 fn format_decisions(decisions: &[polynomial_cdcl::SplitDecision]) -> String {
     if decisions.is_empty() {
         return "none".to_string();
@@ -657,12 +629,6 @@ mod tests {
                 "75",
                 "--max-runtime",
                 "900000",
-                "--max-nodes",
-                "12",
-                "--max-covers",
-                "30",
-                "--max-depth",
-                "4",
                 "--variable",
                 "x",
                 "--gb",
@@ -684,9 +650,6 @@ mod tests {
         assert_eq!(options.path, PathBuf::from("input.txt"));
         assert_eq!(options.timeout_ms, 75);
         assert_eq!(options.max_runtime_ms, Some(900_000));
-        assert_eq!(options.max_nodes, 12);
-        assert_eq!(options.max_evaluations, 30);
-        assert_eq!(options.max_depth, 4);
         assert_eq!(options.variable_names, vec!["x"]);
         assert_eq!(options.gb_backend, GbBackend::Gvw);
         assert!(!options.unsat_core_search);
