@@ -22,8 +22,6 @@ use polynomial_cdcl::{
     load_mathematica_system_from_path_with_var_names, variable_order,
 };
 
-const LICENSE_KEY: &str = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Algo {
     M4gb,
@@ -225,7 +223,7 @@ fn main() {
         }
     };
 
-    LicenseManager::set_license_key(LICENSE_KEY).ok();
+    LicenseManager::set_license_key(polynomial_cdcl::SYMBOLICA_LICENSE_KEY).ok();
     polynomial_cdcl::exit_if_solver_worker();
 
     println!("Loading {}", args.path.display());

@@ -82,44 +82,12 @@ pub fn minimal_covers(index_groups: &[Vec<usize>], n_factors: usize) -> Option<V
     Some(covers)
 }
 
-/// Single-bit masks for every set bit of `mask`, least significant first.
-pub fn set_bits(mask: u64) -> impl Iterator<Item = u64> {
-    (0..64).map(|i| 1u64 << i).filter(move |b| mask & b != 0)
-}
-
 /// Decode a cover bitmask back into its factors.
 pub fn decode_cover(factors: &[PolyExtLex], mask: u64) -> Vec<PolyExtLex> {
     (0..factors.len())
         .filter(|&i| mask & (1u64 << i) != 0)
         .map(|i| factors[i].clone())
         .collect()
-}
-
-/// Masks over the `n` low bits with exactly `k` set bits, ascending (Gosper's
-/// hack). `k == 0` yields the single empty mask; `k > n` yields nothing.
-fn masks_with_popcount(n: usize, k: usize) -> impl Iterator<Item = u64> {
-    let limit = 1u64 << n;
-    let mut next = (k <= n).then(|| (1u64 << k) - 1);
-    std::iter::from_fn(move || {
-        let cur = next?;
-        next = (cur != 0)
-            .then(|| {
-                let c = cur & cur.wrapping_neg();
-                let r = cur + c;
-                (((r ^ cur) >> 2) / c) | r
-            })
-            .filter(|&m| m < limit);
-        Some(cur)
-    })
-}
-
-/// Hint subsets in easiest-first order: more enabled hints first, with the
-/// numeric mask as a deterministic tie-breaker. The iterator is lazy and does
-/// not materialize all `2^hint_count` subsets.
-pub fn ordered_hint_masks(hint_count: usize) -> impl Iterator<Item = u64> {
-    (0..=hint_count)
-        .rev()
-        .flat_map(move |k| masks_with_popcount(hint_count, k))
 }
 
 /// Branch-local covers in easiest-first order: fewer selected factors first,
@@ -173,29 +141,6 @@ mod tests {
         // {0} subsumes {0,1}; the duplicate {2} collapses.
         let kept = keep_minimal(vec![0b001, 0b011, 0b100, 0b100]);
         assert_eq!(kept, vec![0b001, 0b100]);
-    }
-
-    #[test]
-    fn masks_with_popcount_enumerates_combinations() {
-        assert_eq!(
-            masks_with_popcount(3, 2).collect::<Vec<_>>(),
-            vec![0b011, 0b101, 0b110]
-        );
-        assert_eq!(masks_with_popcount(2, 0).collect::<Vec<_>>(), vec![0]);
-        assert_eq!(masks_with_popcount(2, 3).count(), 0);
-    }
-
-    #[test]
-    fn no_hints_yields_the_empty_subset() {
-        assert_eq!(ordered_hint_masks(0).collect::<Vec<_>>(), vec![0]);
-    }
-
-    #[test]
-    fn hint_masks_check_more_hints_first() {
-        assert_eq!(
-            ordered_hint_masks(3).collect::<Vec<_>>(),
-            vec![0b111, 0b011, 0b101, 0b110, 0b001, 0b010, 0b100, 0]
-        );
     }
 
     #[test]

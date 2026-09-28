@@ -93,27 +93,6 @@ fn push_unique(terminal: &mut Vec<Vec<PolyExtLex>>, candidate: Vec<PolyExtLex>) 
     }
 }
 
-/// Refine one hitting set, appending its terminal hitting sets to `terminal`.
-/// Factorization runs in-process.
-pub fn refine_cover(
-    candidate: Vec<PolyExtLex>,
-    interreduce: bool,
-    depth: usize,
-    ancestors: &mut Vec<Vec<PolyExtLex>>,
-    terminal: &mut Vec<Vec<PolyExtLex>>,
-    stats: &mut RefinementStats,
-) -> Result<(), String> {
-    refine_cover_with(
-        candidate,
-        interreduce,
-        depth,
-        ancestors,
-        terminal,
-        stats,
-        &mut InProcess,
-    )
-}
-
 fn refine_cover_with<O: RefineOps>(
     candidate: Vec<PolyExtLex>,
     interreduce: bool,

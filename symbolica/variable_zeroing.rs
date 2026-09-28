@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use symbolica::domains::rational::Rational;
-use symbolica::poly::PolyVariable;
+use symbolica::domains::rational::{Q, Rational};
+use symbolica::poly::{MonomialOrder, PolyVariable, polynomial::MultivariatePolynomial};
 
 use crate::cover::{build_factor_index, minimal_covers, ordered_cover_masks};
 use crate::factor_prep::{
@@ -608,6 +608,7 @@ impl Solver<'_> {
         Ok(Some(node_id))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn record_consistent_components(
         &mut self,
         bases: Vec<ComputedBasis>,
@@ -846,7 +847,7 @@ fn split_on_variable(
         .collect();
     let mut unequal_branch: Vec<_> = candidate
         .into_iter()
-        .filter(|polynomial| !uses_temporary_variable_lex(polynomial))
+        .filter(|polynomial| !uses_temporary_variable(polynomial))
         .collect();
     if unequal_branch.is_empty() {
         return Err("cannot rebuild saturation from an empty cover".to_string());
@@ -887,7 +888,10 @@ fn split_on_variable(
     Ok((equal_branch, unequal_branch))
 }
 
-fn uses_variable(polynomial: &PolyExtLex, variable: &PolyVariable) -> bool {
+fn uses_variable<O: MonomialOrder>(
+    polynomial: &MultivariatePolynomial<Q, u16, O>,
+    variable: &PolyVariable,
+) -> bool {
     let Some(position) = polynomial
         .variables
         .iter()
@@ -900,7 +904,9 @@ fn uses_variable(polynomial: &PolyExtLex, variable: &PolyVariable) -> bool {
         .any(|exponents| exponents[position] != 0)
 }
 
-fn uses_temporary_variable_lex(polynomial: &PolyExtLex) -> bool {
+fn uses_temporary_variable<O: MonomialOrder>(
+    polynomial: &MultivariatePolynomial<Q, u16, O>,
+) -> bool {
     polynomial
         .variables
         .iter()
@@ -1042,22 +1048,6 @@ fn factor_cover_count(
         })
 }
 
-fn uses_temporary_variable(polynomial: &PolyExtGrevLex) -> bool {
-    let temporary_positions: Vec<usize> = polynomial
-        .variables
-        .iter()
-        .enumerate()
-        .filter_map(|(index, variable)| {
-            matches!(variable, PolyVariable::Temporary(_)).then_some(index)
-        })
-        .collect();
-    polynomial.exponents_iter().any(|exponents| {
-        temporary_positions
-            .iter()
-            .any(|&position| exponents[position] != 0)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Once;
@@ -1077,9 +1067,7 @@ mod tests {
 
     fn load(source: &str) -> (LoadedMathematicaSystem, Vec<PolyExtLex>) {
         LICENSE.call_once(|| {
-            let _ = LicenseManager::set_license_key(
-                "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21",
-            );
+            let _ = LicenseManager::set_license_key(crate::SYMBOLICA_LICENSE_KEY);
         });
         let loaded = load_mathematica_system_from_str_with_var_names(source).expect("load");
         let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
@@ -1177,7 +1165,7 @@ mod tests {
         );
         let saturation = unequal
             .iter()
-            .find(|polynomial| uses_temporary_variable_lex(polynomial))
+            .find(|polynomial| uses_temporary_variable(polynomial))
             .expect("saturation equation");
         let x_position = saturation
             .variables
@@ -1228,7 +1216,7 @@ mod tests {
         assert_eq!(
             x_nonzero
                 .iter()
-                .filter(|polynomial| uses_temporary_variable_lex(polynomial))
+                .filter(|polynomial| uses_temporary_variable(polynomial))
                 .count(),
             1
         );
@@ -1238,7 +1226,7 @@ mod tests {
                 .expect("split y");
         let saturation_equations = x_y_nonzero
             .iter()
-            .filter(|polynomial| uses_temporary_variable_lex(polynomial))
+            .filter(|polynomial| uses_temporary_variable(polynomial))
             .collect::<Vec<_>>();
         assert_eq!(saturation_equations.len(), 2);
         assert!(saturation_equations.iter().any(|polynomial| {

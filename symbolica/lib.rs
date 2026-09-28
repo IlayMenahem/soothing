@@ -15,21 +15,23 @@ pub mod system;
 pub mod var_id;
 pub mod variable_zeroing;
 
-pub use atom_util::{parse_expression, substitute_symbol};
+/// Symbolica license key used by the binaries and the tests.
+pub const SYMBOLICA_LICENSE_KEY: &str = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
+
+pub use atom_util::parse_expression;
 pub use factor_prep::{
-    PolyExtLex, factor_groups_from_polys, ideal_ext_lex, interreduce_polys,
-    polynomials_from_loaded, preprocess, reorder_by_min_fill, try_factor_groups_from_polys,
-    variable_order,
+    PolyExtLex, ideal_ext_lex, interreduce_polys, polynomials_from_loaded, reorder_by_min_fill,
+    try_factor_groups_from_polys, variable_order,
 };
-pub use m4gb::{groebner_m4gb, groebner_m4gb_from_system, groebner_m4gb_from_system_with};
+pub use m4gb::{groebner_m4gb, groebner_m4gb_from_system_with};
 pub use mathematica::{
     LoadedMathematicaSystem, default_systems_dir_from_manifest,
     load_mathematica_system_from_path_with_var_names,
     load_mathematica_system_from_str_with_var_names,
 };
 pub use sig_groebner::{
-    Signature, groebner_f5, groebner_f5_from_system, groebner_f5_from_system_with, groebner_gvw,
-    groebner_gvw_from_system, groebner_gvw_from_system_with, ideal_in_order,
+    Signature, groebner_f5, groebner_f5_from_system_with, groebner_gvw,
+    groebner_gvw_from_system_with, ideal_in_order,
 };
 pub use solver_process::exit_if_solver_worker;
 pub use system::PolynomialSystem;

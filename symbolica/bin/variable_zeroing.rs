@@ -33,7 +33,6 @@ struct CliOptions {
     saturate_each_variable: bool,
     split_value_strategy: SplitValueStrategy,
     random_seed: u64,
-    variable_names: Vec<String>,
     summary: bool,
     plot: Option<PathBuf>,
 }
@@ -54,7 +53,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut saturate_each_variable = true;
     let mut split_value_strategy = SplitValueStrategy::Fixed(0);
     let mut random_seed = 0;
-    let mut variable_names = Vec::new();
     let mut summary = false;
     let mut plot = None;
     let mut args = args.into_iter();
@@ -69,12 +67,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
             }
             "--gb" => {
                 let value = args.next().ok_or_else(|| {
-                    "--gb requires m4gb, f5, gvw, symbolica, singular-gb, singular-facstd, singular-gb-sat, or singular-facstd-sat"
+                    "--gb requires m4gb, f5, gvw, symbolica, singular-gb, or singular-facstd"
                         .to_string()
                 })?;
                 gb_backend = GbBackend::parse(&value).ok_or_else(|| {
                     format!(
-                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, singular-gb, singular-facstd, singular-gb-sat, or singular-facstd-sat"
+                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, singular-gb, or singular-facstd"
                     )
                 })?;
             }
@@ -99,10 +97,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     .parse()
                     .map_err(|error| format!("invalid --random-seed: {error}"))?;
             }
-            "--variable" => variable_names.push(
-                args.next()
-                    .ok_or_else(|| "--variable requires a name".to_string())?,
-            ),
             "--summary" => summary = true,
             "--plot" => {
                 plot =
@@ -124,7 +118,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         saturate_each_variable,
         split_value_strategy,
         random_seed,
-        variable_names,
         summary,
         plot,
     })
@@ -136,8 +129,7 @@ fn die(message: impl std::fmt::Display, code: i32) -> ! {
 }
 
 fn main() {
-    LicenseManager::set_license_key("5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21")
-        .unwrap();
+    LicenseManager::set_license_key(polynomial_cdcl::SYMBOLICA_LICENSE_KEY).unwrap();
     polynomial_cdcl::exit_if_solver_worker();
     let cli = parse_args(std::env::args().skip(1)).unwrap_or_else(|error| die(error, 2));
     println!("Loading {}", cli.path.display());
@@ -147,23 +139,13 @@ fn main() {
     let polynomials = polynomials_from_loaded(&loaded, &Q)
         .unwrap_or_else(|error| die(format!("polynomial conversion: {error}"), 1));
 
-    let selected_names: Vec<String> = if cli.variable_names.is_empty() {
-        loaded.var_names.clone()
-    } else {
-        cli.variable_names.clone()
-    };
-    let variables: Vec<ZeroingVariable> = selected_names
+    let variables: Vec<ZeroingVariable> = loaded
+        .var_names
         .iter()
-        .map(|name| {
-            let index = loaded
-                .var_names
-                .iter()
-                .position(|candidate| candidate == name)
-                .unwrap_or_else(|| die(format!("unknown --variable {name:?}"), 2));
-            ZeroingVariable {
-                name: name.clone(),
-                variable: PolyVariable::from(loaded.id_to_sym[index]),
-            }
+        .zip(&loaded.id_to_sym)
+        .map(|(name, &symbol)| ZeroingVariable {
+            name: name.clone(),
+            variable: PolyVariable::from(symbol),
         })
         .collect();
     println!(
@@ -614,8 +596,6 @@ mod tests {
                 "75",
                 "--max-runtime",
                 "900000",
-                "--variable",
-                "x",
                 "--gb",
                 "gvw",
                 "--saturate-each-variable",
@@ -634,7 +614,6 @@ mod tests {
         assert_eq!(options.path, PathBuf::from("input.txt"));
         assert_eq!(options.timeout_ms, 75);
         assert_eq!(options.max_runtime_ms, Some(900_000));
-        assert_eq!(options.variable_names, vec!["x"]);
         assert_eq!(options.gb_backend, GbBackend::Gvw);
         assert!(options.saturate_each_variable);
         assert_eq!(options.split_value_strategy, SplitValueStrategy::Fixed(1));

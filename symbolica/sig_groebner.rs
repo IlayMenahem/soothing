@@ -413,27 +413,6 @@ where
     Ok(groebner_f5(&ideal))
 }
 
-// --- Back-compat wrappers: Q + LexOrder ----------------------------------
-
-use symbolica::domains::rational::Q;
-use symbolica::poly::LexOrder;
-
-/// Run GVW over ℚ in lex order — convenience wrapper for the original API.
-pub fn groebner_gvw_from_system(
-    system: &PolynomialSystem,
-    var_order: Arc<Vec<PolyVariable>>,
-) -> Result<GroebnerBasis<Q, u16, LexOrder>, String> {
-    groebner_gvw_from_system_with::<Q, LexOrder>(system, &Q, var_order)
-}
-
-/// Run F5 over ℚ in lex order — convenience wrapper for the original API.
-pub fn groebner_f5_from_system(
-    system: &PolynomialSystem,
-    var_order: Arc<Vec<PolyVariable>>,
-) -> Result<GroebnerBasis<Q, u16, LexOrder>, String> {
-    groebner_f5_from_system_with::<Q, LexOrder>(system, &Q, var_order)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,7 +420,9 @@ mod tests {
     use crate::variable_order;
     use std::sync::Once;
     use symbolica::LicenseManager;
+    use symbolica::domains::rational::Q;
     use symbolica::poly::GrevLexOrder;
+    use symbolica::poly::LexOrder;
     use symbolica::poly::groebner::GroebnerBasis;
 
     type QPolys = Vec<MultivariatePolynomial<Q, u16, LexOrder>>;
@@ -450,9 +431,7 @@ mod tests {
     static LICENSE: Once = Once::new();
     fn activate_license() {
         LICENSE.call_once(|| {
-            let _ = LicenseManager::set_license_key(
-                "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21",
-            );
+            let _ = LicenseManager::set_license_key(crate::SYMBOLICA_LICENSE_KEY);
         });
     }
 
@@ -468,8 +447,10 @@ mod tests {
         let var_order = variable_order(&loaded.id_to_sym);
         let gens =
             ideal_in_order::<Q, LexOrder>(&loaded.system, &Q, var_order.clone()).expect("ideal");
-        let f5 = groebner_f5_from_system(&loaded.system, var_order.clone()).expect("f5");
-        let gvw = groebner_gvw_from_system(&loaded.system, var_order).expect("gvw");
+        let f5 = groebner_f5_from_system_with::<Q, LexOrder>(&loaded.system, &Q, var_order.clone())
+            .expect("f5");
+        let gvw = groebner_gvw_from_system_with::<Q, LexOrder>(&loaded.system, &Q, var_order)
+            .expect("gvw");
         (f5, gvw, gens)
     }
 
@@ -545,7 +526,7 @@ mod tests {
         activate_license();
         let loaded = load_mathematica_system_from_str_with_var_names(src).expect("load");
         let var_order = variable_order(&loaded.id_to_sym);
-        groebner_gvw_from_system(&loaded.system, var_order)
+        groebner_gvw_from_system_with::<Q, LexOrder>(&loaded.system, &Q, var_order)
             .expect("gvw")
             .system
     }
@@ -565,7 +546,8 @@ mod tests {
         )
         .expect("load");
         let var_order = variable_order(&loaded.id_to_sym);
-        let gb = groebner_f5_from_system(&loaded.system, var_order).expect("f5");
+        let gb =
+            groebner_f5_from_system_with::<Q, LexOrder>(&loaded.system, &Q, var_order).expect("f5");
         assert!(GroebnerBasis::is_groebner_basis(&gb.system));
     }
 

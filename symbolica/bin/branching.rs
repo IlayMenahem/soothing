@@ -281,8 +281,7 @@ fn report_results(result: &SearchResult) {
 }
 
 fn main() {
-    let key = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
-    LicenseManager::set_license_key(key).unwrap();
+    LicenseManager::set_license_key(polynomial_cdcl::SYMBOLICA_LICENSE_KEY).unwrap();
     polynomial_cdcl::exit_if_solver_worker();
 
     let options = parse_args(std::env::args().skip(1)).unwrap_or_else(|error| die(error, 2));
@@ -337,15 +336,12 @@ mod tests {
     use std::sync::Once;
 
     use polynomial_cdcl::load_mathematica_system_from_str_with_var_names;
-    use polynomial_cdcl::refine::{RefinementStats, refine_cover};
 
     static LICENSE: Once = Once::new();
 
     fn activate_license() {
         LICENSE.call_once(|| {
-            let _ = LicenseManager::set_license_key(
-                "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21",
-            );
+            let _ = LicenseManager::set_license_key(polynomial_cdcl::SYMBOLICA_LICENSE_KEY);
         });
     }
 
@@ -429,19 +425,11 @@ mod tests {
         let loaded =
             load_mathematica_system_from_str_with_var_names("{x + y == 0, x + y + y*z == 0}")
                 .expect("load");
-        let candidate = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
-        let mut terminal = Vec::new();
-        let mut stats = RefinementStats::default();
+        let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
+        let (factors, covers) = factor_covers(polynomials);
+        assert_eq!(covers.len(), 1);
 
-        refine_cover(
-            candidate,
-            true,
-            1,
-            &mut Vec::new(),
-            &mut terminal,
-            &mut stats,
-        )
-        .expect("refinement");
+        let (terminal, stats) = refine_covers(&factors, &covers, true).expect("refinement");
 
         assert_eq!(terminal.len(), 2);
         assert_eq!(stats.subdivisions, 1);

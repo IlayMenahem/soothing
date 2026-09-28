@@ -315,12 +315,6 @@ pub fn try_factor_groups_from_polys(
         .collect()
 }
 
-/// Compatibility wrapper for callers that cannot propagate preprocessing
-/// failures. New command-line code should use `try_factor_groups_from_polys`.
-pub fn factor_groups_from_polys(polys: Vec<PolyExtLex>) -> Vec<Vec<PolyExtLex>> {
-    try_factor_groups_from_polys(polys).unwrap_or_else(|error| panic!("{error}"))
-}
-
 /// Convert the loaded equations to a shared lexicographic polynomial ring,
 /// using the deterministic fill heuristic for the variable order.
 pub fn polynomials_from_loaded(
@@ -332,16 +326,16 @@ pub fn polynomials_from_loaded(
         .map_err(|e| format!("equation -> polynomial over Q: {e}"))
 }
 
-pub fn preprocess(
-    loaded: &LoadedMathematicaSystem,
-    field: &Q,
-) -> Result<Vec<Vec<PolyExtLex>>, String> {
-    try_factor_groups_from_polys(interreduce_polys(polynomials_from_loaded(loaded, field)?))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn preprocess(
+        loaded: &LoadedMathematicaSystem,
+        field: &Q,
+    ) -> Result<Vec<Vec<PolyExtLex>>, String> {
+        try_factor_groups_from_polys(interreduce_polys(polynomials_from_loaded(loaded, field)?))
+    }
     use crate::mathematica::load_mathematica_system_from_str_with_var_names;
     use std::sync::Once;
     use symbolica::LicenseManager;
@@ -349,9 +343,7 @@ mod tests {
     static LICENSE: Once = Once::new();
     fn activate_license() {
         LICENSE.call_once(|| {
-            let _ = LicenseManager::set_license_key(
-                "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21",
-            );
+            let _ = LicenseManager::set_license_key(crate::SYMBOLICA_LICENSE_KEY);
         });
     }
 

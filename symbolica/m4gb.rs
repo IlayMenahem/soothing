@@ -301,20 +301,6 @@ where
     Ok(groebner_m4gb(&ideal))
 }
 
-/// Compute an M4GB Gröbner basis of a [`PolynomialSystem`] over the rationals
-/// with the lexicographic order.
-pub fn groebner_m4gb_from_system(
-    system: &PolynomialSystem,
-    var_order: Arc<Vec<PolyVariable>>,
-) -> Result<GroebnerBasis<symbolica::domains::rational::Q, u16, symbolica::poly::LexOrder>, String>
-{
-    groebner_m4gb_from_system_with::<_, symbolica::poly::LexOrder>(
-        system,
-        &symbolica::domains::rational::Q,
-        var_order,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,9 +319,7 @@ mod tests {
 
     fn activate_license() {
         LICENSE.call_once(|| {
-            let _ = LicenseManager::set_license_key(
-                "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21",
-            );
+            let _ = LicenseManager::set_license_key(crate::SYMBOLICA_LICENSE_KEY);
         });
     }
 

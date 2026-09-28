@@ -1,9 +1,8 @@
-//! Symbolica helpers: parse in the crate namespace, substitute, collect variables.
+//! Symbolica helpers: parse in the crate namespace.
 
 use std::borrow::Cow;
 
-use symbolica::atom::{Atom, AtomCore, DefaultNamespace, Symbol};
-use symbolica::id::Replacement;
+use symbolica::atom::{Atom, DefaultNamespace};
 use symbolica::parser::ParseSettings;
 
 fn crate_namespace() -> &'static str {
@@ -26,11 +25,4 @@ pub fn parse_expression(data: String) -> Result<Atom, String> {
 /// Parse a single identifier as an atom (one variable).
 pub(crate) fn parse_identifier(name: &str) -> Result<Atom, String> {
     parse_expression(name.to_string())
-}
-
-/// `x` ↦ `rhs` (pattern replace).
-pub fn substitute_symbol(expr: &Atom, x: Symbol, rhs: Atom) -> Atom {
-    let pat = Atom::var(x).to_pattern();
-    expr.replace_multiple(&[Replacement::new(pat, rhs)])
-        .expand()
 }

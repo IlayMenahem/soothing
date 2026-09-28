@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use symbolica::domains::Ring;
 use symbolica::domains::rational::Q;
 use symbolica::poly::polynomial::MultivariatePolynomial;
-use symbolica::poly::{GrevLexOrder, MonomialOrder, PolyVariable};
+use symbolica::poly::{GrevLexOrder, MonomialOrder};
 
 use crate::cover::minimal_covers;
 use crate::factor_prep::PolyExtLex;
@@ -74,12 +74,6 @@ pub enum GbBackend {
     Symbolica,
     SingularGb,
     SingularFacstd,
-    /// `SingularGb` after replacing each Rabinowitsch generator by an ideal
-    /// saturation.
-    SingularGbSat,
-    /// `SingularFacstd` after replacing each Rabinowitsch generator by an
-    /// ideal saturation.
-    SingularFacstdSat,
 }
 
 impl GbBackend {
@@ -91,8 +85,6 @@ impl GbBackend {
             "symbolica" => Some(Self::Symbolica),
             "singular-gb" | "singular" => Some(Self::SingularGb),
             "singular-facstd" | "facstd" => Some(Self::SingularFacstd),
-            "singular-gb-sat" | "singular-sat" => Some(Self::SingularGbSat),
-            "singular-facstd-sat" | "facstd-sat" => Some(Self::SingularFacstdSat),
             _ => None,
         }
     }
@@ -105,8 +97,6 @@ impl GbBackend {
             Self::Symbolica => "symbolica",
             Self::SingularGb => "singular-gb",
             Self::SingularFacstd => "singular-facstd",
-            Self::SingularGbSat => "singular-gb-sat",
-            Self::SingularFacstdSat => "singular-facstd-sat",
         }
     }
 }
@@ -127,135 +117,50 @@ fn singular_polynomial(poly: &PolyExtLex) -> String {
     terms.join("+")
 }
 
-/// Split a cover into ordinary generators and Rabinowitsch generators. A
-/// Rabinowitsch generator is the unique generator containing a temporary
-/// variable `s`, is linear in `s`, and contains no other temporary; it is
-/// returned with the position of `s`. Any other generator stays ordinary,
-/// which keeps the encoding sound.
-fn rabinowitsch_generators(cover: &[PolyExtLex]) -> (Vec<&PolyExtLex>, Vec<(usize, &PolyExtLex)>) {
-    let temporaries: Vec<usize> = cover[0]
-        .variables
-        .iter()
-        .enumerate()
-        .filter_map(|(index, variable)| {
-            matches!(variable, PolyVariable::Temporary(_)).then_some(index)
-        })
-        .collect();
-    let degree = |poly: &PolyExtLex, position: usize| {
-        poly.exponents_iter()
-            .map(|exponents| exponents[position])
-            .max()
-            .unwrap_or(0)
-    };
-    let uses_one_temporary = |poly: &PolyExtLex| {
-        temporaries
-            .iter()
-            .filter(|&&position| degree(poly, position) > 0)
-            .count()
-            == 1
-    };
-    let rabinowitsch: Vec<(usize, &PolyExtLex)> = temporaries
-        .iter()
-        .filter_map(|&position| {
-            let users: Vec<&PolyExtLex> = cover
-                .iter()
-                .filter(|poly| degree(poly, position) > 0)
-                .collect();
-            match users.as_slice() {
-                [poly] if degree(poly, position) == 1 && uses_one_temporary(poly) => {
-                    Some((position, *poly))
-                }
-                _ => None,
-            }
-        })
-        .collect();
-    let ordinary = cover
-        .iter()
-        .filter(|poly| {
-            !rabinowitsch
-                .iter()
-                .any(|(_, generator)| std::ptr::eq(*generator, *poly))
-        })
-        .collect();
-    (ordinary, rabinowitsch)
-}
-
-/// Declare the ring and the cover's ideal `I`. With `saturate`, each
-/// Rabinowitsch generator `c*(1 - s*h)` is replaced by the saturation
-/// `I:h^oo` (Singular `sat`, applied to `diff(g,s) = -c*h`), and `s` is then
-/// set to zero so the dimension over all ring variables equals the dimension
-/// over the original ones.
-fn singular_ideal(cover: &[PolyExtLex], saturate: bool) -> String {
+/// Declare the ring and the cover's ideal `I`.
+fn singular_ideal(cover: &[PolyExtLex]) -> String {
     let variables = (0..cover[0].nvars())
         .map(|index| format!("x{index}"))
         .collect::<Vec<_>>()
         .join(",");
-    let (ordinary, rabinowitsch) = if saturate {
-        rabinowitsch_generators(cover)
-    } else {
-        (cover.iter().collect(), Vec::new())
-    };
-    let generators = if ordinary.is_empty() {
-        "0".to_string()
-    } else {
-        ordinary
-            .into_iter()
-            .map(singular_polynomial)
-            .collect::<Vec<_>>()
-            .join(",")
-    };
-    let ring = format!("ring r=0,({variables}),dp;\nideal I={generators};\n");
-    if rabinowitsch.is_empty() {
-        return ring;
-    }
-    let saturations: String = rabinowitsch
+    let generators = cover
         .iter()
-        .map(|(position, generator)| {
-            format!(
-                "S=sat(I,ideal(diff({},x{position})));\n\
-                 if(typeof(S)==\"list\"){{I=S[1];}}else{{I=S;}}\n",
-                singular_polynomial(generator)
-            )
-        })
-        .collect();
-    let pinned = rabinowitsch
-        .iter()
-        .map(|(position, _)| format!("x{position}"))
+        .map(singular_polynomial)
         .collect::<Vec<_>>()
         .join(",");
-    format!("LIB \"elim.lib\";\n{ring}def S;\n{saturations}I=I+ideal({pinned});\n")
+    format!("ring r=0,({variables}),dp;\nideal I={generators};\n")
 }
 
-fn singular_program(cover: &[PolyExtLex], saturate: bool) -> String {
-    let ideal = singular_ideal(cover, saturate);
+fn singular_program(cover: &[PolyExtLex]) -> String {
+    let ideal = singular_ideal(cover);
     format!(
         "{ideal}\
          option(redSB);\n\
          ideal G=std(I);\n\
-         print(\"IDOS_UNIT \"+string(reduce(1,G)==0));\n\
+         print(\"SINGULAR_UNIT \"+string(reduce(1,G)==0));\n\
          int i;\n\
-         for(i=1;i<=size(G);i=i+1){{print(\"IDOS_LEAD \"+string(leadexp(G[i])));}};\n\
-         print(\"IDOS_DONE\");\n\
+         for(i=1;i<=size(G);i=i+1){{print(\"SINGULAR_LEAD \"+string(leadexp(G[i])));}};\n\
+         print(\"SINGULAR_DONE\");\n\
          exit;\n"
     )
 }
 
-fn singular_facstd_program(cover: &[PolyExtLex], saturate: bool) -> String {
-    let ideal = singular_ideal(cover, saturate);
+fn singular_facstd_program(cover: &[PolyExtLex]) -> String {
+    let ideal = singular_ideal(cover);
     format!(
         "{ideal}\
          ideal FI=interred(I);\n\
          list F=facstd(FI);\n\
          int i; ideal J; ideal G;\n\
          for(i=1;i<=size(F);i=i+1){{\n\
-           print(\"IDOS_COMPONENT\");\n\
+           print(\"SINGULAR_COMPONENT\");\n\
            J=F[i]; G=std(J);\n\
-           print(\"IDOS_UNIT \"+string(reduce(1,G)==0));\n\
+           print(\"SINGULAR_UNIT \"+string(reduce(1,G)==0));\n\
            int j;\n\
-           for(j=1;j<=size(G);j=j+1){{print(\"IDOS_LEAD \"+string(leadexp(G[j])));}};\n\
-           print(\"IDOS_END_COMPONENT\");\n\
+           for(j=1;j<=size(G);j=j+1){{print(\"SINGULAR_LEAD \"+string(leadexp(G[j])));}};\n\
+           print(\"SINGULAR_END_COMPONENT\");\n\
          }};\n\
-         print(\"IDOS_DONE\");\n\
+         print(\"SINGULAR_DONE\");\n\
          exit;\n"
     )
 }
@@ -337,89 +242,91 @@ fn run_singular(program: &str, timeout: Duration) -> Result<SingularRun, String>
     })
 }
 
-/// Run Singular in a child process so a timeout can terminate the actual
-/// computation instead of leaving an abandoned worker thread behind.  IDOS
-/// only needs the basis length and leading-monomial ideal, so the compact
-/// `leadexp` output is reconstructed as monomials in the original ring.
-fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration, saturate: bool) -> Outcome {
-    let program = singular_program(&cover, saturate);
-    let (status, stdout, stderr) = match run_singular(&program, timeout) {
+/// Run a Singular program that ends by printing `SINGULAR_DONE` and return its
+/// standard output, or the outcome that ends the evaluation early.
+fn completed_singular_stdout(program: &str, timeout: Duration) -> Result<String, Outcome> {
+    match run_singular(program, timeout) {
+        Ok(SingularRun::Completed { status, stdout, .. })
+            if status.success() && stdout.lines().any(|line| line.trim() == "SINGULAR_DONE") =>
+        {
+            Ok(stdout)
+        }
         Ok(SingularRun::Completed {
             status,
             stdout,
             stderr,
-        }) => (status, stdout, stderr),
-        Ok(SingularRun::Timeout) => return Outcome::Timeout,
-        Err(error) => return Outcome::BackendError(error),
-    };
-    if !status.success() || !stdout.lines().any(|line| line.trim() == "IDOS_DONE") {
-        return Outcome::BackendError(format!(
+        }) => Err(Outcome::BackendError(format!(
             "Singular exited with {status}; stdout={stdout:?}; stderr={stderr:?}"
-        ));
+        ))),
+        Ok(SingularRun::Timeout) => Err(Outcome::Timeout),
+        Err(error) => Err(Outcome::BackendError(error)),
     }
-    if stdout.lines().any(|line| line.trim() == "IDOS_UNIT 1") {
-        return Outcome::Inconsistent;
-    }
-
-    let template = cover[0].reorder::<GrevLexOrder>();
-    let mut basis = Vec::new();
-    for line in stdout.lines() {
-        let Some(encoded) = line.trim().strip_prefix("IDOS_LEAD ") else {
-            continue;
-        };
-        let exponents = match encoded
-            .split(',')
-            .map(str::parse::<u16>)
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(exponents) if exponents.len() == template.nvars() => exponents,
-            _ => {
-                return Outcome::BackendError(format!(
-                    "invalid Singular leading exponent vector {encoded:?}"
-                ));
-            }
-        };
-        basis.push(template.monomial(template.ring.one(), exponents));
-    }
-    Outcome::Consistent(ComputedBasis {
-        elements: basis,
-        leading_monomials_only: true,
-    })
 }
 
-fn evaluate_cover_singular_facstd(
-    cover: Vec<PolyExtLex>,
-    timeout: Duration,
-    saturate: bool,
-) -> Outcome {
-    let program = singular_facstd_program(&cover, saturate);
-    let (status, stdout, stderr) = match run_singular(&program, timeout) {
-        Ok(SingularRun::Completed {
-            status,
-            stdout,
-            stderr,
-        }) => (status, stdout, stderr),
-        Ok(SingularRun::Timeout) => return Outcome::Timeout,
-        Err(error) => return Outcome::BackendError(error),
-    };
-    if !status.success() || !stdout.lines().any(|line| line.trim() == "IDOS_DONE") {
-        return Outcome::BackendError(format!(
-            "Singular facstd exited with {status}; stdout={stdout:?}; stderr={stderr:?}"
-        ));
-    }
+/// Decode one `leadexp` exponent vector into a monomial of `template`'s ring.
+fn leading_monomial(template: &PolyExtGrevLex, encoded: &str) -> Result<PolyExtGrevLex, Outcome> {
+    encoded
+        .split(',')
+        .map(str::parse::<u16>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+        .filter(|exponents| exponents.len() == template.nvars())
+        .map(|exponents| template.monomial(template.ring.one(), exponents))
+        .ok_or_else(|| {
+            Outcome::BackendError(format!(
+                "invalid Singular leading exponent vector {encoded:?}"
+            ))
+        })
+}
 
+/// Run Singular in a child process so a timeout can terminate the actual
+/// computation. Only the basis length and leading-monomial ideal are needed,
+/// so the compact `leadexp` output is reconstructed as monomials in the
+/// original ring.
+fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
+    let stdout = match completed_singular_stdout(&singular_program(&cover), timeout) {
+        Ok(stdout) => stdout,
+        Err(outcome) => return outcome,
+    };
+    if stdout.lines().any(|line| line.trim() == "SINGULAR_UNIT 1") {
+        return Outcome::Inconsistent;
+    }
+    let template = cover[0].reorder::<GrevLexOrder>();
+    stdout
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("SINGULAR_LEAD "))
+        .map(|encoded| leading_monomial(&template, encoded))
+        .collect::<Result<Vec<_>, _>>()
+        .map_or_else(
+            |outcome| outcome,
+            |elements| {
+                Outcome::Consistent(ComputedBasis {
+                    elements,
+                    leading_monomials_only: true,
+                })
+            },
+        )
+}
+
+/// Like [`evaluate_cover_singular`], but splits the ideal with `facstd` and
+/// reports the leading-monomial ideal of every nonunit component.
+fn evaluate_cover_singular_facstd(cover: Vec<PolyExtLex>, timeout: Duration) -> Outcome {
+    let stdout = match completed_singular_stdout(&singular_facstd_program(&cover), timeout) {
+        Ok(stdout) => stdout,
+        Err(outcome) => return outcome,
+    };
     let template = cover[0].reorder::<GrevLexOrder>();
     let mut components = Vec::new();
     let mut current = None;
     let mut current_is_unit = false;
     for line in stdout.lines().map(str::trim) {
         match line {
-            "IDOS_COMPONENT" => {
+            "SINGULAR_COMPONENT" => {
                 current = Some(Vec::new());
                 current_is_unit = false;
             }
-            "IDOS_UNIT 1" => current_is_unit = true,
-            "IDOS_END_COMPONENT" => {
+            "SINGULAR_UNIT 1" => current_is_unit = true,
+            "SINGULAR_END_COMPONENT" => {
                 let Some(elements) = current.take() else {
                     return Outcome::BackendError(
                         "Singular facstd ended a component before starting it".to_string(),
@@ -433,27 +340,19 @@ fn evaluate_cover_singular_facstd(
                 }
             }
             _ => {
-                let Some(encoded) = line.strip_prefix("IDOS_LEAD ") else {
+                let Some(encoded) = line.strip_prefix("SINGULAR_LEAD ") else {
                     continue;
                 };
-                let exponents = match encoded
-                    .split(',')
-                    .map(str::parse::<u16>)
-                    .collect::<Result<Vec<_>, _>>()
-                {
-                    Ok(exponents) if exponents.len() == template.nvars() => exponents,
-                    _ => {
-                        return Outcome::BackendError(format!(
-                            "invalid Singular facstd leading exponent vector {encoded:?}"
-                        ));
-                    }
+                let monomial = match leading_monomial(&template, encoded) {
+                    Ok(monomial) => monomial,
+                    Err(outcome) => return outcome,
                 };
                 let Some(elements) = current.as_mut() else {
                     return Outcome::BackendError(
                         "Singular facstd reported a basis outside a component".to_string(),
                     );
                 };
-                elements.push(template.monomial(template.ring.one(), exponents));
+                elements.push(monomial);
             }
         }
     }
@@ -488,12 +387,8 @@ pub fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBack
         return Outcome::Inconsistent;
     }
     match backend {
-        GbBackend::SingularGb => return evaluate_cover_singular(cover, timeout, false),
-        GbBackend::SingularFacstd => return evaluate_cover_singular_facstd(cover, timeout, false),
-        GbBackend::SingularGbSat => return evaluate_cover_singular(cover, timeout, true),
-        GbBackend::SingularFacstdSat => {
-            return evaluate_cover_singular_facstd(cover, timeout, true);
-        }
+        GbBackend::SingularGb => return evaluate_cover_singular(cover, timeout),
+        GbBackend::SingularFacstd => return evaluate_cover_singular_facstd(cover, timeout),
         _ => {}
     }
     if cfg!(test) || crate::solver_process::running_under_test_harness() {
@@ -512,10 +407,7 @@ pub(crate) fn evaluate_cover_in_process(cover: Vec<PolyExtLex>, backend: GbBacke
         GbBackend::Symbolica => {
             symbolica::poly::groebner::GroebnerBasis::new(&grevlex, false).system
         }
-        GbBackend::SingularGb
-        | GbBackend::SingularFacstd
-        | GbBackend::SingularGbSat
-        | GbBackend::SingularFacstdSat => {
+        GbBackend::SingularGb | GbBackend::SingularFacstd => {
             return Outcome::BackendError(
                 "Singular cannot run through the in-process worker entry point".to_string(),
             );
@@ -548,9 +440,7 @@ mod tests {
 
     fn activate_license() {
         LICENSE.call_once(|| {
-            let _ = LicenseManager::set_license_key(
-                "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21",
-            );
+            let _ = LicenseManager::set_license_key(crate::SYMBOLICA_LICENSE_KEY);
         });
     }
 
@@ -657,52 +547,6 @@ mod tests {
             ),
             Outcome::Inconsistent
         ));
-    }
-
-    fn rabinowitsch_cover() -> Vec<PolyExtLex> {
-        let mut product = test_poly("x*y");
-        product.add_variable(&PolyVariable::Temporary(0));
-        let x = poly_like(&product, "x");
-        let inverse = product
-            .variable(&PolyVariable::Temporary(0))
-            .expect("temporary");
-        let sigma = product.one() - inverse * &x;
-        vec![product, sigma]
-    }
-
-    #[test]
-    fn saturation_backends_round_trip_through_labels() {
-        for backend in [GbBackend::SingularGbSat, GbBackend::SingularFacstdSat] {
-            assert_eq!(GbBackend::parse(backend.label()), Some(backend));
-        }
-    }
-
-    #[test]
-    fn singular_saturates_only_rabinowitsch_generators() {
-        let plain = test_poly("x*y");
-        assert!(!singular_program(&[plain], true).contains("sat("));
-        let cover = rabinowitsch_cover();
-        assert!(!singular_program(&cover, false).contains("sat("));
-        let program = singular_program(&cover, true);
-        assert!(program.contains("sat("));
-        assert_eq!(rabinowitsch_generators(&cover).0.len(), 1);
-    }
-
-    #[test]
-    fn singular_saturation_backend_projects_out_the_temporary() {
-        if Command::new("Singular").arg("--version").output().is_err() {
-            return;
-        }
-
-        let cover = rabinowitsch_cover();
-        let nvars = cover[0].nvars();
-        match evaluate_cover(cover, Duration::from_secs(5), GbBackend::SingularGbSat) {
-            Outcome::Consistent(basis) => {
-                assert_eq!(basis.elements.len(), 2);
-                assert_eq!(solution_dimension(&basis.elements, nvars), Some(1));
-            }
-            _ => panic!("the saturated ideal (y, s) should be consistent"),
-        }
     }
 
     #[test]
