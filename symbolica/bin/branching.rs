@@ -4,10 +4,10 @@
 //! The input generators are optionally interreduced and factored. Every
 //! minimal hitting set is then interreduced and factored again until no new
 //! subbranches appear. The terminal hitting sets are checked in
-//! fewest-factors-first order by a selectable Gröbner backend; inconsistent
-//! sets yield iteratively refined GB-Cores that prune later supersets.
+//! fewest-factors-first order by a selectable Gröbner backend.
 //!
-//! Usage: `branching [path] [--unsat-core-search]` — default path:
+//! Usage: `branching [path] [--no-interreduce] [--timeout MS] [--gb BACKEND] [--summary]`
+//! — default path:
 //! `systems/system.txt`; default Gröbner backend: Singular.
 
 use std::path::{Path, PathBuf};
@@ -17,10 +17,8 @@ use symbolica::LicenseManager;
 use symbolica::domains::rational::Q;
 
 use polynomial_cdcl::cover::{build_factor_index, minimal_covers, ordered_cover_masks};
-use polynomial_cdcl::gb_core::iteratively_refined_unsat_core;
 use polynomial_cdcl::gb_search::{
-    ComputedBasis, Core, GbBackend, Outcome, evaluate_cover, polynomial_set_contains,
-    solution_dimension,
+    ComputedBasis, GbBackend, Outcome, evaluate_cover, solution_dimension,
 };
 use polynomial_cdcl::refine::refine_covers;
 use polynomial_cdcl::{
@@ -33,32 +31,21 @@ use polynomial_cdcl::{
 struct CliOptions {
     path: PathBuf,
     interreduce: bool,
-    max_covers: usize,
     timeout_ms: u64,
     gb_backend: GbBackend,
-    unsat_core_search: bool,
     summary: bool,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path: Option<PathBuf> = None;
     let mut interreduce = true;
-    let mut max_covers = usize::MAX;
     let mut timeout_ms = 5_000;
     let mut gb_backend = GbBackend::SingularGb;
-    let mut unsat_core_search = false;
     let mut summary = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--no-interreduce" => interreduce = false,
-            "--max-covers" => {
-                max_covers = args
-                    .next()
-                    .ok_or_else(|| "--max-covers requires a value".to_string())?
-                    .parse()
-                    .map_err(|error| format!("invalid --max-covers: {error}"))?;
-            }
             "--timeout" => {
                 timeout_ms = args
                     .next()
@@ -77,7 +64,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     )
                 })?;
             }
-            "--unsat-core-search" => unsat_core_search = true,
             "--summary" => summary = true,
             _ if arg.starts_with("--") => return Err(format!("unknown option {arg:?}")),
             _ if path.is_some() => return Err(format!("unexpected positional argument {arg:?}")),
@@ -87,10 +73,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     Ok(CliOptions {
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
         interreduce,
-        max_covers,
         timeout_ms,
         gb_backend,
-        unsat_core_search,
         summary,
     })
 }
@@ -160,20 +144,17 @@ struct Component {
 
 struct SearchResult {
     components: Vec<Component>,
-    cores: Vec<Core>,
     first_solution: Option<Duration>,
     total_covers: usize,
-    considered: usize,
     solved: usize,
     inconsistent: usize,
-    core_pruned: usize,
     timeouts: usize,
     elapsed: Duration,
 }
 
 impl SearchResult {
     fn complete(&self) -> bool {
-        self.considered == self.total_covers && self.timeouts == 0
+        self.timeouts == 0
     }
 }
 
@@ -181,12 +162,9 @@ fn run_search(options: &CliOptions, covers: &[Vec<PolyExtLex>], nvars: usize) ->
     let timeout = Duration::from_millis(options.timeout_ms);
     let started = Instant::now();
     let mut components = Vec::new();
-    let mut cores: Vec<Core> = Vec::new();
     let mut first_solution = None;
-    let mut considered = 0;
     let mut solved = 0;
     let mut inconsistent = 0;
-    let mut core_pruned = 0;
     let mut timeouts = 0;
 
     println!(
@@ -196,24 +174,7 @@ fn run_search(options: &CliOptions, covers: &[Vec<PolyExtLex>], nvars: usize) ->
         options.gb_backend.label()
     );
     for (cover_index, candidate) in covers.iter().enumerate() {
-        if considered >= options.max_covers {
-            break;
-        }
-        considered += 1;
         let candidate = candidate.clone();
-
-        if cores
-            .iter()
-            .any(|core| polynomial_set_contains(&candidate, core))
-        {
-            core_pruned += 1;
-            println!(
-                "  cover #{cover_index}: core-pruned ({} factor(s))",
-                candidate.len()
-            );
-            continue;
-        }
-
         let cover_started = Instant::now();
         match evaluate_cover(candidate.clone(), timeout, options.gb_backend) {
             Outcome::Consistent(basis) => {
@@ -252,22 +213,10 @@ fn run_search(options: &CliOptions, covers: &[Vec<PolyExtLex>], nvars: usize) ->
                 }));
             }
             Outcome::Inconsistent => {
-                if options.unsat_core_search {
-                    let core_started = Instant::now();
-                    let core = iteratively_refined_unsat_core(&candidate, timeout);
-                    println!(
-                        "  cover #{cover_index}: unsatisfiable; learned a {}-factor core (solve {:?}, refinement {:?})",
-                        core.len(),
-                        cover_started.elapsed(),
-                        core_started.elapsed()
-                    );
-                    cores.push(core);
-                } else {
-                    println!(
-                        "  cover #{cover_index}: unsatisfiable; core search disabled (solve {:?})",
-                        cover_started.elapsed()
-                    );
-                }
+                println!(
+                    "  cover #{cover_index}: unsatisfiable (solve {:?})",
+                    cover_started.elapsed()
+                );
                 inconsistent += 1;
             }
             Outcome::Timeout => {
@@ -290,13 +239,10 @@ fn run_search(options: &CliOptions, covers: &[Vec<PolyExtLex>], nvars: usize) ->
 
     SearchResult {
         components,
-        cores,
         first_solution,
         total_covers: covers.len(),
-        considered,
         solved,
         inconsistent,
-        core_pruned,
         timeouts,
         elapsed: started.elapsed(),
     }
@@ -304,12 +250,10 @@ fn run_search(options: &CliOptions, covers: &[Vec<PolyExtLex>], nvars: usize) ->
 
 fn report_results(result: &SearchResult) {
     println!(
-        "\n  {} of {} cover(s) considered: {} satisfiable, {} unsatisfiable, {} core-pruned, {} timeout(s), complete={}, elapsed {:?}",
-        result.considered,
+        "\n  {} cover(s): {} satisfiable, {} unsatisfiable, {} timeout(s), complete={}, elapsed {:?}",
         result.total_covers,
         result.solved,
         result.inconsistent,
-        result.core_pruned,
         result.timeouts,
         result.complete(),
         result.elapsed
@@ -333,12 +277,6 @@ fn report_results(result: &SearchResult) {
         for (index, polynomial) in component.basis.elements.iter().enumerate() {
             println!("\tg{index} = {polynomial}");
         }
-    }
-    if !result.cores.is_empty() {
-        println!(
-            "  learned {} iteratively refined unsatisfiable core(s)",
-            result.cores.len()
-        );
     }
 }
 
@@ -378,12 +316,10 @@ fn main() {
             .max()
             .map_or_else(|| "unknown".to_string(), |value| value.to_string());
         println!(
-            "BRANCHING_SUMMARY total={} considered={} satisfiable={} unsatisfiable={} core_pruned={} timeouts={} complete={} largest_dimension={} first_solution_secs={} elapsed_secs={:.6}",
+            "BRANCHING_SUMMARY total={} satisfiable={} unsatisfiable={} timeouts={} complete={} largest_dimension={} first_solution_secs={} elapsed_secs={:.6}",
             result.total_covers,
-            result.considered,
             result.solved,
             result.inconsistent,
-            result.core_pruned,
             result.timeouts,
             result.complete(),
             largest_dimension,
@@ -417,22 +353,18 @@ mod tests {
         CliOptions {
             path: PathBuf::from("unused"),
             interreduce: false,
-            max_covers: usize::MAX,
             timeout_ms: 5_000,
             gb_backend: GbBackend::Symbolica,
-            unsat_core_search: true,
             summary: true,
         }
     }
 
     #[test]
-    fn parse_args_matches_idos_style() {
+    fn parse_args_reads_every_option() {
         let options = parse_args(
             [
                 "input.txt",
                 "--no-interreduce",
-                "--max-covers",
-                "17",
                 "--timeout",
                 "250",
                 "--gb",
@@ -446,10 +378,8 @@ mod tests {
 
         assert_eq!(options.path, PathBuf::from("input.txt"));
         assert!(!options.interreduce);
-        assert_eq!(options.max_covers, 17);
         assert_eq!(options.timeout_ms, 250);
         assert_eq!(options.gb_backend, GbBackend::Gvw);
-        assert!(!options.unsat_core_search);
         assert!(options.summary);
     }
 
@@ -458,23 +388,6 @@ mod tests {
         let options = parse_args(std::iter::empty()).expect("arguments");
 
         assert_eq!(options.gb_backend, GbBackend::SingularGb);
-        assert!(!options.unsat_core_search);
-    }
-
-    #[test]
-    fn parse_args_can_enable_unsat_core_search() {
-        let options =
-            parse_args(["--unsat-core-search"].into_iter().map(String::from)).expect("arguments");
-
-        assert!(options.unsat_core_search);
-    }
-
-    #[test]
-    fn parse_args_rejects_removed_no_unsat_core_search_flag() {
-        let error = parse_args(["--no-unsat-core-search"].into_iter().map(String::from))
-            .expect_err("removed flag should be rejected");
-
-        assert_eq!(error, "unknown option \"--no-unsat-core-search\"");
     }
 
     #[test]
@@ -489,14 +402,13 @@ mod tests {
         let result = run_search(&test_options(), &covers, 2);
 
         assert_eq!(covers.len(), 2);
-        assert_eq!(result.considered, 2);
         assert_eq!(result.solved, 2);
         assert!(result.first_solution.is_some());
         assert!(result.complete());
     }
 
     #[test]
-    fn learned_core_prunes_a_later_superset() {
+    fn checks_every_inconsistent_cover() {
         activate_license();
         let loaded =
             load_mathematica_system_from_str_with_var_names("{x == 0, x - 1 == 0, y*z == 0}")
@@ -507,29 +419,7 @@ mod tests {
 
         let result = run_search(&test_options(), &covers, 3);
 
-        assert_eq!(result.inconsistent, 1);
-        assert_eq!(result.core_pruned, 1);
-        assert!(result.cores.iter().all(|core| !core.is_empty()));
-        assert!(result.complete());
-    }
-
-    #[test]
-    fn disabled_core_search_checks_every_inconsistent_cover() {
-        activate_license();
-        let loaded =
-            load_mathematica_system_from_str_with_var_names("{x == 0, x - 1 == 0, y*z == 0}")
-                .expect("load");
-        let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
-        let (factors, covers) = factor_covers(polynomials);
-        let (covers, _) = refine_covers(&factors, &covers, false).expect("refinement");
-        let mut options = test_options();
-        options.unsat_core_search = false;
-
-        let result = run_search(&options, &covers, 3);
-
         assert_eq!(result.inconsistent, 2);
-        assert_eq!(result.core_pruned, 0);
-        assert!(result.cores.is_empty());
         assert!(result.complete());
     }
 

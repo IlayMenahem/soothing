@@ -40,8 +40,8 @@ MATRIX_REPORT = RESULTS / "branching_engine_comparison.md"
 METHOD_TIMEOUT_SECS = 60
 
 SUMMARY_RE = re.compile(
-    r"BRANCHING_SUMMARY total=(\d+) considered=(\d+) satisfiable=(\d+) "
-    r"unsatisfiable=(\d+) core_pruned=(\d+) timeouts=(\d+) complete=(true|false) "
+    r"BRANCHING_SUMMARY total=(\d+) satisfiable=(\d+) "
+    r"unsatisfiable=(\d+) timeouts=(\d+) complete=(true|false) "
     r"largest_dimension=(\d+|unknown) first_solution_secs=([0-9.]+|unknown) "
     r"elapsed_secs=([0-9.]+)"
 )
@@ -94,10 +94,8 @@ def run_branching(
 
     (
         total,
-        considered,
         satisfiable,
         unsatisfiable,
-        core_pruned,
         cover_timeouts,
         complete,
         largest_dimension,
@@ -114,10 +112,8 @@ def run_branching(
         "solve_secs": float(solve),
         "wall_secs": wall,
         "total": int(total),
-        "considered": int(considered),
         "satisfiable": int(satisfiable),
         "unsatisfiable": int(unsatisfiable),
-        "core_pruned": int(core_pruned),
         "cover_timeouts": int(cover_timeouts),
         "complete": complete == "true",
         "first_solution_secs": (

@@ -24,10 +24,8 @@ use crate::cover::{build_factor_index, minimal_covers, ordered_cover_masks};
 use crate::factor_prep::{
     PolyExtLex, interreduce_polys, reorder_by_min_fill, try_factor_groups_from_polys,
 };
-use crate::gb_core::iteratively_refined_unsat_core;
 use crate::gb_search::{
-    ComputedBasis, Core, GbBackend, Outcome, PolyExtGrevLex, evaluate_cover,
-    polynomial_set_contains, solution_dimension,
+    ComputedBasis, GbBackend, Outcome, PolyExtGrevLex, evaluate_cover, solution_dimension,
 };
 use crate::refine::{FactorGroups, RefineOps, refine_covers_with};
 use crate::solver_process::{
@@ -95,9 +93,6 @@ pub struct VariableZeroingOptions {
     /// Gröbner-basis implementation used to evaluate covers. Defaults to
     /// Singular.
     pub gb_backend: GbBackend,
-    /// Learn unsatisfiable cores and use them to prune later covers. Disabled
-    /// by default.
-    pub unsat_core_search: bool,
     /// Use one Rabinowitsch variable and equation per nonzero variable instead
     /// of one equation for their product.
     pub saturate_each_variable: bool,
@@ -116,7 +111,6 @@ impl Default for VariableZeroingOptions {
             timeout: Duration::from_millis(1_000),
             max_runtime: None,
             gb_backend: GbBackend::SingularGb,
-            unsat_core_search: false,
             saturate_each_variable: true,
             split_value_strategy: SplitValueStrategy::Fixed(0),
             random_seed: 0,
@@ -187,7 +181,6 @@ pub struct VariableZeroingStats {
     pub evaluations: usize,
     pub consistent: usize,
     pub inconsistent: usize,
-    pub core_pruned: usize,
     /// All timed-out evaluations, including those subsequently resolved by a
     /// zeroing split.
     pub timeouts: usize,
@@ -202,7 +195,6 @@ pub struct VariableZeroingStats {
 pub enum VariableZeroingCoverOutcome {
     Consistent,
     Inconsistent,
-    CorePruned,
     Timeout,
     /// The solver call was bypassed because the sibling branch had no cover
     /// and this branch had a unique cover.
@@ -236,7 +228,6 @@ pub struct VariableZeroingNodeResult {
     pub evaluations: usize,
     pub consistent: usize,
     pub inconsistent: usize,
-    pub core_pruned: usize,
     pub timeouts: usize,
     pub zeroing_splits: usize,
     /// Set when factorization did not produce covers for this node.
@@ -250,8 +241,6 @@ pub struct VariableZeroingNodeResult {
 pub struct VariableZeroingResult {
     pub components: Vec<ProjectedComponent>,
     pub unresolved: Vec<UnresolvedBranch>,
-    /// Unsatisfiable cores learned anywhere in the recursive search.
-    pub cores: Vec<Core>,
     pub nodes: Vec<VariableZeroingNodeResult>,
     pub stats: VariableZeroingStats,
     pub first_solution: Option<Duration>,
@@ -273,9 +262,6 @@ struct Solver<'a> {
     started: Instant,
     components: Vec<ProjectedComponent>,
     unresolved: Vec<UnresolvedBranch>,
-    /// Shared by every recursion node so a core learned in one branch can
-    /// prune covers in all subsequently visited branches.
-    cores: Vec<Core>,
     nodes: Vec<VariableZeroingNodeResult>,
     stats: VariableZeroingStats,
     first_solution: Option<Duration>,
@@ -358,7 +344,6 @@ impl Solver<'_> {
             evaluations: 0,
             consistent: 0,
             inconsistent: 0,
-            core_pruned: 0,
             timeouts: 0,
             zeroing_splits: 0,
             preprocessing_failure: None,
@@ -445,28 +430,6 @@ impl Solver<'_> {
                 }
                 break;
             }
-            if self.options.unsat_core_search
-                && self
-                    .cores
-                    .iter()
-                    .any(|core| polynomial_set_contains(&candidate, core))
-            {
-                self.stats.core_pruned += 1;
-                node_result.core_pruned += 1;
-                node_result.checks.push(VariableZeroingCoverResult {
-                    cover_index,
-                    outcome: VariableZeroingCoverOutcome::CorePruned,
-                    elapsed: cover_started.elapsed(),
-                    split_variable: None,
-                    zero_child: None,
-                    nonzero_child: None,
-                });
-                if self.options.verbose {
-                    println!("  cover #{cover_index}: core-pruned");
-                }
-                continue;
-            }
-
             // The caller has already established that this is the unique
             // cover on one side of an equality/inequality split and that the sibling
             // has no cover. Hence this cover represents the entire parent
@@ -549,19 +512,6 @@ impl Solver<'_> {
                         zero_child: None,
                         nonzero_child: None,
                     });
-                    if self.options.unsat_core_search {
-                        if self.options.max_runtime.is_some() {
-                            // The full candidate is already a certified core;
-                            // avoid an unbounded sequence of refinements when
-                            // the caller requested a wall-clock budget.
-                            self.cores.push(candidate.clone());
-                        } else {
-                            self.cores.push(iteratively_refined_unsat_core(
-                                &candidate,
-                                self.options.timeout,
-                            ));
-                        }
-                    }
                 }
                 Outcome::Timeout => {
                     self.stats.timeouts += 1;
@@ -810,7 +760,6 @@ fn solve_by_zeroing_with(
         started,
         components: Vec::new(),
         unresolved: Vec::new(),
-        cores: Vec::new(),
         nodes: Vec::new(),
         stats: VariableZeroingStats::default(),
         first_solution: None,
@@ -820,7 +769,6 @@ fn solve_by_zeroing_with(
     Ok(VariableZeroingResult {
         components: solver.components,
         unresolved: solver.unresolved,
-        cores: solver.cores,
         nodes: {
             solver.nodes.sort_unstable_by_key(|node| node.node_id);
             solver.nodes
@@ -1152,12 +1100,11 @@ mod tests {
     }
 
     #[test]
-    fn options_default_to_singular_without_core_search() {
+    fn options_default_to_singular() {
         let options = VariableZeroingOptions::default();
 
         assert_eq!(options.timeout, Duration::from_millis(1_000));
         assert_eq!(options.gb_backend, GbBackend::SingularGb);
-        assert!(!options.unsat_core_search);
         assert!(options.saturate_each_variable);
     }
 
@@ -1423,104 +1370,6 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(contracted.len(), 1);
         assert!(contracted[0].split_variable.is_some());
-    }
-
-    #[test]
-    fn core_learned_in_one_node_prunes_a_later_node() {
-        let (loaded, polynomials) = load("{x == 0, x - 1 == 0}");
-        let options = VariableZeroingOptions {
-            interreduce: false,
-            unsat_core_search: true,
-            ..VariableZeroingOptions::default()
-        };
-        let evaluations = AtomicUsize::new(0);
-        let inconsistent = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| {
-            evaluations.fetch_add(1, Ordering::Relaxed);
-            Outcome::Inconsistent
-        };
-        let mut solver = Solver {
-            options: &options,
-            evaluator: &inconsistent,
-            started: Instant::now(),
-            components: Vec::new(),
-            unresolved: Vec::new(),
-            cores: Vec::new(),
-            nodes: Vec::new(),
-            stats: VariableZeroingStats::default(),
-            first_solution: None,
-            random: StdRng::seed_from_u64(options.random_seed),
-        };
-        let decisions = vec![SplitDecision {
-            variable: loaded.var_names[0].clone(),
-            value: 0,
-            is_equal: true,
-        }];
-
-        solver
-            .solve_node(polynomials.clone(), Vec::new(), decisions.clone())
-            .expect("first node");
-        let mut sibling_decisions = decisions;
-        sibling_decisions[0].is_equal = false;
-        solver
-            .solve_node(polynomials, Vec::new(), sibling_decisions)
-            .expect("later node");
-
-        assert_eq!(evaluations.load(Ordering::Relaxed), 1);
-        assert_eq!(solver.cores.len(), 1);
-        assert_eq!(solver.stats.core_pruned, 1);
-        assert_eq!(
-            solver
-                .nodes
-                .iter()
-                .map(|node| node.core_pruned)
-                .sum::<usize>(),
-            1
-        );
-    }
-
-    #[test]
-    fn disabled_core_search_checks_later_nodes() {
-        let (loaded, polynomials) = load("{x == 0, x - 1 == 0}");
-        let options = VariableZeroingOptions {
-            interreduce: false,
-            unsat_core_search: false,
-            ..VariableZeroingOptions::default()
-        };
-        let evaluations = AtomicUsize::new(0);
-        let inconsistent = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| {
-            evaluations.fetch_add(1, Ordering::Relaxed);
-            Outcome::Inconsistent
-        };
-        let mut solver = Solver {
-            options: &options,
-            evaluator: &inconsistent,
-            started: Instant::now(),
-            components: Vec::new(),
-            unresolved: Vec::new(),
-            cores: Vec::new(),
-            nodes: Vec::new(),
-            stats: VariableZeroingStats::default(),
-            first_solution: None,
-            random: StdRng::seed_from_u64(options.random_seed),
-        };
-        let decisions = vec![SplitDecision {
-            variable: loaded.var_names[0].clone(),
-            value: 0,
-            is_equal: true,
-        }];
-
-        solver
-            .solve_node(polynomials.clone(), Vec::new(), decisions.clone())
-            .expect("first node");
-        let mut sibling_decisions = decisions;
-        sibling_decisions[0].is_equal = false;
-        solver
-            .solve_node(polynomials, Vec::new(), sibling_decisions)
-            .expect("later node");
-
-        assert_eq!(evaluations.load(Ordering::Relaxed), 2);
-        assert!(solver.cores.is_empty());
-        assert_eq!(solver.stats.core_pruned, 0);
     }
 
     #[test]

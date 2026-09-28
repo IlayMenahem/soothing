@@ -171,9 +171,6 @@ enum WorkerRequest {
         backend: GbBackend,
         polynomials: Vec<WirePolynomial>,
     },
-    GbCore {
-        polynomials: Vec<WirePolynomial>,
-    },
     Factor {
         polynomials: Vec<WirePolynomial>,
         interreduce: bool,
@@ -184,19 +181,12 @@ enum WorkerRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-struct WireGbCoreRun {
-    ranked_core: Vec<WirePolynomial>,
-    core: Vec<WirePolynomial>,
-}
-
-#[derive(Serialize, Deserialize)]
 enum WorkerResponse {
     Consistent {
         basis: Vec<WirePolynomial>,
         leading_monomials_only: bool,
     },
     Inconsistent,
-    GbCore(Option<WireGbCoreRun>),
     Factors(Vec<Vec<WirePolynomial>>),
     Reduced(Vec<WirePolynomial>),
     Error(String),
@@ -343,18 +333,6 @@ fn execute_worker(request: WorkerRequest) -> Result<WorkerResponse, String> {
                 Outcome::Timeout => Err("nested solver worker timed out".to_string()),
                 Outcome::BackendError(error) => Ok(WorkerResponse::Error(error)),
             }
-        }
-        WorkerRequest::GbCore { polynomials } => {
-            let variables = temporary_variables(&polynomials)?;
-            let candidate = decode_lex_polynomials(polynomials, variables)?;
-            let run =
-                crate::gb_core::gb_core_once_for_worker(candidate).map(|(ranked_core, core)| {
-                    WireGbCoreRun {
-                        ranked_core: encode_polynomials(&ranked_core),
-                        core: encode_polynomials(&core),
-                    }
-                });
-            Ok(WorkerResponse::GbCore(run))
         }
         WorkerRequest::Factor {
             polynomials,
@@ -553,55 +531,12 @@ pub(crate) fn evaluate_cover_isolated(
         }
         Ok(ProcessRun::Completed(WorkerResponse::Inconsistent)) => Outcome::Inconsistent,
         Ok(ProcessRun::Completed(WorkerResponse::Error(error))) => Outcome::BackendError(error),
-        Ok(ProcessRun::Completed(WorkerResponse::GbCore(_))) => Outcome::BackendError(
-            "solver worker returned a GB-core response for a cover".to_string(),
-        ),
         Ok(ProcessRun::Completed(WorkerResponse::Factors(_))) => Outcome::BackendError(
             "solver worker returned a factorization response for a cover".to_string(),
         ),
         Ok(ProcessRun::Completed(WorkerResponse::Reduced(_))) => Outcome::BackendError(
             "solver worker returned an interreduction response for a cover".to_string(),
         ),
-    }
-}
-
-pub(crate) fn gb_core_once_isolated(
-    candidate: Vec<PolyExtLex>,
-    timeout: Duration,
-) -> Result<ProcessRun<Option<(Vec<PolyExtLex>, Vec<PolyExtLex>)>>, String> {
-    let variables = candidate.first().map_or_else(
-        || Arc::new(Vec::new()),
-        |polynomial| polynomial.variables.clone(),
-    );
-    let request = WorkerRequest::GbCore {
-        polynomials: encode_polynomials(&candidate),
-    };
-    match run_worker(&request, timeout)? {
-        ProcessRun::Timeout => Ok(ProcessRun::Timeout),
-        ProcessRun::Completed(WorkerResponse::GbCore(run)) => {
-            let run = run
-                .map(
-                    |run| -> Result<(Vec<PolyExtLex>, Vec<PolyExtLex>), String> {
-                        let ranked_core = run
-                            .ranked_core
-                            .into_iter()
-                            .map(|polynomial| decode_polynomial(polynomial, variables.clone()))
-                            .collect::<Result<_, _>>()?;
-                        let core = run
-                            .core
-                            .into_iter()
-                            .map(|polynomial| decode_polynomial(polynomial, variables.clone()))
-                            .collect::<Result<_, _>>()?;
-                        Ok((ranked_core, core))
-                    },
-                )
-                .transpose()?;
-            Ok(ProcessRun::Completed(run))
-        }
-        ProcessRun::Completed(WorkerResponse::Error(error)) => Err(error),
-        ProcessRun::Completed(_) => {
-            Err("solver worker returned a cover response for GB-core".to_string())
-        }
     }
 }
 

@@ -1,5 +1,4 @@
-//! Evaluates a candidate factor cover against a Gröbner-basis backend and
-//! extracts a minimal unsat core when the cover turns out inconsistent.
+//! Evaluates a candidate hitting set against a Gröbner-basis backend.
 
 use std::io::{Read, Write};
 use std::process::{Command, ExitStatus, Stdio};
@@ -532,38 +531,6 @@ pub(crate) fn evaluate_cover_in_process(cover: Vec<PolyExtLex>, backend: GbBacke
     }
 }
 
-pub type Core = Vec<PolyExtLex>;
-
-/// Whether `superset` contains every normalized polynomial in `subset`.
-/// Candidates from different hint branches have different factor-index
-/// universes, so pruning must compare the actual generators rather than masks.
-pub fn polynomial_set_contains(superset: &[PolyExtLex], subset: &[PolyExtLex]) -> bool {
-    subset.iter().all(|poly| superset.contains(poly))
-}
-
-/// Shrink an inconsistent candidate to a minimal unsatisfiable core by
-/// deletion. A removal that turns the candidate satisfiable keeps the
-/// polynomial; a removal that times out also keeps it conservatively. Since
-/// removing constraints cannot make a satisfiable system inconsistent, one
-/// pass produces a deletion-minimal core.
-pub fn minimal_unsat_core(candidate: &[PolyExtLex], timeout: Duration, backend: GbBackend) -> Core {
-    let mut core = candidate.to_vec();
-    let mut index = 0;
-    while index < core.len() {
-        let mut reduced = core.clone();
-        reduced.remove(index);
-        if matches!(
-            evaluate_cover(reduced.clone(), timeout, backend),
-            Outcome::Inconsistent
-        ) {
-            core = reduced;
-        } else {
-            index += 1;
-        }
-    }
-    core
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -761,48 +728,5 @@ mod tests {
             }
             _ => panic!("Singular facstd should split the product ideal"),
         }
-    }
-
-    #[test]
-    fn minimal_unsat_core_retains_required_zero_substitution() {
-        let factor = test_poly("x + 1");
-        let hint = poly_like(&factor, "x");
-
-        let core = minimal_unsat_core(
-            &[factor.clone(), hint.clone()],
-            Duration::from_secs(5),
-            GbBackend::M4gb,
-        );
-
-        assert_eq!(core, vec![factor, hint]);
-    }
-
-    #[test]
-    fn minimal_unsat_core_drops_unneeded_zero_substitution() {
-        let template = test_poly("x + y + 1");
-        let factor = poly_like(&template, "x + 1");
-        let x_hint = poly_like(&template, "x");
-        let y_hint = poly_like(&template, "y");
-
-        let core = minimal_unsat_core(
-            &[factor.clone(), x_hint.clone(), y_hint],
-            Duration::from_secs(5),
-            GbBackend::M4gb,
-        );
-
-        assert_eq!(core, vec![factor, x_hint]);
-    }
-
-    #[test]
-    fn polynomial_set_containment_uses_actual_generators() {
-        let template = test_poly("x + y");
-        let x = poly_like(&template, "x");
-        let y = poly_like(&template, "y");
-
-        assert!(polynomial_set_contains(
-            &[x.clone(), y.clone()],
-            std::slice::from_ref(&x)
-        ));
-        assert!(!polynomial_set_contains(&[x], &[y]));
     }
 }

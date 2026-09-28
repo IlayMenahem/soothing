@@ -8,7 +8,6 @@
 
 use crate::cover::{build_factor_index, decode_cover, minimal_covers, ordered_cover_masks};
 use crate::factor_prep::{PolyExtLex, interreduce_polys, try_factor_groups_from_polys};
-use crate::gb_search::polynomial_set_contains;
 
 /// Counters describing one refinement run.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -33,8 +32,8 @@ fn normalize_candidate(polynomials: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
 
 fn same_polynomial_set(left: &[PolyExtLex], right: &[PolyExtLex]) -> bool {
     left.len() == right.len()
-        && polynomial_set_contains(left, right)
-        && polynomial_set_contains(right, left)
+        && left.iter().all(|polynomial| right.contains(polynomial))
+        && right.iter().all(|polynomial| left.contains(polynomial))
 }
 
 /// Factor groups of a polynomial set: one group of irreducible factors per

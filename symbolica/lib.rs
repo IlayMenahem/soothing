@@ -3,7 +3,6 @@
 pub mod atom_util;
 pub mod cover;
 pub mod factor_prep;
-pub mod gb_core;
 pub mod gb_search;
 pub mod m4gb;
 pub mod mathematica;
