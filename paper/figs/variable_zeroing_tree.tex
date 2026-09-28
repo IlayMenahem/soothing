@@ -56,11 +56,15 @@
 \coordinate (group-13) at (1.500,-8.330);
 \node[empty branch] (pending-13) at (1.500,-9.050) {\vzNoCovers\ no hitting sets};
 \coordinate (group-14) at (4.500,-8.330);
-\node[contracted cover] (cover-14-0) at (4.500,-9.050) {\vzContracted\\[-1pt]$\mathit{DpDphh3}$};
+\node[contracted cover] (cover-14-0) at (4.500,-9.050) {\vzContracted\\[-1pt]$\mathit{DpDphh4}$};
 \coordinate (group-15) at (-1.500,-10.230);
 \node[empty branch] (pending-15) at (-1.500,-10.950) {\vzNoCovers\ no hitting sets};
 \coordinate (group-16) at (1.500,-10.230);
-\node[cover] (cover-16-0) at (1.500,-10.950) {\vzInconsistent};
+\node[contracted cover] (cover-16-0) at (1.500,-10.950) {\vzContracted\\[-1pt]$\mathit{DpDphh3}$};
+\coordinate (group-17) at (-1.500,-12.130);
+\node[empty branch] (pending-17) at (-1.500,-12.850) {\vzNoCovers\ no hitting sets};
+\coordinate (group-18) at (1.500,-12.130);
+\node[cover] (cover-18-0) at (1.500,-12.850) {\vzInconsistent};
 \node[input] (input) at (-0.000,0.500) {$P$};
 \draw[stem] (input.south) -- (group-0-0);
 \draw[branch] (group-0-0) -- (cover-0-0.north);
@@ -102,5 +106,9 @@
 \draw[branch] (group-15) -- (pending-15.north);
 \draw[stem] (cover-14-0.south) -- node[edge label,sloped,above] {$\ne 0$} (group-16);
 \draw[branch] (group-16) -- (cover-16-0.north);
-\node[draw=gray!55,fill=white,rounded corners=2pt,inner sep=3pt,anchor=north] at (0,-11.750) {\textbf{Branch outcome:}\quad \vzInconsistent\ UNSAT\quad \vzConsistent\ SAT\quad \vzTimeout\ timed out\quad \vzContracted\ contracted\quad \vzNoCovers\ no hitting sets};
+\draw[stem] (cover-16-0.south) -- node[edge label,sloped,above] {$= 0$} (group-17);
+\draw[branch] (group-17) -- (pending-17.north);
+\draw[stem] (cover-16-0.south) -- node[edge label,sloped,above] {$\ne 0$} (group-18);
+\draw[branch] (group-18) -- (cover-18-0.north);
+\node[draw=gray!55,fill=white,rounded corners=2pt,inner sep=3pt,anchor=north] at (0,-13.650) {\textbf{Branch outcome:}\quad \vzInconsistent\ UNSAT\quad \vzConsistent\ SAT\quad \vzTimeout\ timed out\quad \vzContracted\ contracted\quad \vzNoCovers\ no hitting sets};
 \end{tikzpicture}

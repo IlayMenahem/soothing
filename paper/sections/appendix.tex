@@ -22,26 +22,26 @@ text but left at least one branch unresolved.
 \hline
 System & M4GB & F5 & GVW & F4 & Singular \\
 \hline
-Signed distance, $n=8$ & $0.651$ & $0.053$ & $0.122$ & $0.008$ & $0.083$ \\
-Signed distance, $n=10$ & $0.046$ & $10.927$ & $45.797$ & $0.025$ & $0.084$ \\
-Signed distance, $n=12$ & $0.182$ & $6.256$ & $1.841$ & $0.087$ & $0.271$ \\
-Overlapping $(4,6,2)$ & $0.017$ & $0.008$ & $0.011$ & $0.015$ & $0.038$ \\
-Overlapping $(6,8,3)$ & $1.053$ & $0.132$ & $0.280$ & $0.657$ & $0.201$ \\
-Overlapping $(8,10,3)$ & TO & $10.937$ & $30.687$ & TO & $2.931$ \\
-Positive affine $(8,6,4)$ & $0.009$ & $0.008$ & $0.010$ & $0.008$ & $0.497$ \\
-Positive affine $(10,8,5)$ & $0.021$ & $0.020$ & $0.028$ & $0.020$ & $1.870$ \\
-Positive affine $(12,10,6)$ & $0.072$ & $0.067$ & $0.096$ & $0.068$ & $6.498$ \\
-Gated Cyclic-5 & $0.010$ & $0.010$ & $0.011$ & $0.009$ & $0.022$ \\
-Gated Cyclic-6 & P $60.010$ & $5.960$ & $2.275$ & P $60.013$ & $0.045$ \\
-Gated Cyclic-7 & P $60.875$ & P $60.504$ & P $60.955$ & P $60.024$ & P $60.103$ \\
-Gated Katsura-6 & $0.366$ & $0.483$ & $1.338$ & $2.540$ & $0.049$ \\
-Gated Katsura-7 & $4.487$ & $15.220$ & $42.113$ & P $60.012$ & $0.283$ \\
-Gated Katsura-8 & $54.055$ & P $60.325$ & P $60.047$ & P $60.012$ & $2.657$ \\
-Gated dense, $n=5$ & $0.177$ & $0.071$ & $0.200$ & $0.204$ & $0.029$ \\
-Gated dense, $n=6$ & $4.716$ & $3.194$ & $7.475$ & $21.498$ & $0.546$ \\
-Gated dense, $n=7$ & P $60.008$ & P $60.050$ & P $60.041$ & P $60.015$ & $42.020$ \\
-Square affine $(8,4)$ & $15.117$ & TO & TO & $3.096$ & $0.470$ \\
-Square affine $(10,5)$ & $14.750$ & TO & $47.561$ & $1.174$ & $2.548$ \\
+Signed distance, $n=8$ & $0.789$ & $0.212$ & $0.211$ & $0.209$ & $0.568$ \\
+Signed distance, $n=10$ & $0.749$ & $0.750$ & $0.746$ & $0.749$ & $2.240$ \\
+Signed distance, $n=12$ & $2.801$ & $2.824$ & $2.834$ & $2.806$ & $8.304$ \\
+Overlapping $(4,6,2)$ & $0.038$ & $0.022$ & $0.032$ & $0.034$ & $0.049$ \\
+Overlapping $(6,8,3)$ & $1.119$ & $0.193$ & $0.348$ & $0.725$ & $0.248$ \\
+Overlapping $(8,10,3)$ & TO & $11.030$ & $30.508$ & TO & $2.944$ \\
+Positive affine $(8,6,4)$ & $0.191$ & $0.198$ & $0.190$ & $0.191$ & $0.531$ \\
+Positive affine $(10,8,5)$ & $0.703$ & $0.700$ & $0.700$ & $0.705$ & $2.408$ \\
+Positive affine $(12,10,6)$ & $2.459$ & $2.454$ & $2.455$ & $2.457$ & $7.986$ \\
+Gated Cyclic-5 & $0.018$ & $0.018$ & $0.018$ & $0.018$ & $0.027$ \\
+Gated Cyclic-6 & P $60.014$ & $5.958$ & $2.278$ & P $60.014$ & $0.094$ \\
+Gated Cyclic-7 & P $60.015$ & P $60.452$ & P $61.354$ & P $60.021$ & P $60.033$ \\
+Gated Katsura-6 & $0.371$ & $0.482$ & $1.315$ & $2.522$ & $0.055$ \\
+Gated Katsura-7 & $4.375$ & $15.109$ & $42.033$ & P $60.013$ & $0.291$ \\
+Gated Katsura-8 & $51.260$ & P $60.106$ & P $60.033$ & P $60.015$ & $2.603$ \\
+Gated dense, $n=5$ & $0.176$ & $0.076$ & $0.200$ & $0.207$ & $0.032$ \\
+Gated dense, $n=6$ & $4.683$ & $3.202$ & $7.577$ & $21.912$ & $0.549$ \\
+Gated dense, $n=7$ & P $60.013$ & P $60.057$ & P $60.038$ & P $60.014$ & $42.893$ \\
+Square affine $(8,4)$ & TO & TO & TO & TO & TO \\
+Square affine $(10,5)$ & $3.655$ & $3.103$ & $2.741$ & $2.787$ & $7.211$ \\
 \hline
 \end{tabular}%
 }
@@ -52,9 +52,11 @@ Square affine $(10,5)$ & $14.750$ & TO & $47.561$ & $1.174$ & $2.548$ \\
 \subsection{Variable zeroing}
 
 Table~\ref{tab:appendix-zeroing} gives the complete output of the fastest
-completed variable zeroing configuration evaluated across the baseline suite.
+completed variable zeroing configuration evaluated across the baseline suite;
+where no configuration completes, it gives the partial run with the fewest
+unresolved branches.
 Every backend receives three seconds per branch and a 60-second outer budget.
-The overlapping-random-multiple rows disable interreduction, as in the
+The overlapping-random-multiple and positive affine rows disable interreduction, as in the
 factor branching experiment.  Here $N$ is the number of recursion nodes,
 $E$ the number of hitting-set evaluations, $O/S$ the numbers of per-branch timeouts
 and variable zeroing splits, and $C/U$ the numbers of returned components and unresolved
@@ -69,26 +71,26 @@ branches.  The time entry is $T/F$.
 \hline
 System & Backend & $T/F$ & $N$ & $E$ & $O/S$ & $C/U$ & Result \\
 \hline
-Signed distance, $n=8$ & F4 & $0.008/0.001$ & 1 & 8 & $0/0$ & $8/0$ & complete \\
-Signed distance, $n=10$ & F4 & $0.025/0.002$ & 1 & 8 & $0/0$ & $8/0$ & complete \\
-Signed distance, $n=12$ & F4 & $0.091/0.003$ & 1 & 32 & $0/0$ & $32/0$ & complete \\
-Overlapping $(4,6,2)$ & F5 & $0.009/0.001$ & 1 & 4 & $0/0$ & $4/0$ & complete \\
-Overlapping $(6,8,3)$ & F5 & $0.132/0.021$ & 1 & 16 & $0/0$ & $16/0$ & complete \\
-Overlapping $(8,10,3)$ & Singular & $2.892/0.152$ & 1 & 28 & $0/0$ & $28/0$ & complete \\
-Positive affine $(8,6,4)$ & Singular & $0.181/0.012$ & 1 & 4 & $0/0$ & $4/0$ & complete \\
-Positive affine $(10,8,5)$ & F4 & $0.060/0.007$ & 1 & 242 & $0/0$ & $242/0$ & complete \\
-Positive affine $(12,10,6)$ & Singular & $9.600/0.078$ & 1 & 511 & $0/0$ & $511/0$ & complete \\
-Gated Cyclic-5 & F4 & $0.011/0.001$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated Cyclic-6 & Singular & $0.043/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated Cyclic-7 & Singular & $24.118/0.009$ & 15 & 17 & $8/7$ & $1/1$ & partial \\
-Gated Katsura-6 & Singular & $0.049/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated Katsura-7 & Singular & $0.284/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated Katsura-8 & Singular & $2.588/0.009$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated dense, $n=5$ & Singular & $0.029/0.008$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated dense, $n=6$ & Singular & $0.535/0.008$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated dense, $n=7$ & Singular & $4.797$/-- & -- & -- & -- & -- & error \\
-Square affine $(8,4)$ & Singular & $0.445/0.012$ & 1 & 31 & $0/0$ & $31/0$ & complete \\
-Square affine $(10,5)$ & F4 & $1.326/0.015$ & 1 & 304 & $0/0$ & $304/0$ & complete \\
+Signed distance, $n=8$ & F4 & $0.847/0.645$ & 1 & 70 & $0/0$ & $70/0$ & complete \\
+Signed distance, $n=10$ & F5 & $3.006$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
+Signed distance, $n=12$ & F4 & $3.006$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
+Overlapping $(4,6,2)$ & F5 & $0.037/0.020$ & 1 & 4 & $0/0$ & $4/0$ & complete \\
+Overlapping $(6,8,3)$ & F5 & $0.239/0.078$ & 1 & 16 & $0/0$ & $16/0$ & complete \\
+Overlapping $(8,10,3)$ & Singular & $3.037/0.248$ & 1 & 28 & $0/0$ & $28/0$ & complete \\
+Positive affine $(8,6,4)$ & GVW & $0.433/0.220$ & 1 & 63 & $0/0$ & $63/0$ & complete \\
+Positive affine $(10,8,5)$ & M4GB & $1.611/0.817$ & 1 & 239 & $0/0$ & $239/0$ & complete \\
+Positive affine $(12,10,6)$ & F4 & $4.836/2.439$ & 1 & 833 & $0/0$ & $833/0$ & complete \\
+Gated Cyclic-5 & F4 & $0.030/0.017$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Cyclic-6 & Singular & $0.066/0.027$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Cyclic-7 & Singular & $15.337/0.029$ & 15 & 10 & $5/7$ & $1/1$ & partial \\
+Gated Katsura-6 & Singular & $0.071/0.028$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Katsura-7 & Singular & $0.305/0.030$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Katsura-8 & Singular & $2.604/0.032$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated dense, $n=5$ & Singular & $0.047/0.026$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated dense, $n=6$ & Singular & $0.555/0.026$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated dense, $n=7$ & M4GB & $60.038/0.021$ & 11 & 7 & $6/6$ & $1/7$ & partial \\
+Square affine $(8,4)$ & F5 & $3.008$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
+Square affine $(10,5)$ & M4GB & $3.011$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
 \hline
 \end{tabular}%
 }
@@ -97,9 +99,11 @@ end-to-end wall time and time to first SAT branch in seconds.}
 \label{tab:appendix-zeroing}
 \end{table}
 
-The dense $n=7$ run failed while constructing the first recursive child:
-the expanded Singular program exceeded the operating system's command-line
-argument limit.
+On signed distance $n=10,12$ and both square affine systems, refinement of the
+root system exceeds the three-second per-branch limit, so no hitting set is
+evaluated.  With a 60-second per-branch limit this refinement finishes; for example,
+signed distance $n=10$ refines to 252 hitting sets in 4.06 seconds and square
+affine $(10,5)$ to 681 in 9.05 seconds.
 
 \subsection{Direct whole-ideal Gr\"obner bases}
 
