@@ -15,7 +15,7 @@ Six issues most affect whether a referee would accept the paper:
 3. Each method class is represented by its best configuration per system. The fair comparison with a fixed backend is already in the appendix and is stronger, but the paper doesn't show it (A4).
 4. The evidence for variable zeroing is one system and one run, and the paper's wording claims more than that supports (A6).
 5. Timing method: single runs and a startup cost of about 30 s in the numerical baseline (A7).
-6. `FactorBranchingWithTimeout` is never defined, and Algorithm 4 has no global budget. Theorem 6's correctness depends on both (B3).
+6. Several proofs need tightening: undefined terms, unstated assumptions, and an informal induction (B1).
 
 ---
 
@@ -69,16 +69,13 @@ Six issues most affect whether a referee would accept the paper:
 
 ## B. Correctness and precision of the theory
 
-### B3. Algorithm 4 does not match the procedure that was run or analyzed
-- `FactorBranchingWithTimeout` (`variable_zeroing.tex:39`) has no definition or pseudocode. Equation (4) rests on it.
-- §4.1 says splitting runs "until … the computation budget is exhausted", and the experiments use a 120-s total limit. Algorithm 4 has no global budget. Branches cut off by the budget must go into U, or Theorem 6 does not cover the reported runs.
-- `ChooseVariable(R, X)` can pick a variable that doesn't occur in R, which gives two useless children. Restrict the choice to X ∩ vars(R) and link it to the score in §4.2.
+### B1. Proof fixes (single task)
 
-### B4. The role of the set A in Algorithm 2 (`method.tex:23, 31`)
+**The set A in Algorithm 2** (`method.tex:23, 31`)
 - A holds "normalized systems visited on the current recursion path", but "normalized" is never defined. The termination proof (Theorem 2) never uses A: it shows that M strictly increases whenever H ≠ Q̃.
 - **Fix:** explain what A adds, such as pruning repeated systems early, or remove it. Define the normalization used when comparing H with Q̃: monic, sorted, as sets.
 
-### B5. Theorems 2–4
+**Theorems 2–4**
 - Open the proof of Theorem 2 with a one-sentence strategy: the invariant M strictly increases whenever refinement changes the system, and why that forces termination.
 - "Sound and complete" (`method.tex:193`) is used but never defined. Define it: every represented point is a solution, and every solution is represented.
 - Theorem 3 assumes that 𝓑 returns on every branch. Algorithm 3 has no path for a call that never returns, so state this assumption in the theorem.
@@ -86,16 +83,17 @@ Six issues most affect whether a referee would accept the paper:
 - Lemma 1's hypothesis ("Suppose refinement … terminates", `method.tex:127`) is redundant once Theorem 2 is proved. Put Theorem 2 first and state Lemma 1 without the hypothesis.
 - The proof of Theorem 3 repeats the reasoning of Lemma 1 (`method.tex:200-202`). Cite the lemma instead.
 
-### B7. Theorem 5 (`variable_zeroing.tex:164-178`)
+**Theorem 5** (`variable_zeroing.tex:164-178`)
 - "Qᵢ encodes Q together with Dᵢ" is informal. Define it as V_Y(Qᵢ; A∪{Dᵢ}) = {a ∈ V_Y(Q; A) : a satisfies Dᵢ}.
 - For the x = 0 child, Q|_{x=0} lives in fewer variables. Say that the projection onto Y puts x = 0 back.
 
-### B8. Theorems 6 and 7 (`variable_zeroing.tex:197-230`)
+**Equation (4) and Theorems 6–7** (`variable_zeroing.tex:189-230`)
+- Equation (4) cites the proof of Theorem 3, which assumes 𝓑 returns on every branch. Say that T holds both timed-out hitting sets and those left unrun when β runs out, and that the partition covers both.
 - "Applying this argument recursively proves the result" (`:213`) should be an explicit induction on the finite recursion tree, like the proof of Lemma 1.
 - "Returns after τ" (`:225`) should be "returns within time τ, with either a result or a timeout".
 
-### B10. Edge case
-A constant generator has an empty factor set, so it has no hitting sets and the branch closes as UNSAT during refinement. This is how interreduction to {1} prunes hitting sets under the nonzero encoding; one sentence would make it explicit.
+**Edge case**
+- A constant generator has an empty factor set, so it has no hitting sets and the branch closes as UNSAT during refinement. This is how interreduction to {1} prunes hitting sets under the nonzero encoding; one sentence would make it explicit.
 
 ### B11. Notation clashes
 - **R** is the ring K[x] in §2, the output of Refine in Algorithm 3, and a timed-out branch in Algorithm 4.
@@ -110,7 +108,7 @@ A constant generator has an empty factor set, so it has no hitting sets and the 
 ## C. Structure and exposition
 
 ### C1. Abstract
-- At about 288 words, it exceeds JSC's 250-word limit. It also uses SAT and UNSAT, which JSC counts as uncommon abbreviations: define them or rephrase.
+- At about 288 words, it exceeds JSC's 250-word limit.
 - `paper.tex:83` "variants of Buchberger's algorithm with syzygy, resultants, and cylindrical algebraic decomposition": "with syzygy" is unclear (syzygy criteria? signatures?). CAD doesn't come up anywhere else in the paper. Meanwhile numerical homotopy, which is a baseline, is missing. List the methods the paper actually compares against.
 - `:85` "even the most modern approaches still often fail on practical problems or slight perturbations of standard benchmarks" has no support. The gated results do support it, so connect the two: direct Gröbner bases fail on gated Katsura-8.
 - There are no numbers. Add the main results, for example "completes 19 of 20 benchmarks with a single backend, versus 17 for `facstd`" and the physical-system result.
@@ -254,7 +252,7 @@ This produces "Peifer et al. trained … (Peifer et al., 2020)" (`introduction.t
 ---
 
 ## Suggested order of work
-1. Define `FactorBranchingWithTimeout` and the global budget in Algorithm 4 (B3).
+1. Fix the proofs (B1).
 2. Write the comparison with factorizing Gröbner bases and the contribution statement, and fix what the abstract says the output is (A1, A2, C1, C2).
 3. Add the fixed-backend comparison, the benchmark-design disclosure, and the measurement details (A4, A7).
 4. Add the worked example and the discussion section, and move the ablation to §5 (C3, C7, A6).

@@ -11,8 +11,8 @@ hitting set produced by Algorithm~\ref{alg:Branching}.
 % What is splitting
 Then we can further simplify the system by recursive splitting. In each child
 branch, we assume a side condition and run Algorithm~\ref{alg:Branching} on the
-simplified system. This process continues until the solver terminates or the
-computation budget is exhausted.
+simplified system. This process continues until every branch is solved or a
+global time budget is exhausted.
 
 % Good properties for conditions on the set of conditions
 For completeness, the side conditions must cover all possibilities. They
@@ -30,24 +30,24 @@ a variable is often always zero or always nonzero.
 \caption{Factor branching with variable zeroing}
 \label{alg:ZeroingBranching}
 \begin{algorithmic}[1]
-    \Require A polynomial system $P$ and a timeout $\tau$
-    \Function{ZeroingBranching}{$P,\tau$}
-        \State $X \gets \Call{Variables}{P}$
-        \State \Return $\Call{SolveByZeroing}{P,X,\emptyset,\emptyset,\tau}$
+    \Require A polynomial system $P$, a branch solver $\mathcal B$, a per-call timeout $\tau$, and a global budget $\beta$
+    \Function{ZeroingBranching}{$P$}
+        \State \Return $\Call{SolveByZeroing}{P,\operatorname{vars}(P),\emptyset,\emptyset}$
     \EndFunction
-    \Function{SolveByZeroing}{$Q,X,Z,N,\tau$}
-        \State $(S,T) \gets \Call{FactorBranchingWithTimeout}{Q,\tau}$
+    \Function{SolveByZeroing}{$Q,X,Z,N$}
+        \State Run $\mathcal B$ on each $H\in\mathcal L(Q)$ for at most $\tau$ while $\beta$ lasts
+        \State $S \gets$ the returned representations; $T \gets$ the unsolved $H$
         \State $U \gets \emptyset$ \Comment{Unresolved branches}
 
         \ForAll{$R \in T$}
-            \If{$X=\emptyset$}
+            \If{$\beta$ is exhausted or $X\cap\operatorname{vars}(R)=\emptyset$}
                 \State $U \gets U\cup\{(R,Z,N)\}$
             \Else
                 \State $x \gets \Call{ChooseVariable}{R,X}$
                 \State $R_0 \gets \Call{Substitute}{R,x,0}$
                 \State $R_1 \gets \Call{UpdateSaturation}{R,N\cup\{x\}}$
-                \State $(S_0,U_0) \gets \Call{SolveByZeroing}{R_0,X\setminus\{x\},Z\cup\{x\},N,\tau}$
-                \State $(S_1,U_1) \gets \Call{SolveByZeroing}{R_1,X\setminus\{x\},Z,N\cup\{x\},\tau}$
+                \State $(S_0,U_0) \gets \Call{SolveByZeroing}{R_0,X\setminus\{x\},Z\cup\{x\},N}$
+                \State $(S_1,U_1) \gets \Call{SolveByZeroing}{R_1,X\setminus\{x\},Z,N\cup\{x\}}$
                 \State $S \gets S\cup S_0\cup S_1$
                 \State $U \gets U\cup U_0\cup U_1$
             \EndIf
@@ -125,7 +125,7 @@ promising choice. Setting it to zero removes all terms containing it at once.
 In the nonzero branch, $\mathrm{UpdateSaturation}$ adds the equation
 $\sigma_x=0$.
 
-For each candidate variable $x$ that is still available on the current branch, define
+For each $x\in X\cap\operatorname{vars}(Q)$, define
 \begin{align*}
     g_Q(x) &= \#\{q\in Q : x\text{ occurs in }q\},\\
     t_Q(x) &= \#\{(q,m) : q\in Q,\ m\text{ is a term of }q,\ \deg_x(m) > 0\},\\
@@ -136,6 +136,7 @@ Its score is the triple
     h_Q(x)=\bigl(g_Q(x),t_Q(x),e_Q(x)\bigr),
 \]
 and scores are compared lexicographically.
+$\mathrm{ChooseVariable}(R,X)$ returns a variable with the largest score $h_R$.
 
 \subsection{Branch contraction}
 \label{subsec:zeroing-branch-contraction}
@@ -185,8 +186,7 @@ $Q_1=\mathrm{UpdateSaturation}(Q,N\cup\{x\})$, the theorem gives
     \cup V_Y(Q_1;Z,N\cup\{x\}).
 \end{equation}
 
-If factor branching with a timeout returns solved representations $S$
-and timed-out hitting sets $T$, the proof of
+For $S$ and $T$ as in Algorithm~\ref{alg:ZeroingBranching}, the proof of
 Theorem~\ref{thm:branching-correctness} gives
 \begin{equation}
 \label{eq:branching-timeout-partition}
