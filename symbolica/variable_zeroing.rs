@@ -17,7 +17,7 @@
 use std::time::{Duration, Instant};
 
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use symbolica::domains::rational::{Q, Rational};
 use symbolica::poly::{MonomialOrder, PolyVariable, polynomial::MultivariatePolynomial};
 
@@ -791,7 +791,7 @@ fn choose_variable(polynomials: &[PolyExtLex], variables: &[ZeroingVariable]) ->
         let mut exponent_sum = 0;
         for polynomial in polynomials {
             let Some(position) = polynomial
-                .variables
+                .variables()
                 .iter()
                 .position(|variable| variable == &candidate.variable)
             else {
@@ -837,7 +837,7 @@ fn split_on_variable(
         .iter()
         .map(|polynomial| {
             polynomial
-                .variables
+                .variables()
                 .iter()
                 .position(|candidate| candidate == variable)
                 .map_or_else(
@@ -894,7 +894,7 @@ fn uses_variable<O: MonomialOrder>(
     variable: &PolyVariable,
 ) -> bool {
     let Some(position) = polynomial
-        .variables
+        .variables()
         .iter()
         .position(|candidate| candidate == variable)
     else {
@@ -909,7 +909,7 @@ fn uses_temporary_variable<O: MonomialOrder>(
     polynomial: &MultivariatePolynomial<Q, u16, O>,
 ) -> bool {
     polynomial
-        .variables
+        .variables()
         .iter()
         .filter(|variable| matches!(variable, PolyVariable::Temporary(_)))
         .any(|variable| uses_variable(polynomial, variable))
@@ -1054,8 +1054,8 @@ mod tests {
     use std::sync::Once;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use symbolica::LicenseManager;
     use symbolica::domains::rational::Q;
+    use symbolica::license::LicenseManager;
     use symbolica::poly::GrevLexOrder;
 
     use super::*;
@@ -1169,7 +1169,7 @@ mod tests {
             .find(|polynomial| uses_temporary_variable(polynomial))
             .expect("saturation equation");
         let x_position = saturation
-            .variables
+            .variables()
             .iter()
             .position(|variable| variable == &x)
             .expect("x in saturation equation");

@@ -13,8 +13,8 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use symbolica::LicenseManager;
 use symbolica::domains::rational::Q;
+use symbolica::license::LicenseManager;
 use symbolica::poly::PolyVariable;
 
 use polynomial_cdcl::gb_search::GbBackend;

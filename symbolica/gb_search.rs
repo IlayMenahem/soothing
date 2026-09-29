@@ -134,7 +134,7 @@ fn singular_polynomial(poly: &PolyExtLex) -> String {
 /// which keeps the encoding sound.
 fn rabinowitsch_generators(cover: &[PolyExtLex]) -> (Vec<&PolyExtLex>, Vec<(usize, &PolyExtLex)>) {
     let temporaries: Vec<usize> = cover[0]
-        .variables
+        .variables()
         .iter()
         .enumerate()
         .filter_map(|(index, variable)| {
@@ -366,7 +366,7 @@ fn leading_monomial(template: &PolyExtGrevLex, encoded: &str) -> Result<PolyExtG
         .collect::<Result<Vec<_>, _>>()
         .ok()
         .filter(|exponents| exponents.len() == template.nvars())
-        .map(|exponents| template.monomial(template.ring.one(), exponents))
+        .map(|exponents| template.monomial(template.ring().one(), exponents))
         .ok_or_else(|| {
             Outcome::BackendError(format!(
                 "invalid Singular leading exponent vector {encoded:?}"
@@ -535,9 +535,9 @@ mod tests {
     use super::*;
     use std::sync::Once;
 
-    use symbolica::LicenseManager;
     use symbolica::atom::AtomCore;
     use symbolica::domains::rational::Q;
+    use symbolica::license::LicenseManager;
 
     use crate::atom_util::parse_expression;
     use crate::factor_prep::{ideal_ext_lex, variable_order};
@@ -565,7 +565,7 @@ mod tests {
     fn poly_like(template: &PolyExtLex, source: &str) -> PolyExtLex {
         parse_expression(source.to_string())
             .expect("parse")
-            .try_to_polynomial::<_, u16>(&template.ring, Some(template.variables.clone()))
+            .try_to_polynomial::<_, u16>(template.ring(), Some(template.variables().clone()))
             .expect("polynomial")
     }
 

@@ -13,8 +13,8 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use symbolica::LicenseManager;
 use symbolica::domains::rational::Q;
+use symbolica::license::LicenseManager;
 
 use polynomial_cdcl::cover::{build_factor_index, minimal_covers, ordered_cover_masks};
 use polynomial_cdcl::gb_search::{

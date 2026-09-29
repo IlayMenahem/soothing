@@ -309,8 +309,8 @@ mod tests {
     use crate::sig_groebner::{groebner_f5_from_system_with, groebner_gvw_from_system_with};
     use crate::variable_order;
     use std::sync::Once;
-    use symbolica::LicenseManager;
     use symbolica::domains::rational::Q;
+    use symbolica::license::LicenseManager;
     use symbolica::poly::groebner::GroebnerBasis;
     use symbolica::poly::polynomial::MultivariatePolynomial;
     use symbolica::poly::{GrevLexOrder, LexOrder};

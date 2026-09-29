@@ -183,7 +183,7 @@ pub fn reorder_by_min_fill(mut polys: Vec<PolyExtLex>) -> Result<Vec<PolyExtLex>
         return Ok(polys);
     }
     MultivariatePolynomial::unify_variables_list(&mut polys);
-    let variables = polys[0].variables.clone();
+    let variables = polys[0].variables().clone();
     let mut by_name: Vec<usize> = (0..variables.len()).collect();
     by_name.sort_by_cached_key(|&position| variables[position].to_string());
     let canonical_id: Vec<usize> =
@@ -224,6 +224,7 @@ pub fn ideal_ext_lex(
         .map(|eq| {
             eq.expand()
                 .try_to_polynomial::<_, u16>(field, Some(var_order.clone()))
+                .map_err(|error| error.to_string())
         })
         .collect()
 }
@@ -338,7 +339,7 @@ mod tests {
     }
     use crate::mathematica::load_mathematica_system_from_str_with_var_names;
     use std::sync::Once;
-    use symbolica::LicenseManager;
+    use symbolica::license::LicenseManager;
 
     static LICENSE: Once = Once::new();
     fn activate_license() {
@@ -393,7 +394,7 @@ mod tests {
         let reordered = reorder_by_min_fill(alphabetical).expect("reorder");
 
         assert_eq!(reordered, expected);
-        assert_eq!(reordered[0].variables, expected[0].variables);
+        assert_eq!(reordered[0].variables(), expected[0].variables());
     }
 
     #[test]

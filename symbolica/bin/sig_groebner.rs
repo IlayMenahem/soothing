@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use symbolica::LicenseManager;
 use symbolica::domains::rational::Q;
+use symbolica::license::LicenseManager;
 use symbolica::poly::groebner::GroebnerBasis;
 use symbolica::poly::polynomial::MultivariatePolynomial;
 use symbolica::poly::{GrevLexOrder, LexOrder, MonomialOrder, PolyVariable};

@@ -16,7 +16,7 @@ pub mod var_id;
 pub mod variable_zeroing;
 
 /// Symbolica license key used by the binaries and the tests.
-pub const SYMBOLICA_LICENSE_KEY: &str = "5568d092#6bb8b4fb#ff936916-65ba-552f-b3c1-bdc64597cd21";
+pub const SYMBOLICA_LICENSE_KEY: &str = "S-342-2027.04.09-B7NNOCSUSXUGWJOLKHPLWES4F57PZ4VNA6G6FWPSZQYU2MUFUFVLD4NUVKRM5VY35QWINLR5TVDSDYLES3G6F66ELOAI72ZYZTHYSCY";
 
 pub use atom_util::parse_expression;
 pub use factor_prep::{

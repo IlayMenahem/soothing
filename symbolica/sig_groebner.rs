@@ -169,7 +169,7 @@ fn sig_top_reduce_once<F: Field, O: MonomialOrder>(
         let u = monom_quot(&lm_p, lm_g);
         let new_sig = g.signature.shifted(&u);
         (new_sig.cmp(sig) == Ordering::Less).then(|| {
-            let ratio = p.ring.div(p.max_coeff(), g.poly.max_coeff());
+            let ratio = p.ring().div(p.max_coeff(), g.poly.max_coeff());
             g.poly.clone().mul_exp(&u).mul_coeff(ratio)
         })
     })
@@ -378,6 +378,7 @@ where
         .map(|eq| {
             eq.expand()
                 .try_to_polynomial::<_, u16>(field, Some(var_order.clone()))
+                .map_err(|error| error.to_string())
                 .map(|p| p.reorder::<O>())
         })
         .collect()
@@ -419,8 +420,8 @@ mod tests {
     use crate::mathematica::load_mathematica_system_from_str_with_var_names;
     use crate::variable_order;
     use std::sync::Once;
-    use symbolica::LicenseManager;
     use symbolica::domains::rational::Q;
+    use symbolica::license::LicenseManager;
     use symbolica::poly::GrevLexOrder;
     use symbolica::poly::LexOrder;
     use symbolica::poly::groebner::GroebnerBasis;

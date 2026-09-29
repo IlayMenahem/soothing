@@ -505,7 +505,7 @@ pub(crate) fn evaluate_cover_isolated(
     timeout: Duration,
     backend: GbBackend,
 ) -> Outcome {
-    let variables = cover[0].reorder::<GrevLexOrder>().variables;
+    let variables = cover[0].reorder::<GrevLexOrder>().variables().clone();
     let request = WorkerRequest::Cover {
         backend,
         polynomials: encode_polynomials(&cover),
@@ -548,7 +548,7 @@ pub(crate) fn factor_groups_isolated(
     MultivariatePolynomial::unify_variables_list(&mut polynomials);
     let variables = polynomials.first().map_or_else(
         || Arc::new(Vec::new()),
-        |polynomial| polynomial.variables.clone(),
+        |polynomial| polynomial.variables().clone(),
     );
     let request = WorkerRequest::Factor {
         polynomials: encode_polynomials(&polynomials),
@@ -599,7 +599,7 @@ pub(crate) fn interreduce_isolated(
     MultivariatePolynomial::unify_variables_list(&mut polynomials);
     let variables = polynomials.first().map_or_else(
         || Arc::new(Vec::new()),
-        |polynomial| polynomial.variables.clone(),
+        |polynomial| polynomial.variables().clone(),
     );
     let request = WorkerRequest::Interreduce {
         polynomials: encode_polynomials(&polynomials),
