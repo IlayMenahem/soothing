@@ -1,0 +1,6 @@
+{
+  "method": "builtin-grevlex",
+  "status": "timeout",
+  "solve_secs": 120.0,
+  "wall_secs": 120.01760870800354
+}
