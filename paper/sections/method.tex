@@ -6,41 +6,41 @@
 
 % motivation for breaking down a system of polynomial equations
 Polynomial-ideal computations can be intractable even for small systems~\cite{mayr1982complexity}. Thus, decomposing a system into smaller and simpler
-subproblems may make the individual solver calls easier.
+branches may make the individual solver calls easier.
 
 % How breaking down is done
-We break a system into smaller subproblems by alternating two operations:
-interreducing the current subproblem, and factoring each generator to
-enumerate the minimal hitting sets of the factor sets. Then again do the same
-on each hitting set, until the subproblems can't be further broken down.
+We break a system into smaller branches by alternating two operations:
+interreducing the current branch, and factoring each generator to
+enumerate the minimal hitting sets of the factor sets. Each hitting set
+generates a new branch, and we repeat the two operations on every branch until
+no branch changes.
 
-Here is the pseudocode for this refinement of a polynomial system $Q$ into a smaller set of subproblems.
+Algorithm~\ref{alg:Refine} applies these two operations to every branch
+until it reaches a fixed point. We call a branch \emph{terminal} if one round
+leaves it unchanged.
 
 \begin{algorithm}[htbp]
 \caption{Refinement}
 \label{alg:Refine}
 \begin{algorithmic}[1]
-    \Require A finite polynomial system $Q$ and a collection $A$ of normalized systems visited on the current recursion path
-
-    \State $Q\gets Q\setminus\{0\}$
-    \State $\widetilde Q\gets\Call{Interreduce}{Q}$ \Comment{Optional; otherwise $\widetilde Q\gets Q$}
-    \State Factor each generator of $\widetilde Q$
-    \State $\mathcal{H} \gets$ the minimal hitting sets of the factor sets
-    \State $T \gets \emptyset$
-    \ForAll{$H\in\mathcal H$}
-        \If{$H=\widetilde Q$ or $H\in A$}
-            \State $T\gets T\cup\{H\}$
-        \Else
-            \State $T\gets T\cup\Call{Refine}{H,A\cup\{\widetilde Q\}}$
-        \EndIf
-    \EndFor
-    \State \Return $T$
-
+    \Require A finite polynomial system $P$
+    \Ensure The terminal branches of $P$
+    \State $W\gets\{P\}$
+    \Repeat
+        \State $W_{\mathrm{prev}}\gets W$, \quad $W\gets\emptyset$
+        \ForAll{$Q\in W_{\mathrm{prev}}$}
+            \State $Q\gets\Call{Interreduce}{Q}$ \Comment{Optional}
+            \State Factor each generator of $Q$
+            \State $W\gets W\cup\mathcal H(Q)$ \Comment{Minimal hitting sets of the factor sets}
+        \EndFor
+    \Until{$W=W_{\mathrm{prev}}$}
+    \State \Return $W$
 \end{algorithmic}
 \end{algorithm}
 
 % How branching is done
-Let $\mathcal L(P)$ denote the terminal hitting sets obtained from $P$.
+Let $\mathcal L(P)$ denote the terminal branches returned by
+Algorithm~\ref{alg:Refine} on $P$.
 For each $H\in\mathcal L(P)$, the branch solver must either describe $V(H)$ exactly or certify that $V(H)=\emptyset$.
 
 \begin{algorithm}[htbp]
@@ -50,9 +50,7 @@ For each $H\in\mathcal L(P)$, the branch solver must either describe $V(H)$ exac
     \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$ and an exact branch solver $\mathcal{B}$.
 
     \State $S \gets \emptyset$ \Comment{Solution-set representations}
-    \State $R \gets \Call{Refine}{P,\emptyset}$
-
-    \ForAll{$H\in R$}
+    \ForAll{$H\in\Call{Refine}{P}$}
         \State Use $\mathcal{B}$ to solve $H$
         \If{$\mathcal{B}$ returns a representation of $V(H)$}
             \State Add the returned representation to $S$
@@ -64,17 +62,17 @@ For each $H\in\mathcal L(P)$, the branch solver must either describe $V(H)$ exac
 \end{algorithmic}
 \end{algorithm}
 
-The order of the terminal hitting sets affects running time but not
-correctness. Optionally, we can sort the hitting sets by their estimated cost to
-solve. We use the number of generators in a hitting set as a proxy for the
-cost, processing smaller hitting sets first.
+The order of the terminal branches affects running time but not
+correctness. Optionally, we can sort the branches by their estimated cost to
+solve. We use the number of generators in a branch as a proxy for the
+cost, processing smaller branches first.
 
 % A flow chart of the method
 \begin{figure}[pos=htbp]
     \centering
     \resizebox{0.72\textwidth}{!}{\input{figs/branching_flowchart.tex}}
     \caption{Factor branching procedure of Algorithm~\ref{alg:Branching}. Refinement
-    produces terminal hitting-set branches, which the exact solver either
+    produces terminal branches, which the exact solver either
     represents or certifies as UNSAT.}
     \label{fig:branching_flowchart}
 \end{figure}
@@ -99,9 +97,6 @@ we tested. We therefore omit it from the algorithms presented here.
 
 Let $S$ be a collection of solution-set representations, and $\operatorname{Sol}(S)$ be the union of the represented sets.
 
-For a system $Q$, write $\mathcal H(Q)$ for the minimal hitting sets obtained
-in one factorization round.
-
 \begin{theorem}[One-round branch decomposition]
 \label{thm:branch-decomposition}
 \[
@@ -110,39 +105,75 @@ in one factorization round.
 \end{theorem}
 
 \begin{proof}
-Write $Q=\{q_1,\ldots,q_m\}$ and let $F_i$ be the nonconstant irreducible
-factors of $q_i$. Take $x \in V(Q)$. Since $q_i(x)=0$, at least one factor in
-$F_i$ vanishes at $x$ for every $i$. The set of all factors that vanish at
-$x$ is a hitting set of $F_1,\ldots,F_m$. Because the factor sets are finite,
-this set contains a minimal hitting set $H$. Every factor in $H$ vanishes at
-$x$, so $x \in V(H)$.
+Write $Q=\{q_1,\ldots,q_m\}$ and let $C_i$ be the monic nonconstant
+irreducible factors of $q_i$. Take $x \in V(Q)$. Since $q_i(x)=0$, at least
+one factor in $C_i$ vanishes at $x$ for every $i$. The set of all factors that
+vanish at $x$ is therefore a hitting set of $C_1,\ldots,C_m$. Because the
+factor sets are finite, this set contains a minimal hitting set $H$. Every
+factor in $H$ vanishes at $x$, so $x \in V(H)$.
 
 For the reverse inclusion, take $x \in V(H)$ for some
-$H \in \mathcal{H}(Q)$. The set $H$ intersects every $F_i$, so each $q_i$ has
-a factor that vanishes at $x$. Hence $q_i(x)=0$ for every $i$, and $x \in V(Q)$.\qed
+$H \in \mathcal{H}(Q)$. The set $H$ intersects every $C_i$, so each $q_i$ has
+a factor that vanishes at $x$. Hence $q_i(x)=0$ for every $i$, and $x \in V(Q)$.
+
+If some $q_i$ is a nonzero constant, then $C_i=\emptyset$, and both sides
+are empty: $V(Q)=\emptyset$, and $\mathcal H(Q)=\emptyset$ because no set meets
+$C_i$.\qed
 \end{proof}
 
-\begin{lemma}[Recursive refinement]
-\label{lem:recursive-refinement}
-Suppose refinement of $Q$ terminates with the finite collection $\mathcal L(Q)$. Then
+For a branch $Q$, write $\widetilde Q$ for the system that one round of
+Algorithm~\ref{alg:Refine} factors: $Q\setminus\{0\}$ made monic and, if
+enabled, interreduced. Thus $Q$ is terminal if and only if
+$\mathcal H(\widetilde Q)=\{Q\}$. To prove that Algorithm~\ref{alg:Refine}
+terminates, we measure the progress of a branch $Q$ by the leading-monomial
+ideal of its normalization,
 \[
-    V(Q)=\bigcup_{H\in\mathcal L(Q)}V(H).
+    \mu(Q)=\langle\operatorname{LM}(q):q\in\widetilde Q\rangle.
 \]
+
+\begin{lemma}[Progress of one refinement step]
+\label{lem:refinement-step}
+Let $H\in\mathcal H(\widetilde Q)$. Then $H$ is terminal, or
+$\mu(Q)\subsetneq\mu(H)$.
 \end{lemma}
 
 \begin{proof}
-Consider the finite recursion tree produced by Algorithm~\ref{alg:Refine}.
-For every internal node $G$, let $\widetilde G$ be its interreduction (or $G$
-itself when interreduction is disabled). Interreduction preserves the generated
-ideal, so $V(G)=V(\widetilde G)$. Theorem~\ref{thm:branch-decomposition} then
-gives
-\[
-    V(G)=\bigcup_{H\in\mathcal H(\widetilde G)}V(H),
-\]
-where the sets in $\mathcal H(\widetilde G)$ are precisely the children of
-$G$. A bottom-up induction on the finite tree shows that the variety of each
-node equals the union of the varieties of the terminal nodes in its subtree.
-Applying this statement at the root $Q$ proves the result.\qed
+Every element of $H$ is a monic irreducible factor of some element of
+$\widetilde Q$. Hence $H$ contains neither $0$ nor a constant, and each factor
+set of $H$ is a singleton $\{h\}$. Its only minimal hitting set is $H$ itself.
+
+If interreduction is disabled, $\widetilde H=H$, so
+$\mathcal H(\widetilde H)=\{H\}$ and $H$ is terminal.
+
+Suppose interreduction is enabled. If $H=\widetilde Q$, then $H$ is
+interreduced, so $\widetilde H=H$ and $H$ is again terminal. Assume
+$H\neq\widetilde Q$; we show $\mu(Q)\subsetneq\mu(H)$ in two steps.
+
+First, $\mu(Q)\subsetneq\langle\operatorname{LM}(h):h\in H\rangle$.
+Since $H$ meets the factor set of every $q\in\widetilde Q$, some $h\in H$
+divides $q$, and then $\operatorname{LM}(h)\mid\operatorname{LM}(q)$. This
+proves the inclusion. Suppose, for contradiction, that equality holds.
+Take $h\in H$ and $q\in\widetilde Q$ with $h\mid q$. Equality gives some
+$q'\in\widetilde Q$ with
+$\operatorname{LM}(q')\mid\operatorname{LM}(h)\mid\operatorname{LM}(q)$.
+Since $\widetilde Q$ is interreduced, no term of $q$ is divisible by the
+leading monomial of another element, so $q'=q$. Hence
+$\operatorname{LM}(h)=\operatorname{LM}(q)$, the cofactor $q/h$ is a constant,
+and $h=q$ because both are monic. Thus $H\subseteq\widetilde Q$. Conversely,
+every $q\in\widetilde Q$ is divisible by some $h\in H$, and $h\in\widetilde Q$
+by the previous argument; interreducedness again forces $h=q$, so
+$\widetilde Q\subseteq H$. This contradicts $H\neq\widetilde Q$.
+
+Second, interreduction does not shrink the ideal generated by the leading
+monomials. Consider one iteration of Algorithm~\ref{alg:interreduction},
+which cancels a term $cu$ of $p$ using $q$. If $u=\operatorname{LM}(p)$,
+then $\operatorname{LM}(p)$ remains in the ideal because $q$ remains in the
+set and $\operatorname{LM}(q)\mid u$. Otherwise $u\prec\operatorname{LM}(p)$,
+the subtracted multiple of $q$ has only monomials $\preceq u$, and the new
+element $r$ keeps the leading monomial of $p$. The final normalization does
+not change leading monomials. Therefore
+$\langle\operatorname{LM}(h):h\in H\rangle\subseteq\mu(H)$, and the two
+steps give $\mu(Q)\subsetneq\mu(H)$.\qed
 \end{proof}
 
 \begin{theorem}[Termination of refinement]
@@ -151,78 +182,90 @@ Algorithm~\ref{alg:Refine} terminates on every finite polynomial system.
 \end{theorem}
 
 \begin{proof}
-If interreduction is disabled, every child consists of irreducible polynomials.
-Factoring such a child again returns it unchanged, so the condition
-$H=\widetilde Q$ makes it terminal.
+By Lemma~\ref{lem:refinement-step}, $\mu$ strictly increases along every chain
+of nonterminal branches. The ascending-chain condition bounds such chains, and
+each branch has finitely many children, so the iteration reaches its fixed
+point after finitely many rounds. We make this precise with a tree.
 
-Suppose interreduction is enabled. For an interreduced system $Q$, let
-\[
-    M(Q)=\langle\operatorname{LM}(q):q\in Q\rangle.
-\]
-For every hitting-set child $H$ and every $q\in Q$, some $h\in H$ divides $q$.
-Hence $\operatorname{LM}(h)$ divides $\operatorname{LM}(q)$ and
-$M(Q)\subseteq M(H)$.
+Let the refinement tree of $P$ have root $P$. The children of a nonterminal
+node $Q$ are the elements of $\mathcal H(\widetilde Q)$, and terminal nodes
+have no children. Consider a path $Q_0,Q_1,\ldots$ from the root. Every node
+$Q_{i+1}$ that is not terminal satisfies $\mu(Q_i)\subsetneq\mu(Q_{i+1})$ by
+Lemma~\ref{lem:refinement-step}, and only the last node of a path can be
+terminal. The monomial ideals $\mu(Q_1)\subsetneq\mu(Q_2)\subsetneq\cdots$
+therefore form a strictly ascending chain, which is finite by Dickson's
+lemma. Thus every path is finite. Every node has finitely many children,
+because its factor sets are finite. By K\"onig's lemma, the tree is finite;
+let $d$ be its depth.
 
-Suppose equality holds. For any $h\in H$, choose $q\in Q$ having $h$ as a
-factor. Equality gives some $q'\in Q$ such that
-$\operatorname{LM}(q')\mid\operatorname{LM}(h)\mid\operatorname{LM}(q)$.
-Because $Q$ is interreduced, this is possible only for $q'=q$. The two outer
-leading monomials are therefore equal, so the remaining factor of $q$ is a
-unit. Thus $h$ and $q$ are associates, and their monic normalization gives
-$h=q$. Applying this argument to the factor selected for every $q\in Q$ gives
-$H=Q$, which is terminal.
-
-It remains to account for the next interreduction. In an elementary reduction,
-the old leading monomial either remains, or it is already divisible by the
-leading monomial of the reducer. Consequently, interreduction cannot shrink
-the ideal generated by the current leading monomials. Thus, for every
-nonterminal child $H$ and its interreduction $\widetilde H$,
-\[
-    M(Q)\subsetneq M(H)\subseteq M(\widetilde H).
-\]
-Therefore $M$ strictly increases along every recursive path.
-
-The ascending-chain condition for monomial ideals rules out an infinite path.
-Every node has finitely many children, so K\"onig's lemma implies that the
-refinement tree is finite. Therefore Algorithm~\ref{alg:Refine} terminates.\qed
+Let $W_k$ be the value of $W$ after $k$ rounds of the loop in
+Algorithm~\ref{alg:Refine}. Induction on $k$ shows that $W_k$ is the set of
+terminal nodes of depth less than $k$ together with all nodes of depth
+exactly $k$: a terminal node $Q$ satisfies $\mathcal H(\widetilde Q)=\{Q\}$
+and stays, and a nonterminal node of depth $k$ is replaced by its children.
+Hence $W_k$ equals the set $\mathcal T$ of all terminal nodes for every
+$k\geq d+1$, and the loop stops after at most $d+2$ rounds. If it stops
+earlier, with $W_{k+1}=W_k$, then $W_j=W_k$ for all $j\geq k$ because each
+round depends only on $W$. In particular $W_k=W_{d+1}=\mathcal T$. In both
+cases, Algorithm~\ref{alg:Refine} returns the finite set $\mathcal T$ of
+terminal branches.\qed
 \end{proof}
 
+\begin{lemma}[Refinement preserves solutions]
+\label{lem:recursive-refinement}
+Every round of Algorithm~\ref{alg:Refine} preserves
+$\bigcup_{Q\in W}V(Q)$. Consequently,
+\[
+    V(P)=\bigcup_{H\in\mathcal L(P)}V(H).
+\]
+\end{lemma}
+
+\begin{proof}
+Removing the zero polynomial, interreduction, and scaling by nonzero
+constants preserve the zero set, so $V(Q)=V(\widetilde Q)$.
+Theorem~\ref{thm:branch-decomposition} applied to $\widetilde Q$ gives
+\[
+    V(Q)=\bigcup_{H\in\mathcal H(\widetilde Q)}V(H)
+\]
+for every $Q\in W$. Taking the union over $Q\in W$ shows that one round
+preserves $\bigcup_{Q\in W}V(Q)$. Before the first round, $W=\{P\}$. By
+Theorem~\ref{thm:refine-termination}, the loop ends after finitely many rounds
+with $W=\mathcal L(P)$, which proves the equality.\qed
+\end{proof}
+
+We call a collection $S$ of solution-set representations \emph{sound} for $P$
+if every represented point is a solution, $\operatorname{Sol}(S)\subseteq V(P)$,
+and \emph{complete} for $P$ if every solution is represented,
+$V(P)\subseteq\operatorname{Sol}(S)$.
 The following theorem allows the use of Algorithm~\ref{alg:Branching} without loss of correctness.
 \begin{theorem}
 \label{thm:branching-correctness}
+If $\mathcal B$ returns on every branch in $\mathcal L(P)$, then the output of
 Algorithm~\ref{alg:Branching} is sound and complete for $P$.
 \end{theorem}
 
 \begin{proof}
-By Theorem~\ref{thm:refine-termination}, refinement terminates with a finite
-collection $\mathcal L(P)$. Every interreduction round preserves the current
-ideal, and every factorization round preserves the zero set by
-Theorem~\ref{thm:branch-decomposition}. Lemma~\ref{lem:recursive-refinement}
-therefore gives
-\[
-    V(P)=\bigcup_{H\in\mathcal L(P)}V(H).
-\]
-Consider any $H\in\mathcal L(P)$. The exact solver either returns an
-exact representation of $V(H)$, which the algorithm adds to $S$, or certifies
-that $V(H)=\emptyset$. Empty branches therefore make no contribution, while
-every represented branch contributes exactly its variety. Hence
+By Theorem~\ref{thm:refine-termination}, $\mathcal L(P)$ is finite, and by
+Lemma~\ref{lem:recursive-refinement},
+$V(P)=\bigcup_{H\in\mathcal L(P)}V(H)$.
+For each $H\in\mathcal L(P)$, the solver returns either an exact
+representation of $V(H)$, which the algorithm adds to $S$, or a certificate
+that $V(H)=\emptyset$. Hence
 \[
     \operatorname{Sol}(S)
     =\bigcup_{H\in\mathcal L(P)}V(H)
     =V(P).
-\]
-Every representation added to $S$ is exact, which proves soundness, and the
-equality proves completeness.\qed
+\]\qed
 \end{proof}
 
-Finally, we show that the factor branching algorithm terminates.
-\begin{theorem}
+\begin{corollary}
 \label{thm:branching-termination}
-If the exact solver is known to terminate, then Algorithm~\ref{alg:Branching} terminates.
-\end{theorem}
+If $\mathcal B$ returns on every input, then Algorithm~\ref{alg:Branching}
+terminates.
+\end{corollary}
 
 \begin{proof}
-By Theorem~\ref{thm:refine-termination}, the call $R=\Call{Refine}{P,\emptyset}$ terminates and returns a finite collection.
-Therefore Algorithm~\ref{alg:Branching} calls the exact solver a finite number of times, and each call terminates by assumption.
-Thus Algorithm~\ref{alg:Branching} terminates.\qed
+By Theorem~\ref{thm:refine-termination}, $\Call{Refine}{P}$ returns the finite
+set $\mathcal L(P)$, so the algorithm makes finitely many solver calls, each
+of which returns.\qed
 \end{proof}

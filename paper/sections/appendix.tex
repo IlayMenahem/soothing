@@ -11,7 +11,7 @@ end-to-end wall times in seconds.  \textnormal{P} marks a partial run and
 
 Table~\ref{tab:appendix-branching} reports all five branch-solver
 configurations.  A partial entry found the easy component shown in the main
-text but left at least one hitting set unresolved.
+text but left at least one branch unresolved.
 
 \begin{table}[pos=htbp]
 \centering
@@ -53,10 +53,10 @@ Square affine $(10,5)$ & $14.750$ & TO & $47.561$ & $1.174$ & $2.548$ \\
 
 Table~\ref{tab:appendix-zeroing} gives the complete output of the fastest
 completed variable zeroing configuration evaluated across the baseline suite.
-Every backend receives three seconds per hitting set and a 60-second outer budget.
+Every backend receives three seconds per branch and a 60-second outer budget.
 The overlapping-random-multiple rows disable interreduction, as in the
 factor branching experiment.  Here $N$ is the number of recursion nodes,
-$E$ the number of hitting-set evaluations, $O/S$ the numbers of per-hitting-set timeouts
+$E$ the number of hitting-set evaluations, $O/S$ the numbers of per-branch timeouts
 and variable zeroing splits, and $C/U$ the numbers of returned components and unresolved
 branches.  The time entry is $T/F$.
 

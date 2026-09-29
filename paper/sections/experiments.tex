@@ -27,7 +27,7 @@ and only delays the subsequent splits.
 
 We ran the benchmark on an Apple M4 Pro with 14 CPU cores and 24 GB of memory.
 Every table entry is a single run. Every method received 60 seconds per system;
-the three-second variable zeroing limit is an inner, per-hitting-set limit within that budget.
+the three-second variable zeroing limit is an inner, per-branch limit within that budget.
 
 For factor branching and variable zeroing, $T$ is end-to-end wall time and $F$ is the
 time to first SAT branch, measured from the start of the
@@ -40,10 +40,10 @@ The complete measurements are stored in the appendix.
 
 The baseline has 20 generated systems in six families.
 \begin{itemize}
-    \item Signed-distance cycles and affine-factor hypergraphs test many inexpensive hitting sets.
+    \item Signed-distance cycles and affine-factor hypergraphs test many inexpensive branches.
     \item The overlapping random multiples use seeded dense quadratic factors that recur across equations, with no factor shared by every equation.
     \item For gated systems, we create a new variable and multiply every equation in Cyclic, Katsura, or dense quadratic by it~\cite{bjorck1991cyclic,boege1986examples}.
-    \item This produces one easy selector hitting set and one nonlinear residual hitting set.
+    \item This produces one easy selector branch and one nonlinear residual branch.
 \end{itemize}
 
 \begin{table}[pos=htbp]
@@ -120,7 +120,7 @@ Factor branching is a good choice when factorization produces branch ideals that
 substantially easier than the expanded input ideal.  A large number of hitting
 sets can still be manageable when individual branches are cheap to solve;
 the positive affine family shows that the hitting-set count alone is not
-decisive.  The method is less effective when one hitting set retains the difficulty
+decisive.  The method is less effective when one branch retains the difficulty
 of the original nonlinear system, as Cyclic-7 does.
 
 % [Back up the explanation with current or new experiments]
@@ -141,7 +141,7 @@ gravity~\cite{vacca2010asymptotic}.
 
 For this larger system, every run, including the standalone baselines, has a
 120-second total limit.  Within it, variable zeroing uses a five-second limit per
-hitting set; factor branching places no further limit on a hitting set.
+branch; factor branching places no further limit on a branch.
 
 \begin{table}[pos=htbp]
 \centering
@@ -162,8 +162,8 @@ Singular & $timeout/0.010$ & partial: 32 SAT, 1 timeout & $27.750/0.470$ & compl
 \end{tabular}%
 }
 \caption{Physical-system results with a 120-second total limit per run; variable
-zeroing also uses a 5-second limit per hitting set.  Both methods refine the
-system into the same 33 terminal hitting sets; the factor branching result column
+zeroing also uses a 5-second limit per branch.  Both methods refine the
+system into the same 33 terminal branches; the factor branching result column
 counts them by outcome.
 A split is one $x=0$ versus $x\neq0$ case split; an unresolved branch is one
 still open when the total limit expires.  The ten standalone baselines, including
@@ -176,8 +176,8 @@ M4GB, F5, GVW, and F4 in grevlex order, Singular and Macaulay2 lex Gr\"obner
 bases, Singular \texttt{facstd} and \texttt{primdecGTZ}, Macaulay2
 \texttt{decompose}, and HomotopyContinuation.jl.  Factor branching with
 \texttt{facstd} completes in 1.341 seconds.  Every backend solves the same 32
-of the 33 terminal hitting sets as SAT within 0.13 seconds in total, and times out on
-the last one.  Only \texttt{facstd} shows that this hitting set is UNSAT, so
+of the 33 terminal branches as SAT within 0.13 seconds in total, and times out on
+the last one.  Only \texttt{facstd} shows that this branch is UNSAT, so
 only in hindsight do we know that the 32 SAT branches found by the other
 backends already contain every solution.
 

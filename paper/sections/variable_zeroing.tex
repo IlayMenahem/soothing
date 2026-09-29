@@ -6,7 +6,7 @@
 
 % Motivation for splitting
 Suppose the solver does not terminate within a reasonable amount of time on a
-hitting set produced by Algorithm~\ref{alg:Branching}.
+branch produced by Algorithm~\ref{alg:Branching}.
 
 % What is splitting
 Then we can further simplify the system by recursive splitting. In each child
@@ -31,53 +31,47 @@ a variable is often always zero or always nonzero.
 \label{alg:ZeroingBranching}
 \begin{algorithmic}[1]
     \Require A polynomial system $P$, a branch solver $\mathcal B$, a per-call timeout $\tau$, and a global budget $\beta$
-    \Function{ZeroingBranching}{$P$}
-        \State \Return $\Call{SolveByZeroing}{P,\operatorname{vars}(P),\emptyset,\emptyset}$
-    \EndFunction
-    \Function{SolveByZeroing}{$Q,X,Z,N$}
-        \State Run $\mathcal B$ on each $H\in\mathcal L(Q)$ for at most $\tau$ while $\beta$ lasts
-        \State $S \gets$ the returned representations; $T \gets$ the unsolved $H$
-        \State $U \gets \emptyset$ \Comment{Unresolved branches}
-
-        \ForAll{$R \in T$}
-            \If{$\beta$ is exhausted or $X\cap\operatorname{vars}(R)=\emptyset$}
-                \State $U \gets U\cup\{(R,Z,N)\}$
+    \State $S\gets\emptyset$; $U\gets\emptyset$ \Comment{Solved and unresolved branches}
+    \State $W\gets\{(P,\emptyset,\emptyset)\}$ \Comment{Pending branches $(Q,Z,N)$}
+    \While{$W\neq\emptyset$}
+        \State Remove an element $(Q,Z,N)$ from $W$
+        \ForAll{$H\in\Call{Refine}{Q}$}
+            \State Run $\mathcal B$ on $H$ for at most $\tau$, unless $\beta$ is exhausted
+            \State $V\gets \operatorname{vars}(H)\setminus(Z\cup N)$ \Comment{Useful variables for $H$}
+            \If{$\mathcal B$ returns a representation of $V(H)$}
+                \State Add the representation, with $(Z,N)$, to $S$
+            \ElsIf{$\beta$ is exhausted or $V=\emptyset$}
+                \State $U\gets U\cup\{(H,Z,N)\}$
             \Else
-                \State $x \gets \Call{ChooseVariable}{R,X}$
-                \State $R_0 \gets \Call{Substitute}{R,x,0}$
-                \State $R_1 \gets \Call{UpdateSaturation}{R,N\cup\{x\}}$
-                \State $(S_0,U_0) \gets \Call{SolveByZeroing}{R_0,X\setminus\{x\},Z\cup\{x\},N}$
-                \State $(S_1,U_1) \gets \Call{SolveByZeroing}{R_1,X\setminus\{x\},Z,N\cup\{x\}}$
-                \State $S \gets S\cup S_0\cup S_1$
-                \State $U \gets U\cup U_0\cup U_1$
+                \State $x\gets\Call{ChooseVariable}{H,V}$
+                \State $W\gets W\cup\{(H|_{x=0},Z\cup\{x\},N)\}$ \Comment{$x=0$}
+                \State $W\gets W\cup\{(\Call{UpdateSaturation}{H,N\cup\{x\}},Z,N\cup\{x\})\}$ \Comment{$x\neq0$}
             \EndIf
         \EndFor
-        \State \Return $(S,U)$
-    \EndFunction
+    \EndWhile
+    \State \Return $(S,U)$
 \end{algorithmic}
 \end{algorithm}
 
 
 % How the constraints are encoded into the system.
-Let $N$ be the variables declared nonzero on the current path.
-Subsection~\ref{subsec:nonzero-encoding} describes two ways to encode these
-conditions; the experiments use Equation~\eqref{eq:single-zeroing-saturation}.
-Since refinement may rewrite each $\sigma_x$, $\mathrm{UpdateSaturation}(R,N')$
-removes every generator of $R$ containing an auxiliary variable and adds
-$\sigma_x$ for $x\in N'$.
+Each pending branch $(Q,Z,N)$ records the variables $Z$ set to zero and the
+variables $N$ declared nonzero on its path.
+Subsection~\ref{subsec:nonzero-encoding} describes two ways to encode the
+nonzero conditions, and some solvers have their own internal encoding.
 
 \begin{lemma}
 \label{lem:auxiliary-generators}
 Refinement keeps exactly one generator containing $s_x$, of the form
-$c(1-s_xh_x)$ with $h_x\equiv x$ modulo the auxiliary-free generators $R'$.
-Hence $\pi(V(R))=\{a\in V(R'):a_x\neq0,\ x\in N\}$, and
+$c(1-s_xh_x)$ with $h_x\equiv x$ modulo the auxiliary-free generators $H'$.
+Hence $\pi(V(H))=\{a\in V(H'):a_x\neq0,\ x\in N\}$, and
 $\mathrm{UpdateSaturation}$ loses no constraint.
 \end{lemma}
 
 \begin{proof}
 The leading monomial of $1-s_xh_x$ contains $s_x$, so it reduces no other
-generator, is reduced only by $R'$ (changing $h_x$ by an element of
-$\langle R'\rangle$), and, being linear in $s_x$, does not factor.\qed
+generator, is reduced only by $H'$ (changing $h_x$ by an element of
+$\langle H'\rangle$), and, being linear in $s_x$, does not factor.\qed
 \end{proof}
 
 Solutions of the nonzero branch are projected onto the original variables, so
@@ -87,8 +81,7 @@ decisions remain part of the solution-set representation.
 \begin{figure}[pos=htbp]
     \centering
     \resizebox{0.72\textwidth}{!}{\input{figs/variable_zeroing_flowchart.tex}}
-    \caption{Flowchart of the recursive variable-zeroing procedure in
-    Algorithm~\ref{alg:ZeroingBranching}.}
+    \caption{Flowchart of Algorithm~\ref{alg:ZeroingBranching}.}
     \label{fig:variable_zeroing_flowchart}
 \end{figure}
 
@@ -96,10 +89,10 @@ decisions remain part of the solution-set representation.
 \begin{figure}[pos=htbp]
     \centering
     \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_tree.tex}}
-    \caption{Recursion tree of factor branching with variable zeroing on the
+    \caption{Split tree of factor branching with variable zeroing on the
     fifth-order graviton QFT system (detailed in
     Section~\ref{subsec:physical-system}) using M4GB with a five-second
-    timeout per hitting set. The run takes 33.768 seconds.
+    timeout per branch. The run takes 33.768 seconds.
     "contracted" branches are caused by an optimization specified in Subsection~\ref{subsec:zeroing-branch-contraction}
     }
     \label{fig:variable_zeroing_tree}
@@ -119,13 +112,13 @@ effective than arbitrary affine splittings on these structured systems.
 \label{subsec:zeroing-variable-choice}
 
 The choice of variable for splitting affects the efficiency of the algorithm.
-If a variable barely occurs in the current hitting set, recursive calls may
+If a variable barely occurs in the current branch, its child branches may
 repeat the same work. A variable that occurs in many generators is a more
 promising choice. Setting it to zero removes all terms containing it at once.
 In the nonzero branch, $\mathrm{UpdateSaturation}$ adds the equation
 $\sigma_x=0$.
 
-For each $x\in X\cap\operatorname{vars}(Q)$, define
+For each $x\in X = \operatorname{vars}(Q)\setminus(Z\cup N)$, the variables not yet split on, define
 \begin{align*}
     g_Q(x) &= \#\{q\in Q : x\text{ occurs in }q\},\\
     t_Q(x) &= \#\{(q,m) : q\in Q,\ m\text{ is a term of }q,\ \deg_x(m) > 0\},\\
@@ -136,13 +129,13 @@ Its score is the triple
     h_Q(x)=\bigl(g_Q(x),t_Q(x),e_Q(x)\bigr),
 \]
 and scores are compared lexicographically.
-$\mathrm{ChooseVariable}(R,X)$ returns a variable with the largest score $h_R$.
+$\mathrm{ChooseVariable}(Q,X)$ returns a variable $x\in X$ with the largest score $h_Q(x)$.
 
 \subsection{Branch contraction}
 \label{subsec:zeroing-branch-contraction}
 
-Suppose that one child of a split on $x$ has no hitting sets (i.e., UNSAT) and the other has exactly one, $H$.
-Theorem~\ref{thm:branch-decomposition} and the variable-zeroing split give
+Suppose that one child of a split on $x$ has no terminal branches (i.e., UNSAT) and the other has exactly one, $H$.
+Lemma~\ref{lem:recursive-refinement} and Equation~\eqref{eq:zeroing-split} give
 \[
     V_Y(Q;Z,N)=
     \begin{cases}
@@ -157,60 +150,108 @@ This optimization may save a solver call that is likely to fail.
 \label{subsec:zeroing-theoretical-analysis}
 
 The correctness argument uses only that the side conditions cover all
-possibilities. Let $Y$ be the original variables, let $A$ be the conditions on
-the current branch, and let $V_Y(Q;A)$ be the projection onto $Y$ of the
-solutions of $Q$ satisfying $A$. For variable zeroing, we write
-$V_Y(Q;Z,N)$ for the conditions $z=0$ for $z\in Z$ and $y\neq0$ for $y\in N$.
+possibilities. Let $Y=\operatorname{vars}(P)$ be the original variables, let
+$A$ be the conditions on the current branch, and let $V_Y(Q;A)$ be the
+projection onto $Y$ of the solutions of $Q$ satisfying $A$. For variable
+zeroing, a pending branch $(Q,Z,N)$ has
+$Q\subseteq K[Y\setminus Z][s_y:y\in N]$, and we write
+\[
+    V_Y(Q;Z,N)=\bigl\{a\in\overline K^{Y}:
+    a_z=0\ (z\in Z),\ a_y\neq0\ (y\in N),\
+    (a|_{Y\setminus Z},s)\in V(Q)\text{ for some }s\bigr\}.
+\]
+At the root, $V_Y(P;\emptyset,\emptyset)=V(P)$.
 
-\begin{theorem}[Correctness of a covering split]
+\begin{theorem}[Correctness of an exhaustive split]
 \label{lem:zeroing-split}
 Let $D_1,\ldots,D_k$ be side conditions such that every point satisfying $A$
-satisfies at least one $D_i$. If $Q_i$ encodes $Q$ together with $D_i$, then
+satisfies at least one $D_i$. If each $Q_i$ satisfies
+\[
+    V_Y(Q_i;A\cup\{D_i\})=\{a\in V_Y(Q;A):a\text{ satisfies }D_i\},
+\]
+then
 \[
     V_Y(Q;A)=\bigcup_{i=1}^k V_Y(Q_i;A\cup\{D_i\}).
 \]
 \end{theorem}
 
 \begin{proof}
-Every solution on the left satisfies some $D_i$ and therefore belongs to the
-corresponding set on the right. Every set on the right imposes all equations
-and conditions from the parent branch, so the reverse inclusion also holds.\qed
+Each set on the right is contained in $V_Y(Q;A)$ by hypothesis. Conversely,
+a point $a\in V_Y(Q;A)$ satisfies $A$, hence some $D_i$, and so lies in the
+$i$-th set on the right.\qed
 \end{proof}
 
 For variable zeroing, the conditions $x=0$ and $x\neq0$ cover all values of
-$x$. With $Q_0=Q|_{x=0}$ and
-$Q_1=\mathrm{UpdateSaturation}(Q,N\cup\{x\})$, the theorem gives
+$x$.
+
+\begin{lemma}
+\label{lem:zero-nonzero-split}
+Let $H$ be a terminal branch of a pending branch $(Q,Z,N)$, let
+$Q_0=H|_{x=0}$, and let $Q_1=\mathrm{UpdateSaturation}(H,N\cup\{x\})$. Then
 \begin{equation}
 \label{eq:zeroing-split}
-    V_Y(Q;Z,N)=V_Y(Q_0;Z\cup\{x\},N)
+    V_Y(H;Z,N)=V_Y(Q_0;Z\cup\{x\},N)
     \cup V_Y(Q_1;Z,N\cup\{x\}).
 \end{equation}
+\end{lemma}
 
-For $S$ and $T$ as in Algorithm~\ref{alg:ZeroingBranching}, the proof of
-Theorem~\ref{thm:branching-correctness} gives
+\begin{proof}
+By Theorem~\ref{lem:zeroing-split}, it suffices to show that $Q_0$ and $Q_1$
+satisfy its hypothesis. For $Q_0$, a generator $q$ satisfies
+$q|_{x=0}(b,s)=q(b,s)$ whenever $b_x=0$, so a point lies in
+$V_Y(Q_0;Z\cup\{x\},N)$ exactly when it lies in $V_Y(H;Z,N)$ and has $a_x=0$.
+For $Q_1$, let $H'$ be the auxiliary-free generators of $H$.
+Lemma~\ref{lem:auxiliary-generators} and
+Subsection~\ref{subsec:nonzero-encoding} give
+$\pi(V(H))=\{b\in V(H'):b_y\neq0,\ y\in N\}$ and
+$\pi(V(Q_1))=\{b\in V(H'):b_y\neq0,\ y\in N\cup\{x\}\}$, so a point lies in
+$V_Y(Q_1;Z,N\cup\{x\})$ exactly when it lies in $V_Y(H;Z,N)$ and has
+$a_x\neq0$.\qed
+\end{proof}
+
+Lemma~\ref{lem:recursive-refinement}, applied in the ring of $Q$, gives
+$V(Q)=\bigcup_{H\in\mathcal L(Q)}V(H)$. Since $V_Y(Q;Z,N)$ depends on $Q$ only
+through $V(Q)$,
 \begin{equation}
-\label{eq:branching-timeout-partition}
-    V_Y(Q;A)=\operatorname{Sol}(S)
-    \cup\bigcup_{R\in T}V_Y(R;A).
+\label{eq:zeroing-refinement}
+    V_Y(Q;Z,N)=\bigcup_{H\in\mathcal L(Q)}V_Y(H;Z,N).
 \end{equation}
 
 \begin{theorem}[Correctness of recursive splitting]
 \label{thm:zeroing-correctness}
-Suppose every split uses side conditions that cover all possibilities. If the
-recursive procedure returns $(S,U)$ on input $P$, where $U$ contains the
-unresolved pairs $(R,A_R)$, then
+Suppose every split uses side conditions that cover all possibilities. If
+Algorithm~\ref{alg:ZeroingBranching} returns $(S,U)$ on input $P$, then
 \[
     V(P)=\operatorname{Sol}(S)
-    \cup\bigcup_{(R,A_R)\in U}V_Y(R;A_R).
+    \cup\bigcup_{(H,Z,N)\in U}V_Y(H;Z,N),
 \]
+where a representation in $S$ stored with $(Z,N)$ for the branch $H$
+represents $V_Y(H;Z,N)$.
 \end{theorem}
 
 \begin{proof}
-Equation~\eqref{eq:branching-timeout-partition} accounts for the solved and
-timed-out hitting sets at each call. An unresolved hitting set is either added
-to $U$ or replaced by child branches. Theorem~\ref{lem:zeroing-split} shows
-that any covering family of child conditions preserves its solution set.
-Applying this argument recursively proves the result.\qed
+We show that the loop of Algorithm~\ref{alg:ZeroingBranching} preserves the
+invariant
+\[
+    V(P)=\operatorname{Sol}(S)
+    \cup\bigcup_{(H,Z,N)\in U}V_Y(H;Z,N)
+    \cup\bigcup_{(Q,Z,N)\in W}V_Y(Q;Z,N).
+\]
+Before the loop, $S=U=\emptyset$ and $W=\{(P,\emptyset,\emptyset)\}$, so the
+invariant reads $V(P)=V_Y(P;\emptyset,\emptyset)$.
+
+One iteration removes $(Q,Z,N)$ from $W$. By
+Equation~\eqref{eq:zeroing-refinement}, $V_Y(Q;Z,N)$ is the union of
+$V_Y(H;Z,N)$ over $H\in\mathcal L(Q)$, and the iteration places each such
+set elsewhere. If $\mathcal B$ returns a representation of $V(H)$, the
+algorithm adds it with $(Z,N)$ to $S$, so it represents $V_Y(H;Z,N)$. If
+$\mathcal B$ certifies $H$ as UNSAT, then $V_Y(H;Z,N)=\emptyset$. If $H$ is
+unresolved and not split, $(H,Z,N)$ enters $U$. Otherwise the two children
+enter $W$, and their sets have union $V_Y(H;Z,N)$ by
+Equation~\eqref{eq:zeroing-split}. Hence the invariant still holds.
+
+When the algorithm returns, $W=\emptyset$, and the invariant is the claimed
+equality.\qed
 \end{proof}
 
 \begin{corollary}[Completeness of variable zeroing]
@@ -218,16 +259,3 @@ Applying this argument recursively proves the result.\qed
 If $U=\emptyset$ in the output of Algorithm~\ref{alg:ZeroingBranching}, then
 $\operatorname{Sol}(S)=V(P)$.
 \end{corollary}
-
-\begin{theorem}[Termination of variable zeroing]
-\label{thm:zeroing-termination}
-Algorithm~\ref{alg:ZeroingBranching} terminates if each timed solver call
-returns after $\tau$.
-\end{theorem}
-
-\begin{proof}
-Algorithm~\ref{alg:Refine} terminates by Theorem~\ref{thm:refine-termination}
-and returns finitely many hitting sets. Each variable-zeroing split removes one variable
-from the finite set $X$, so every recursive path is finite. Therefore the whole
-recursion tree is finite.\qed
-\end{proof}

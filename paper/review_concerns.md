@@ -8,14 +8,13 @@
 
 The core idea is clear and worth publishing. The paper interreduces the system and factors every equation. It then takes the minimal hitting sets of the factor sets as branches, recurses, and passes each terminal branch to any exact solver. When a branch times out, it splits on x = 0 versus x ≠ 0. The proofs for Algorithm 2 are mostly correct. Appendix A is a strong feature: it lists every measurement.
 
-Six issues most affect whether a referee would accept the paper:
+Five issues most affect whether a referee would accept the paper:
 
 1. The paper never states how it differs from its closest prior work, factorizing Gröbner bases (Gräbe; Singular's `facstd`) (A1).
 2. The abstract promises irreducible components, but the method returns a possibly redundant union of branch varieties (A2).
 3. Each method class is represented by its best configuration per system. The fair comparison with a fixed backend is already in the appendix and is stronger, but the paper doesn't show it (A4).
 4. The evidence for variable zeroing is one system and one run, and the paper's wording claims more than that supports (A6).
 5. Timing method: single runs and a startup cost of about 30 s in the numerical baseline (A7).
-6. Several proofs need tightening: undefined terms, unstated assumptions, and an informal induction (B1).
 
 ---
 
@@ -64,44 +63,6 @@ Six issues most affect whether a referee would accept the paper:
 - **Threads.** The hardware has 14 cores, but the paper never says whether backends run on one thread or many, or whether factor branching solves branches in parallel. Macaulay2 and Julia may use several threads by default.
 - **The inner timeout was tuned on the test systems.** The 3-s value was chosen on the same hard gated systems it is evaluated on (`experiments.tex:22-26`). Acknowledge this.
 - **What F measures.** F is measured from the start of the hitting-set search, so it excludes factorization. State why F is of interest (how soon the first solution appears) and that the baselines have no comparable number.
-
----
-
-## B. Correctness and precision of the theory
-
-### B1. Proof fixes (single task)
-
-**The set A in Algorithm 2** (`method.tex:23, 31`)
-- A holds "normalized systems visited on the current recursion path", but "normalized" is never defined. The termination proof (Theorem 2) never uses A: it shows that M strictly increases whenever H ≠ Q̃.
-- **Fix:** explain what A adds, such as pruning repeated systems early, or remove it. Define the normalization used when comparing H with Q̃: monic, sorted, as sets.
-
-**Theorems 2–4**
-- Open the proof of Theorem 2 with a one-sentence strategy: the invariant M strictly increases whenever refinement changes the system, and why that forces termination.
-- "Sound and complete" (`method.tex:193`) is used but never defined. Define it: every represented point is a solution, and every solution is represented.
-- Theorem 3 assumes that 𝓑 returns on every branch. Algorithm 3 has no path for a call that never returns, so state this assumption in the theorem.
-- Theorem 4 then follows immediately and can be a corollary or merged into Theorem 3.
-- Lemma 1's hypothesis ("Suppose refinement … terminates", `method.tex:127`) is redundant once Theorem 2 is proved. Put Theorem 2 first and state Lemma 1 without the hypothesis.
-- The proof of Theorem 3 repeats the reasoning of Lemma 1 (`method.tex:200-202`). Cite the lemma instead.
-
-**Theorem 5** (`variable_zeroing.tex:164-178`)
-- "Qᵢ encodes Q together with Dᵢ" is informal. Define it as V_Y(Qᵢ; A∪{Dᵢ}) = {a ∈ V_Y(Q; A) : a satisfies Dᵢ}.
-- For the x = 0 child, Q|_{x=0} lives in fewer variables. Say that the projection onto Y puts x = 0 back.
-
-**Equation (4) and Theorems 6–7** (`variable_zeroing.tex:189-230`)
-- Equation (4) cites the proof of Theorem 3, which assumes 𝓑 returns on every branch. Say that T holds both timed-out hitting sets and those left unrun when β runs out, and that the partition covers both.
-- "Applying this argument recursively proves the result" (`:213`) should be an explicit induction on the finite recursion tree, like the proof of Lemma 1.
-- "Returns after τ" (`:225`) should be "returns within time τ, with either a result or a timeout".
-
-**Edge case**
-- A constant generator has an empty factor set, so it has no hitting sets and the branch closes as UNSAT during refinement. This is how interreduction to {1} prunes hitting sets under the nonzero encoding; one sentence would make it explicit.
-
-### B11. Notation clashes
-- **R** is the ring K[x] in §2, the output of Refine in Algorithm 3, and a timed-out branch in Algorithm 4.
-- **T** is the terminal set (Algorithm 2), the timed-out set (Algorithm 4), and end-to-end time (§5).
-- **F** is a factor set Fᵢ (proof of Theorem 1) and time to first SAT (§5). Also, Cᵢ in §2.3 and Fᵢ in Theorem 1 name the same object.
-- 𝓗(P) is defined in §2.3 and again, as 𝓗(Q), at `method.tex:102`.
-- The same object is called a "hitting set", "branch", "subproblem", and "cover" (Fig. 3 legend: "no covers").
-- **Fix:** separate the combinatorial hitting set H from its branch system. Use one word for the branch throughout, and use "cover" nowhere.
 
 ---
 
@@ -252,8 +213,7 @@ This produces "Peifer et al. trained … (Peifer et al., 2020)" (`introduction.t
 ---
 
 ## Suggested order of work
-1. Fix the proofs (B1).
-2. Write the comparison with factorizing Gröbner bases and the contribution statement, and fix what the abstract says the output is (A1, A2, C1, C2).
-3. Add the fixed-backend comparison, the benchmark-design disclosure, and the measurement details (A4, A7).
-4. Add the worked example and the discussion section, and move the ablation to §5 (C3, C7, A6).
-5. Fix the tables, figures, references, and prose (D, E, F).
+1. Write the comparison with factorizing Gröbner bases and the contribution statement, and fix what the abstract says the output is (A1, A2, C1, C2).
+2. Add the fixed-backend comparison, the benchmark-design disclosure, and the measurement details (A4, A7).
+3. Add the worked example and the discussion section, and move the ablation to §5 (C3, C7, A6).
+4. Fix the tables, figures, references, and prose (D, E, F).
