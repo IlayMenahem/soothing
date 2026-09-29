@@ -33,6 +33,7 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 target/
+results/*.json
 
 CLAUDE.md
 
