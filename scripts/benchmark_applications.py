@@ -78,7 +78,6 @@ METHOD_CLASSES: dict[str, tuple[str, ...]] = {
     "decomposition": ("singular-facstd", "singular-primdecGTZ", "m2-decompose"),
     "numerical": ("homotopy-jl",),
 }
-F4_LABELS: frozenset[str] = frozenset({"branching-symbolica", "zeroing-symbolica", "builtin-grevlex"})
 
 
 def mixed_profile_product(players: list[int], profile: tuple[int, ...]) -> str:
@@ -302,12 +301,11 @@ def benchmark(
 
 
 def reference_dimension(rows: dict[str, dict[str, object]]) -> int | None:
-    """Dimension on which the complete exact runs agree, excluding Symbolica's F4."""
+    """Dimension on which the complete exact runs agree."""
     dimensions = [
         int(row["largest_dimension"])
         for label, row in rows.items()
         if label.startswith("branching-")
-        and label != "branching-symbolica"
         and row["status"] == "ok"
         and row.get("largest_dimension") is not None
     ] + [
@@ -324,13 +322,9 @@ def reported_dimension(row: dict[str, object]) -> object:
     return row.get("largest_dimension", row.get("leading_dimension", row.get("max_dim")))
 
 
-def is_correct(label: str, row: dict[str, object], dimension: int | None) -> bool:
-    """Completed with the reference dimension, by a method other than Symbolica's F4.
-
-    F4 can return a non-Groebner basis (it does on the Nash systems), so its
-    runs are reported but never selected.
-    """
-    if row["status"] != "ok" or label in F4_LABELS:
+def is_correct(row: dict[str, object], dimension: int | None) -> bool:
+    """Completed with the reference dimension."""
+    if row["status"] != "ok":
         return False
     reported = reported_dimension(row)
     return dimension is None or reported is None or int(reported) == dimension
@@ -342,7 +336,7 @@ def best_entry(
     completed = [
         (float(rows[label]["solve_secs"]), label)
         for label in labels
-        if label in rows and is_correct(label, rows[label], dimension)
+        if label in rows and is_correct(rows[label], dimension)
     ]
     if not completed:
         return "timeout"
@@ -375,7 +369,7 @@ def render_report(instances: list[Instance]) -> str:
         f"reference {reference_dimension(rows)}"
         for system, rows in sorted(grouped.items())
         for label, row in sorted(rows.items())
-        if row["status"] == "ok" and not is_correct(label, row, reference_dimension(rows))
+        if row["status"] == "ok" and not is_correct(row, reference_dimension(rows))
     ]
     return "\n".join(
         [
@@ -387,7 +381,7 @@ def render_report(instances: list[Instance]) -> str:
             "",
             *table,
             "",
-            "Completed runs excluded above (Symbolica's F4, or a wrong dimension):",
+            "Completed runs with a wrong dimension, excluded above:",
             "",
             *excluded,
             "",
