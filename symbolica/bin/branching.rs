@@ -1,12 +1,12 @@
 //! Factor-branching solver corresponding to Algorithm `Factor branching`
 //! (`alg:Branching` in `paper/sections/method.tex`).
 //!
-//! The input generators are optionally interreduced and factored. Every
-//! minimal hitting set is then interreduced and factored again until no new
-//! subbranches appear. The terminal hitting sets are checked in
+//! The input generators are factored without interreduction. Every minimal
+//! hitting set is then interreduced and factored again until no
+//! new subbranches appear. The terminal hitting sets are checked in
 //! fewest-factors-first order by a selectable Gröbner backend.
 //!
-//! Usage: `branching [path] [--no-interreduce] [--timeout MS] [--gb BACKEND] [--summary]`
+//! Usage: `branching [path] [--timeout MS] [--gb BACKEND] [--summary]`
 //! — default path:
 //! `systems/system.txt`; default Gröbner backend: Singular.
 
@@ -22,7 +22,7 @@ use polynomial_cdcl::gb_search::{
 };
 use polynomial_cdcl::refine::refine_covers;
 use polynomial_cdcl::{
-    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest, interreduce_polys,
+    LoadedMathematicaSystem, PolyExtLex, default_systems_dir_from_manifest,
     load_mathematica_system_from_path_with_var_names, polynomials_from_loaded,
     try_factor_groups_from_polys,
 };
@@ -30,7 +30,6 @@ use polynomial_cdcl::{
 #[derive(Debug)]
 struct CliOptions {
     path: PathBuf,
-    interreduce: bool,
     timeout_ms: u64,
     gb_backend: GbBackend,
     summary: bool,
@@ -38,14 +37,12 @@ struct CliOptions {
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path: Option<PathBuf> = None;
-    let mut interreduce = true;
     let mut timeout_ms = 5_000;
     let mut gb_backend = GbBackend::SingularGb;
     let mut summary = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--no-interreduce" => interreduce = false,
             "--timeout" => {
                 timeout_ms = args
                     .next()
@@ -72,7 +69,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     }
     Ok(CliOptions {
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
-        interreduce,
         timeout_ms,
         gb_backend,
         summary,
@@ -95,21 +91,15 @@ fn load_system(path: &Path) -> LoadedMathematicaSystem {
     loaded
 }
 
-fn prepare_polynomials(loaded: &LoadedMathematicaSystem, interreduce: bool) -> Vec<PolyExtLex> {
+fn prepare_polynomials(loaded: &LoadedMathematicaSystem) -> Vec<PolyExtLex> {
     let started = Instant::now();
     let polynomials = polynomials_from_loaded(loaded, &Q).unwrap_or_else(|error| die(error, 1));
-    let polynomials = if interreduce {
-        interreduce_polys(polynomials)
-    } else {
-        polynomials
-    };
     println!(
-        "  {} polynomial(s), interreduction {}, elapsed {:?}",
+        "  {} polynomial(s), elapsed {:?}",
         polynomials
             .iter()
             .filter(|polynomial| !polynomial.is_zero())
             .count(),
-        if interreduce { "enabled" } else { "disabled" },
         started.elapsed()
     );
     polynomials
@@ -287,12 +277,12 @@ fn main() {
     let options = parse_args(std::env::args().skip(1)).unwrap_or_else(|error| die(error, 2));
     println!("Loading {}", options.path.display());
     let loaded = load_system(&options.path);
-    let polynomials = prepare_polynomials(&loaded, options.interreduce);
+    let polynomials = prepare_polynomials(&loaded);
     let nvars = polynomials
         .first()
         .map_or(loaded.var_names.len(), PolyExtLex::nvars);
     let (factors, covers) = factor_covers(polynomials);
-    let (covers, refinement) = refine_covers(&factors, &covers, options.interreduce)
+    let (covers, refinement) = refine_covers(&factors, &covers)
         .unwrap_or_else(|error| die(format!("hitting-set refinement error: {error}"), 1));
     println!(
         "  recursive refinement produced {} terminal hitting set(s) in {} pass(es), {} subdivision(s), maximum depth {}",
@@ -335,6 +325,7 @@ mod tests {
     use super::*;
     use std::sync::Once;
 
+    use polynomial_cdcl::cover::decode_cover;
     use polynomial_cdcl::load_mathematica_system_from_str_with_var_names;
 
     static LICENSE: Once = Once::new();
@@ -348,7 +339,6 @@ mod tests {
     fn test_options() -> CliOptions {
         CliOptions {
             path: PathBuf::from("unused"),
-            interreduce: false,
             timeout_ms: 5_000,
             gb_backend: GbBackend::Symbolica,
             summary: true,
@@ -358,22 +348,13 @@ mod tests {
     #[test]
     fn parse_args_reads_every_option() {
         let options = parse_args(
-            [
-                "input.txt",
-                "--no-interreduce",
-                "--timeout",
-                "250",
-                "--gb",
-                "gvw",
-                "--summary",
-            ]
-            .into_iter()
-            .map(String::from),
+            ["input.txt", "--timeout", "250", "--gb", "gvw", "--summary"]
+                .into_iter()
+                .map(String::from),
         )
         .expect("arguments");
 
         assert_eq!(options.path, PathBuf::from("input.txt"));
-        assert!(!options.interreduce);
         assert_eq!(options.timeout_ms, 250);
         assert_eq!(options.gb_backend, GbBackend::Gvw);
         assert!(options.summary);
@@ -393,7 +374,7 @@ mod tests {
             .expect("load");
         let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
         let (factors, covers) = factor_covers(polynomials);
-        let (covers, _) = refine_covers(&factors, &covers, false).expect("refinement");
+        let (covers, _) = refine_covers(&factors, &covers).expect("refinement");
 
         let result = run_search(&test_options(), &covers, 2);
 
@@ -411,7 +392,10 @@ mod tests {
                 .expect("load");
         let polynomials = polynomials_from_loaded(&loaded, &Q).expect("polynomials");
         let (factors, covers) = factor_covers(polynomials);
-        let (covers, _) = refine_covers(&factors, &covers, false).expect("refinement");
+        let covers = covers
+            .iter()
+            .map(|&cover| decode_cover(&factors, cover))
+            .collect::<Vec<_>>();
 
         let result = run_search(&test_options(), &covers, 3);
 
@@ -429,7 +413,7 @@ mod tests {
         let (factors, covers) = factor_covers(polynomials);
         assert_eq!(covers.len(), 1);
 
-        let (terminal, stats) = refine_covers(&factors, &covers, true).expect("refinement");
+        let (terminal, stats) = refine_covers(&factors, &covers).expect("refinement");
 
         assert_eq!(terminal.len(), 2);
         assert_eq!(stats.subdivisions, 1);

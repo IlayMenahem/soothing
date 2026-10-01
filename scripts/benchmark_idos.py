@@ -249,7 +249,7 @@ def overlapping_random_multiples(
         path=path.name,
         variables=variables,
         equations=variables,
-        solver_args=["--no-interreduce", "--gb", "symbolica"],
+        solver_args=["--gb", "symbolica"],
         description=(
             f"Each equation is the product of {factors_per_equation} factors "
             f"selected from a pool of {factor_pool} seeded dense quadratics; "
@@ -314,11 +314,7 @@ def affine_factor_hypergraph(
         path=path.name,
         variables=variables,
         equations=equation_count,
-        solver_args=[
-            *(["--no-interreduce"] if suite == "positive-dimensional" else []),
-            "--gb",
-            "symbolica",
-        ],
+        solver_args=["--gb", "symbolica"],
         description=(
             "Overlapping sparse affine factors; "
             "each candidate is linear while the expanded full ideal is dense."
@@ -365,7 +361,7 @@ def generate_matrix(output: Path) -> list[Instance]:
     """Generate each system in the consolidated comparison matrix exactly once."""
     output.mkdir(parents=True, exist_ok=True)
     instances = [
-        *(signed_distance_cycle(output, size) for size in (8, 10, 12)),
+        *(signed_distance_cycle(output, size) for size in (12, 14, 16)),
         overlapping_random_multiples(output, 4, 6, 2, 31415),
         overlapping_random_multiples(output, 6, 8, 3, 31415),
         overlapping_random_multiples(output, 8, 10, 3, 31415),
@@ -603,9 +599,9 @@ DECOMPOSITION_METHODS = {
 }
 
 MATRIX_REQUIRED_COVERS = {
-    "signed_distance_cycle_n8": 8,
-    "signed_distance_cycle_n10": 8,
-    "signed_distance_cycle_n12": 32,
+    "signed_distance_cycle_n12": 924,
+    "signed_distance_cycle_n14": 3432,
+    "signed_distance_cycle_n16": 12870,
     "overlapping_random_multiples_n4_p6_k2_seed31415": 4,
     "overlapping_random_multiples_n6_p8_k3_seed31415": 16,
     "overlapping_random_multiples_n8_p10_k3_seed31415": 28,
@@ -621,8 +617,8 @@ MATRIX_REQUIRED_COVERS = {
     "gated_random_dense_quadratic_n5_seed137": 2,
     "gated_random_dense_quadratic_n6_seed137": 2,
     "gated_random_dense_quadratic_n7_seed137": 2,
-    "affine_factor_hypergraph_n8_k4_seed42": 31,
-    "affine_factor_hypergraph_n10_k5_seed42": 304,
+    "affine_factor_hypergraph_n8_k4_seed42": 178,
+    "affine_factor_hypergraph_n10_k5_seed42": 309,
 }
 
 

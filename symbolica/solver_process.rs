@@ -173,7 +173,6 @@ enum WorkerRequest {
     },
     Factor {
         polynomials: Vec<WirePolynomial>,
-        interreduce: bool,
     },
     Interreduce {
         polynomials: Vec<WirePolynomial>,
@@ -334,15 +333,9 @@ fn execute_worker(request: WorkerRequest) -> Result<WorkerResponse, String> {
                 Outcome::BackendError(error) => Ok(WorkerResponse::Error(error)),
             }
         }
-        WorkerRequest::Factor {
-            polynomials,
-            interreduce,
-        } => {
+        WorkerRequest::Factor { polynomials } => {
             let variables = temporary_variables(&polynomials)?;
-            let mut candidate = decode_lex_polynomials(polynomials, variables)?;
-            if interreduce {
-                candidate = interreduce_polys(candidate);
-            }
+            let candidate = decode_lex_polynomials(polynomials, variables)?;
             let groups = try_factor_groups_from_polys(candidate)?;
             Ok(WorkerResponse::Factors(
                 groups
@@ -542,7 +535,6 @@ pub(crate) fn evaluate_cover_isolated(
 
 pub(crate) fn factor_groups_isolated(
     mut polynomials: Vec<PolyExtLex>,
-    interreduce: bool,
     timeout: Duration,
 ) -> Result<ProcessRun<Vec<Vec<PolyExtLex>>>, String> {
     MultivariatePolynomial::unify_variables_list(&mut polynomials);
@@ -552,7 +544,6 @@ pub(crate) fn factor_groups_isolated(
     );
     let request = WorkerRequest::Factor {
         polynomials: encode_polynomials(&polynomials),
-        interreduce,
     };
     let deadline = Instant::now() + timeout;
     let mut last_error = None;

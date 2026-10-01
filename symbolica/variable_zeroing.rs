@@ -85,8 +85,6 @@ impl Default for SplitValueStrategy {
 /// Search controls for recursive variable zeroing.
 #[derive(Clone, Debug)]
 pub struct VariableZeroingOptions {
-    /// Apply the optional interreduction in every invocation of Branching.
-    pub interreduce: bool,
     /// Per-cover Gröbner-basis and per-node factorization time budget.
     pub timeout: Duration,
     /// Optional wall-clock budget for the entire recursive search.
@@ -108,7 +106,6 @@ pub struct VariableZeroingOptions {
 impl Default for VariableZeroingOptions {
     fn default() -> Self {
         Self {
-            interreduce: true,
             timeout: Duration::from_millis(1_000),
             max_runtime: None,
             gb_backend: GbBackend::SingularGb,
@@ -356,7 +353,6 @@ impl Solver<'_> {
         let node_nvars = polynomials.first().map_or(0, PolyExtLex::nvars);
         let (groups, covers) = match terminal_hitting_sets_with_timeout(
             polynomials.clone(),
-            self.options.interreduce,
             self.evaluation_timeout(),
         ) {
             Ok(preprocessed) => preprocessed,
@@ -676,17 +672,9 @@ impl Solver<'_> {
             self.options.saturate_each_variable,
         )?;
 
-        let equal_cover_count = factor_cover_count(
-            &equal_branch,
-            self.options.interreduce,
-            self.evaluation_timeout(),
-        )?;
+        let equal_cover_count = terminal_cover_count(&equal_branch, self.evaluation_timeout())?;
         let unequal_cover_count = if equal_cover_count.is_some() {
-            factor_cover_count(
-                &unequal_branch,
-                self.options.interreduce,
-                self.evaluation_timeout(),
-            )?
+            terminal_cover_count(&unequal_branch, self.evaluation_timeout())?
         } else {
             None
         };
@@ -917,18 +905,12 @@ fn uses_temporary_variable<O: MonomialOrder>(
 
 fn factor_groups_with_timeout(
     polynomials: Vec<PolyExtLex>,
-    interreduce: bool,
     timeout: Duration,
 ) -> Result<ProcessRun<Vec<Vec<PolyExtLex>>>, String> {
     if cfg!(test) || running_under_test_harness() {
-        let polynomials = if interreduce {
-            interreduce_polys(polynomials)
-        } else {
-            polynomials
-        };
         try_factor_groups_from_polys(polynomials).map(ProcessRun::Completed)
     } else {
-        factor_groups_isolated(polynomials, interreduce, timeout)
+        factor_groups_isolated(polynomials, timeout)
     }
 }
 
@@ -982,33 +964,27 @@ impl RefineOps for IsolatedBeforeDeadline {
     }
 
     fn factor(&mut self, polynomials: Vec<PolyExtLex>) -> Result<FactorGroups, HittingSetFailure> {
-        factor_before_deadline(polynomials, false, self.deadline)
+        factor_before_deadline(polynomials, self.deadline)
     }
 }
 
 fn factor_before_deadline(
     polynomials: Vec<PolyExtLex>,
-    interreduce: bool,
     deadline: Instant,
 ) -> Result<FactorGroups, HittingSetFailure> {
     let remaining = remaining_until(deadline)?;
-    completed(factor_groups_with_timeout(
-        polynomials,
-        interreduce,
-        remaining,
-    ))
+    completed(factor_groups_with_timeout(polynomials, remaining))
 }
 
-/// Factor a node's equations and refine its minimal hitting sets into
+/// Factor a node's equations without interreduction and refine its minimal hitting sets into
 /// terminal hitting sets (Algorithm `Refine`), all within `timeout`. Returns
 /// the number of factor groups and the terminal hitting sets.
 fn terminal_hitting_sets_with_timeout(
     polynomials: Vec<PolyExtLex>,
-    interreduce: bool,
     timeout: Duration,
 ) -> Result<(usize, Vec<Vec<PolyExtLex>>), HittingSetFailure> {
     let deadline = Instant::now() + timeout;
-    let groups = factor_before_deadline(polynomials, interreduce, deadline)?;
+    let groups = factor_before_deadline(polynomials, deadline)?;
     let (factors, index_groups) = build_factor_index(&groups);
     let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
         HittingSetFailure::Fatal(format!(
@@ -1019,34 +995,24 @@ fn terminal_hitting_sets_with_timeout(
     let (terminal, _) = refine_covers_with(
         &factors,
         &ordered_cover_masks(&covers),
-        interreduce,
         &mut IsolatedBeforeDeadline { deadline },
     )?;
     Ok((groups.len(), terminal))
 }
 
-/// Count the minimal factor covers of a split child without invoking a
+/// Count the terminal hitting sets of a split child without invoking a
 /// Gröbner-basis backend. A preprocessing timeout disables branch contraction;
 /// the child node will retain the branch as unresolved if factorization times
 /// out again.
-fn factor_cover_count(
+fn terminal_cover_count(
     polynomials: &[PolyExtLex],
-    interreduce: bool,
     timeout: Duration,
 ) -> Result<Option<usize>, String> {
-    let groups = match factor_groups_with_timeout(polynomials.to_vec(), interreduce, timeout) {
-        Ok(ProcessRun::Completed(groups)) => groups,
-        Ok(ProcessRun::Timeout) | Err(_) => return Ok(None),
-    };
-    let (factors, index_groups) = build_factor_index(&groups);
-    minimal_covers(&index_groups, factors.len())
-        .map(|covers| Some(covers.len()))
-        .ok_or_else(|| {
-            format!(
-                "split child has {} distinct factors; the cover enumerator supports at most 63",
-                factors.len()
-            )
-        })
+    match terminal_hitting_sets_with_timeout(polynomials.to_vec(), timeout) {
+        Ok((_, terminal)) => Ok(Some(terminal.len())),
+        Err(HittingSetFailure::Timeout | HittingSetFailure::Factorization(_)) => Ok(None),
+        Err(HittingSetFailure::Fatal(error)) => Err(format!("split child: {error}")),
+    }
 }
 
 #[cfg(test)]

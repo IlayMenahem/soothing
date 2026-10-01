@@ -55,12 +55,12 @@ The baseline has 20 generated systems in six families.
 \hline
 Family & Tested sizes & Variables/equations; hitting sets \\
 \hline
-Signed-distance cycle & $n=8,10,12$ & $8/8,10/10,12/12$; $8,8,32$ \\
+Signed-distance cycle & $n=12,14,16$ & $12/12,14/14,16/16$; $924,3432,12870$ \\
 Overlapping random multiples & $(n,p,k)=(4,6,2),(6,8,3),(8,10,3)$ & $n/n$; $4,16,28$ \\
 Positive affine hypergraph & $(n,m,k)=(8,6,4),(10,8,5),(12,10,6)$ & $n/m$; $63,239,833$ \\
 Gated Cyclic & orders $5,6,7$ & $6/5,7/6,8/7$; $2$ each \\
 Gated Katsura and dense quadratics & Katsura $6,7,8$; dense $n=5,6,7$ & $8/7,9/8,10/9,6/5,7/6,8/7$; $2$ each \\
-Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $31,304$ \\
+Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $178,309$ \\
 \hline
 \end{tabular}%
 }
@@ -68,9 +68,7 @@ Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $31,304$ \\
 \label{tab:benchmark-families}
 \end{table}
 
-The overlapping-random-multiple and positive affine hypergraph runs disable interreduction so that the
-generated factor-incidence pattern reaches the hitting-set enumerator unchanged.
-All other factor branching runs use interreduction.  Table~\ref{tab:baseline-comparison}
+Table~\ref{tab:baseline-comparison}
 selects the fastest completed factor branching backend and the fastest completed method in each baseline
 class.  A factor branching entry gives $T/F$ in seconds;
 the other entries give total wall time.  ``Timeout'' means that every tested
@@ -85,29 +83,34 @@ method in that class timed out.
 \hline
 System & Best factor branching $T/F$ & Best direct GB & Best decomposition & Numerical \\
 \hline
-Signed distance, $n=8$ & F4 $0.209/0.003$ & F4 $0.008$ & facstd $0.190$ & $32.410$ \\
-Signed distance, $n=10$ & GVW $0.746/0.003$ & F4 $0.029$ & facstd $0.430$ & $29.944$ \\
-Signed distance, $n=12$ & M4GB $2.801/0.003$ & F4 $0.472$ & primdec $3.056$ & $36.880$ \\
-Overlapping $(4,6,2)$ & F5 $0.022/0.003$ & F4 $0.413$ & facstd $0.265$ & $30.069$ \\
-Overlapping $(6,8,3)$ & F5 $0.193/0.006$ & timeout & timeout & timeout \\
-Overlapping $(8,10,3)$ & Singular $2.944/0.013$ & timeout & timeout & timeout \\
-Positive affine $(8,6,4)$ & GVW $0.190/0.003$ & timeout & facstd $0.368$ & $50.934$ \\
-Positive affine $(10,8,5)$ & F5 $0.700/0.003$ & timeout & facstd $1.836$ & timeout \\
-Positive affine $(12,10,6)$ & F5 $2.454/0.003$ & timeout & facstd $53.318$ & timeout \\
-Gated Cyclic-5 & F4 $0.018/0.003$ & F4 $0.008$ & facstd $0.181$ & $35.054$ \\
-Gated Cyclic-6 & Singular $0.094/0.046$ & Singular $0.309$ & M2 $2.620$ & $37.314$ \\
-Gated Cyclic-7 & timeout & timeout & timeout & $58.287$ \\
-Gated Katsura-6 & Singular $0.055/0.010$ & GVW $0.226$ & facstd $0.233$ & $31.532$ \\
-Gated Katsura-7 & Singular $0.291/0.010$ & GVW $3.176$ & facstd $0.539$ & $31.980$ \\
-Gated Katsura-8 & Singular $2.603/0.010$ & timeout & facstd $3.596$ & $34.264$ \\
-Gated dense, $n=5$ & Singular $0.032/0.010$ & M4GB $0.171$ & facstd $0.198$ & $29.289$ \\
-Gated dense, $n=6$ & Singular $0.549/0.010$ & M4GB $4.736$ & facstd $0.755$ & $30.053$ \\
-Gated dense, $n=7$ & Singular $42.893/0.010$ & timeout & facstd $48.820$ & $32.261$ \\
-Square affine $(8,4)$ & timeout & timeout & facstd $0.601$ & timeout \\
-Square affine $(10,5)$ & GVW $2.741/0.003$ & timeout & facstd $2.141$ & timeout \\
+Signed distance, $n=12$ & GVW $2.642/0.003$ & \textbf{F4} $\mathbf{0.443}$ & primdec $3.056$ & $36.880$ \\
+Signed distance, $n=14$ & GVW $9.860/0.006$ & \textbf{Singular} $\mathbf{7.421}$ & primdec $29.894$ & timeout \\
+Signed distance, $n=16$ & \textbf{F5} $\mathbf{37.164/0.006}$ & timeout & timeout & timeout \\
 \hline
-\#systems solved & $18$ & $10$ & $17$ & $14$ \\
-\#fastest (ties counted) & $12$ & $4$ & $2$ & $2$ \\
+Overlapping $(4,6,2)$ & \textbf{F5} $\mathbf{0.014/0.003}$ & F4 $0.429$ & facstd $0.265$ & $30.069$ \\
+Overlapping $(6,8,3)$ & \textbf{F5} $\mathbf{0.153/0.006}$ & timeout & timeout & timeout \\
+Overlapping $(8,10,3)$ & \textbf{Singular} $\mathbf{2.677/0.013}$ & timeout & timeout & timeout \\
+\hline
+Positive affine $(8,6,4)$ & \textbf{F5} $\mathbf{0.177/0.003}$ & timeout & facstd $0.368$ & $50.934$ \\
+Positive affine $(10,8,5)$ & \textbf{GVW} $\mathbf{0.679/0.003}$ & timeout & facstd $1.836$ & timeout \\
+Positive affine $(12,10,6)$ & \textbf{F5} $\mathbf{2.383/0.003}$ & timeout & facstd $53.318$ & timeout \\
+\hline
+Gated Cyclic-5 & F4 $0.011/0.003$ & \textbf{GVW} $\mathbf{0.009}$ & facstd $0.181$ & $35.054$ \\
+Gated Cyclic-6 & \textbf{Singular} $\mathbf{0.043/0.010}$ & Singular $0.309$ & M2 $2.620$ & $37.314$ \\
+Gated Cyclic-7 & timeout & timeout & timeout & $\mathbf{58.287}$ \\
+\hline
+Gated Katsura-6 & \textbf{Singular} $\mathbf{0.048/0.010}$ & GVW $0.226$ & facstd $0.233$ & $31.532$ \\
+Gated Katsura-7 & \textbf{Singular} $\mathbf{0.282/0.010}$ & GVW $3.176$ & facstd $0.539$ & $31.980$ \\
+Gated Katsura-8 & \textbf{Singular} $\mathbf{2.587/0.010}$ & timeout & facstd $3.596$ & $34.264$ \\
+Gated dense, $n=5$ & \textbf{Singular} $\mathbf{0.025/0.010}$ & M4GB $0.171$ & facstd $0.198$ & $29.289$ \\
+Gated dense, $n=6$ & \textbf{Singular} $\mathbf{0.534/0.010}$ & M4GB $4.736$ & facstd $0.755$ & $30.053$ \\
+Gated dense, $n=7$ & Singular $42.704/0.010$ & timeout & facstd $48.820$ & $\mathbf{32.261}$ \\
+\hline
+Square affine $(8,4)$ & \textbf{M4GB} $\mathbf{0.510/0.003}$ & timeout & facstd $0.601$ & timeout \\
+Square affine $(10,5)$ & \textbf{GVW} $\mathbf{0.880/0.003}$ & timeout & facstd $2.141$ & timeout \\
+\hline
+\#systems solved & $19$ & $9$ & $16$ & $12$ \\
+\#fastest (ties counted) & $15$ & $3$ & $0$ & $2$ \\
 \hline
 \end{tabular}%
 }
@@ -127,7 +130,7 @@ of the original nonlinear system, as Cyclic-7 does.
 The measurements of time to first SAT branch support this explanation.  On positive affine
 $(12,10,6)$, $F$ is $0.003$ seconds despite the 833 hitting sets.  On
 gated Katsura-8, the first SAT branch is found in $0.010$ seconds, but
-the full run takes $2.603$ seconds.  Factorization therefore finds the easy
+the full run takes $2.587$ seconds.  Factorization therefore finds the easy
 component quickly, while the nonlinear residual controls completion time.
 
 \subsection{Physical System}
@@ -152,12 +155,12 @@ branch; factor branching places no further limit on a branch.
 \hline
 Backend & Factor branching $T/F$ (s) & Factor branching result & Variable zeroing $T/F$ (s) & Variable zeroing result \\
 \hline
-M4GB & $timeout/0.004$ & partial: 32 SAT, 1 timeout & $33.142/0.496$ & complete: 9 splits \\
-F5 & $timeout/0.004$ & partial: 32 SAT, 1 timeout & $timeout/0.488$ & partial: 27 splits, 10 unresolved \\
-GVW & $timeout/0.004$ & partial: 32 SAT, 1 timeout & $timeout/0.486$ & partial: 27 splits, 10 unresolved \\
-F4 & $timeout/0.004$ & partial: 32 SAT, 1 timeout & $timeout/0.489$ & partial: 24 splits, 6 unresolved \\
-Singular & $timeout/0.025$ & partial: 32 SAT, 1 timeout & $22.366/0.486$ & complete: 6 splits \\
-\texttt{facstd} & $1.005/0.015$ & complete: 32 SAT, 1 UNSAT & $1.485/0.496$ & complete: 0 splits \\
+M4GB & $timeout/0.004$ & partial: 32 SAT, 1 timeout & $24.611/0.417$ & complete: 13 splits \\
+F5 & $timeout/0.004$ & partial: 32 SAT, 1 timeout & $timeout/0.415$ & partial: 35 splits, 11 unresolved \\
+GVW & $timeout/0.004$ & partial: 32 SAT, 1 timeout & $timeout/0.415$ & partial: 35 splits, 11 unresolved \\
+F4 & $timeout/0.006$ & partial: 32 SAT, 1 timeout & $timeout/0.416$ & partial: 32 splits, 8 unresolved \\
+Singular & $timeout/0.025$ & partial: 32 SAT, 1 timeout & $17.924/0.424$ & complete: 7 splits \\
+\texttt{facstd} & $1.018/0.014$ & complete: 32 SAT, 1 UNSAT & $1.438/0.423$ & complete: 0 splits \\
 \hline
 \end{tabular}%
 }
@@ -175,7 +178,7 @@ All ten standalone baselines time out after 120 seconds on the physical system:
 M4GB, F5, GVW, and F4 in grevlex order, Singular and Macaulay2 lex Gr\"obner
 bases, Singular \texttt{facstd} and \texttt{primdecGTZ}, Macaulay2
 \texttt{decompose}, and HomotopyContinuation.jl.  Factor branching with
-\texttt{facstd} completes in 1.005 seconds.  Every backend solves the same 32
+\texttt{facstd} completes in 1.018 seconds.  Every backend solves the same 32
 of the 33 terminal branches as SAT within 0.13 seconds in total, and times out on
 the last one.  Only \texttt{facstd} shows that this branch is UNSAT, so
 only in hindsight do we know that the 32 SAT branches found by the other

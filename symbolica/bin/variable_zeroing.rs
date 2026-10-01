@@ -1,7 +1,7 @@
 //! CLI for factor branching with variable zeroing (`alg:ZeroingBranching`
 //! in `paper/sections/variable_zeroing.tex`).
 //!
-//! Usage: `variable_zeroing [path] [--no-interreduce] [--timeout MS]
+//! Usage: `variable_zeroing [path] [--timeout MS]
 //! [--max-runtime MS] [--gb BACKEND]
 //! [--saturate-each-variable|--shared-product-saturation]
 //! [--split-value INTEGER|random] [--random-seed N] [--summary]
@@ -28,7 +28,6 @@ use polynomial_cdcl::{
 #[derive(Debug)]
 struct CliOptions {
     path: PathBuf,
-    interreduce: bool,
     timeout_ms: u64,
     max_runtime_ms: Option<u64>,
     gb_backend: GbBackend,
@@ -48,7 +47,6 @@ fn parse_usize(args: &mut impl Iterator<Item = String>, option: &str) -> Result<
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, String> {
     let mut path = None;
-    let mut interreduce = true;
     let mut timeout_ms = 1_000;
     let mut max_runtime_ms = None;
     let mut gb_backend = GbBackend::SingularGb;
@@ -60,7 +58,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--no-interreduce" => interreduce = false,
             "--timeout" => {
                 timeout_ms = parse_usize(&mut args, "--timeout")? as u64;
             }
@@ -113,7 +110,6 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     }
     Ok(CliOptions {
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
-        interreduce,
         timeout_ms,
         max_runtime_ms,
         gb_backend,
@@ -175,7 +171,6 @@ fn main() {
     );
 
     let options = VariableZeroingOptions {
-        interreduce: cli.interreduce,
         timeout: Duration::from_millis(cli.timeout_ms),
         max_runtime: cli.max_runtime_ms.map(Duration::from_millis),
         gb_backend: cli.gb_backend,

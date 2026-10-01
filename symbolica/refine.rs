@@ -96,7 +96,6 @@ fn push_unique(terminal: &mut Vec<Vec<PolyExtLex>>, candidate: Vec<PolyExtLex>) 
 
 fn refine_cover_with<O: RefineOps>(
     candidate: Vec<PolyExtLex>,
-    interreduce: bool,
     depth: usize,
     ancestors: &mut Vec<Vec<PolyExtLex>>,
     terminal: &mut Vec<Vec<PolyExtLex>>,
@@ -107,11 +106,7 @@ fn refine_cover_with<O: RefineOps>(
     stats.max_depth = stats.max_depth.max(depth);
 
     let candidate = normalize_candidate(candidate);
-    let reduced = if interreduce {
-        ops.interreduce(candidate.clone())?
-    } else {
-        candidate.clone()
-    };
+    let reduced = ops.interreduce(candidate.clone())?;
     let children = factor_cover_candidates(reduced.clone(), ops)?;
 
     if children.is_empty() {
@@ -135,15 +130,7 @@ fn refine_cover_with<O: RefineOps>(
         {
             push_unique(terminal, child);
         } else {
-            refine_cover_with(
-                child,
-                interreduce,
-                depth + 1,
-                ancestors,
-                terminal,
-                stats,
-                ops,
-            )?;
+            refine_cover_with(child, depth + 1, ancestors, terminal, stats, ops)?;
         }
     }
     ancestors.pop();
@@ -155,9 +142,8 @@ fn refine_cover_with<O: RefineOps>(
 pub fn refine_covers(
     factors: &[PolyExtLex],
     covers: &[u64],
-    interreduce: bool,
 ) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), String> {
-    refine_covers_with(factors, covers, interreduce, &mut InProcess)
+    refine_covers_with(factors, covers, &mut InProcess)
 }
 
 /// [`refine_covers`] with caller-supplied operations, e.g. ones that run in
@@ -165,7 +151,6 @@ pub fn refine_covers(
 pub fn refine_covers_with<O: RefineOps>(
     factors: &[PolyExtLex],
     covers: &[u64],
-    interreduce: bool,
     ops: &mut O,
 ) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), O::Error> {
     let mut terminal = Vec::new();
@@ -173,7 +158,6 @@ pub fn refine_covers_with<O: RefineOps>(
     for &cover in covers {
         refine_cover_with(
             decode_cover(factors, cover),
-            interreduce,
             1,
             &mut Vec::new(),
             &mut terminal,

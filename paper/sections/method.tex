@@ -9,15 +9,16 @@ Polynomial-ideal computations can be intractable even for small systems~\cite{ma
 branches may make the individual solver calls easier.
 
 % How breaking down is done
-We break a system into smaller branches by alternating two operations:
-interreducing the current branch, and factoring each generator to
-enumerate the minimal hitting sets of the factor sets. Each hitting set
-generates a new branch, and we repeat the two operations on every branch until
-no branch changes.
+We break a system into smaller branches by factoring each generator and
+enumerating the minimal hitting sets of the factor sets. Each hitting set
+generates a new branch, which we interreduce and factor again, until no
+branch changes.
 
-Algorithm~\ref{alg:Refine} applies these two operations to every branch
-until it reaches a fixed point. We call a branch \emph{terminal} if one round
+Algorithm~\ref{alg:Refine} first factors $P$ and then applies these two
+operations to every branch until it reaches a fixed point. We call a branch \emph{terminal} if one round
 leaves it unchanged.
+
+We note $\mathcal H(P)$ as the minimal hitting sets of the factor sets.
 
 \begin{algorithm}[htbp]
 \caption{Refinement}
@@ -25,13 +26,12 @@ leaves it unchanged.
 \begin{algorithmic}[1]
     \Require A finite polynomial system $P$
     \Ensure The terminal branches of $P$
-    \State $W\gets\{P\}$
+    \State $W\gets\mathcal H(P)$
     \Repeat
         \State $W_{\mathrm{prev}}\gets W$, \quad $W\gets\emptyset$
         \ForAll{$Q\in W_{\mathrm{prev}}$}
-            \State $Q\gets\Call{Interreduce}{Q}$ \Comment{Optional}
-            \State Factor each generator of $Q$
-            \State $W\gets W\cup\mathcal H(Q)$ \Comment{Minimal hitting sets of the factor sets}
+            \State $Q\gets\Call{Interreduce}{Q}$
+            \State $W\gets W\cup\mathcal H(Q)$
         \EndFor
     \Until{$W=W_{\mathrm{prev}}$}
     \State \Return $W$
@@ -122,8 +122,8 @@ $C_i$.\qed
 \end{proof}
 
 For a branch $Q$, write $\widetilde Q$ for the system that one round of
-Algorithm~\ref{alg:Refine} factors: $Q\setminus\{0\}$ made monic and, if
-enabled, interreduced. Thus $Q$ is terminal if and only if
+Algorithm~\ref{alg:Refine} factors: $Q\setminus\{0\}$ made monic and
+interreduced. Thus $Q$ is terminal if and only if
 $\mathcal H(\widetilde Q)=\{Q\}$. To prove that Algorithm~\ref{alg:Refine}
 terminates, we measure the progress of a branch $Q$ by the leading-monomial
 ideal of its normalization,
@@ -142,11 +142,8 @@ Every element of $H$ is a monic irreducible factor of some element of
 $\widetilde Q$. Hence $H$ contains neither $0$ nor a constant, and each factor
 set of $H$ is a singleton $\{h\}$. Its only minimal hitting set is $H$ itself.
 
-If interreduction is disabled, $\widetilde H=H$, so
-$\mathcal H(\widetilde H)=\{H\}$ and $H$ is terminal.
-
-Suppose interreduction is enabled. If $H=\widetilde Q$, then $H$ is
-interreduced, so $\widetilde H=H$ and $H$ is again terminal. Assume
+If $H=\widetilde Q$, then $H$ is
+interreduced, so $\widetilde H=H$ and $H$ is terminal. Assume
 $H\neq\widetilde Q$; we show $\mu(Q)\subsetneq\mu(H)$ in two steps.
 
 First, $\mu(Q)\subsetneq\langle\operatorname{LM}(h):h\in H\rangle$.
@@ -187,12 +184,13 @@ of nonterminal branches. The ascending-chain condition bounds such chains, and
 each branch has finitely many children, so the iteration reaches its fixed
 point after finitely many rounds. We make this precise with a tree.
 
-Let the refinement tree of $P$ have root $P$. The children of a nonterminal
-node $Q$ are the elements of $\mathcal H(\widetilde Q)$, and terminal nodes
-have no children. Consider a path $Q_0,Q_1,\ldots$ from the root. Every node
+Let the refinement tree of $P$ have root $P$ with children $\mathcal H(P)$.
+The children of any other nonterminal node $Q$ are the elements of
+$\mathcal H(\widetilde Q)$, and other terminal nodes have no children.
+Consider a path $Q_0,Q_1,\ldots$ from the root. For $i\geq1$, every node
 $Q_{i+1}$ that is not terminal satisfies $\mu(Q_i)\subsetneq\mu(Q_{i+1})$ by
-Lemma~\ref{lem:refinement-step}, and only the last node of a path can be
-terminal. The monomial ideals $\mu(Q_1)\subsetneq\mu(Q_2)\subsetneq\cdots$
+Lemma~\ref{lem:refinement-step}, and only the last nonroot node of a path can
+be terminal. The monomial ideals $\mu(Q_1)\subsetneq\mu(Q_2)\subsetneq\cdots$
 therefore form a strictly ascending chain, which is finite by Dickson's
 lemma. Thus every path is finite. Every node has finitely many children,
 because its factor sets are finite. By K\"onig's lemma, the tree is finite;
@@ -200,13 +198,13 @@ let $d$ be its depth.
 
 Let $W_k$ be the value of $W$ after $k$ rounds of the loop in
 Algorithm~\ref{alg:Refine}. Induction on $k$ shows that $W_k$ is the set of
-terminal nodes of depth less than $k$ together with all nodes of depth
-exactly $k$: a terminal node $Q$ satisfies $\mathcal H(\widetilde Q)=\{Q\}$
-and stays, and a nonterminal node of depth $k$ is replaced by its children.
-Hence $W_k$ equals the set $\mathcal T$ of all terminal nodes for every
-$k\geq d+1$, and the loop stops after at most $d+2$ rounds. If it stops
+nonroot terminal nodes of depth at most $k$ together with all nodes of depth
+exactly $k+1$: a terminal node $Q$ satisfies $\mathcal H(\widetilde Q)=\{Q\}$
+and stays, and a nonterminal node of depth $k+1$ is replaced by its children.
+Hence $W_k$ equals the set $\mathcal T$ of all nonroot terminal nodes for every
+$k\geq d$, and the loop stops after at most $d+1$ rounds. If it stops
 earlier, with $W_{k+1}=W_k$, then $W_j=W_k$ for all $j\geq k$ because each
-round depends only on $W$. In particular $W_k=W_{d+1}=\mathcal T$. In both
+round depends only on $W$. In particular $W_k=W_d=\mathcal T$. In both
 cases, Algorithm~\ref{alg:Refine} returns the finite set $\mathcal T$ of
 terminal branches.\qed
 \end{proof}
@@ -228,7 +226,9 @@ Theorem~\ref{thm:branch-decomposition} applied to $\widetilde Q$ gives
     V(Q)=\bigcup_{H\in\mathcal H(\widetilde Q)}V(H)
 \]
 for every $Q\in W$. Taking the union over $Q\in W$ shows that one round
-preserves $\bigcup_{Q\in W}V(Q)$. Before the first round, $W=\{P\}$. By
+preserves $\bigcup_{Q\in W}V(Q)$. Before the first round, $W=\mathcal H(P)$,
+and $\bigcup_{H\in\mathcal H(P)}V(H)=V(P)$ by
+Theorem~\ref{thm:branch-decomposition}. By
 Theorem~\ref{thm:refine-termination}, the loop ends after finitely many rounds
 with $W=\mathcal L(P)$, which proves the equality.\qed
 \end{proof}
