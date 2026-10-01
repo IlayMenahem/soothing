@@ -3,7 +3,8 @@
 //!
 //! The input generators are factored without interreduction. Every minimal
 //! hitting set is then interreduced and factored again until no
-//! new subbranches appear. The terminal hitting sets are checked in
+//! new subbranches appear. Terminal hitting sets whose zero set lies in that
+//! of another are dropped, and the rest are checked in
 //! fewest-factors-first order by a selectable Gröbner backend.
 //!
 //! Usage: `branching [path] [--timeout MS] [--gb BACKEND] [--summary]`
@@ -285,11 +286,12 @@ fn main() {
     let (covers, refinement) = refine_covers(&factors, &covers)
         .unwrap_or_else(|error| die(format!("hitting-set refinement error: {error}"), 1));
     println!(
-        "  recursive refinement produced {} terminal hitting set(s) in {} pass(es), {} subdivision(s), maximum depth {}",
+        "  recursive refinement produced {} terminal hitting set(s) in {} pass(es), {} subdivision(s), maximum depth {}, {} pruned as contained in another",
         covers.len(),
         refinement.passes,
         refinement.subdivisions,
-        refinement.max_depth
+        refinement.max_depth,
+        refinement.pruned
     );
     let result = run_search(&options, &covers, nvars);
 

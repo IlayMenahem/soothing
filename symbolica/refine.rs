@@ -3,7 +3,9 @@
 //!
 //! Each hitting set is interreduced and factored again; its own minimal
 //! hitting sets replace it until the set no longer changes. The resulting
-//! terminal hitting sets are shared by factor branching and variable zeroing.
+//! terminal hitting sets, less those whose zero set is certified to lie in
+//! that of another (every generator of the other reduces to zero modulo
+//! them), are shared by factor branching and variable zeroing.
 //! Interreduction and factorization are supplied by the caller through
 //! [`RefineOps`] so that they can run in a worker process with a deadline.
 
@@ -16,6 +18,9 @@ pub struct RefinementStats {
     pub passes: usize,
     pub subdivisions: usize,
     pub max_depth: usize,
+    /// Terminal hitting sets dropped because their zero set lies in that of
+    /// another terminal hitting set.
+    pub pruned: usize,
 }
 
 fn normalize_candidate(polynomials: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
@@ -137,8 +142,38 @@ fn refine_cover_with<O: RefineOps>(
     Ok(())
 }
 
+/// Whether every generator of `other` reduces to zero modulo `branch`, which
+/// certifies `V(branch) ⊆ V(other)`.
+fn certified_contained(branch: &[PolyExtLex], other: &[PolyExtLex]) -> bool {
+    other
+        .iter()
+        .all(|polynomial| branch.contains(polynomial) || polynomial.reduce(branch).is_zero())
+}
+
+/// Drop every branch whose zero set is certified to lie in that of a kept
+/// branch, preserving the union of the zero sets. Branches are visited in
+/// order; a newly kept branch evicts the kept branches it certifiably
+/// contains, so every dropped branch stays covered by a kept one.
+fn prune_contained(branches: Vec<Vec<PolyExtLex>>) -> Vec<Vec<PolyExtLex>> {
+    branches.into_iter().fold(Vec::new(), |kept, branch| {
+        if kept
+            .iter()
+            .any(|existing: &Vec<PolyExtLex>| certified_contained(&branch, existing))
+        {
+            return kept;
+        }
+        let mut kept: Vec<Vec<PolyExtLex>> = kept
+            .into_iter()
+            .filter(|existing| !certified_contained(existing, &branch))
+            .collect();
+        kept.push(branch);
+        kept
+    })
+}
+
 /// Refine every minimal hitting set in `covers` into terminal hitting sets,
-/// ordered by increasing number of generators. Factorization runs in-process.
+/// drop those whose zero set lies in that of another, and order the rest by
+/// increasing number of generators. Factorization runs in-process.
 pub fn refine_covers(
     factors: &[PolyExtLex],
     covers: &[u64],
@@ -166,5 +201,77 @@ pub fn refine_covers_with<O: RefineOps>(
         )?;
     }
     terminal.sort_by_key(Vec::len);
+    let count = terminal.len();
+    let mut terminal = prune_contained(terminal);
+    stats.pruned = count - terminal.len();
+    terminal.sort_by_key(Vec::len);
     Ok((terminal, stats))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Once;
+
+    use symbolica::domains::rational::Q;
+    use symbolica::license::LicenseManager;
+
+    use crate::factor_prep::polynomials_from_loaded;
+    use crate::mathematica::load_mathematica_system_from_str_with_var_names;
+
+    static LICENSE: Once = Once::new();
+
+    /// The generators of each system, all over the ring of their union.
+    fn systems(sources: &[&str]) -> Vec<Vec<PolyExtLex>> {
+        LICENSE.call_once(|| {
+            let _ = LicenseManager::set_license_key(crate::SYMBOLICA_LICENSE_KEY);
+        });
+        let joined = format!("{{{}}}", sources.join(", "));
+        let loaded = load_mathematica_system_from_str_with_var_names(&joined).expect("load");
+        let mut all = polynomials_from_loaded(&loaded, &Q)
+            .expect("polynomials")
+            .into_iter();
+        sources
+            .iter()
+            .map(|source| {
+                all.by_ref()
+                    .take(source.matches("==").count())
+                    .map(PolyExtLex::make_monic)
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn prune_drops_a_branch_inside_another() {
+        let branches = systems(&["x == 0, y == 0", "x == 0", "y - 1 == 0"]);
+
+        let kept = prune_contained(branches.clone());
+
+        assert_eq!(kept, vec![branches[1].clone(), branches[2].clone()]);
+    }
+
+    #[test]
+    fn prune_uses_reduction_not_only_membership() {
+        // x*y lies in ⟨x⟩, so V(x) ⊆ V(x*y) although x*y is not a generator.
+        let branches = systems(&["x == 0", "x*y == 0"]);
+
+        let kept = prune_contained(branches.clone());
+
+        assert_eq!(kept, vec![branches[1].clone()]);
+    }
+
+    #[test]
+    fn prune_keeps_one_of_equal_zero_sets() {
+        let branches = systems(&["x + y == 0, y == 0", "x == 0, y == 0"]);
+
+        assert_eq!(prune_contained(branches).len(), 1);
+    }
+
+    #[test]
+    fn prune_keeps_incomparable_branches() {
+        let branches = systems(&["x == 0", "y == 0"]);
+
+        assert_eq!(prune_contained(branches.clone()), branches);
+    }
 }
