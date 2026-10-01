@@ -25,10 +25,9 @@ Five issues most affect acceptance:
 - **Fix:** add a paragraph comparing the method to Gräbe's factorized Gröbner bases and `facstd`: what improves, when, and at what cost (e.g., exponentially many hitting sets). Also mention triangular/regular-chain decompositions, comprehensive Gröbner systems, and nonlinear SMT (see F1).
 
 ### A2. What the method outputs versus what the abstract promises
-- The output is a union of branch varieties that may overlap or contain one another; they are not irreducible, and the nonzero branches are only locally closed.
-- **Fix:** state exactly what the output is, and how it depends on the branch solver.
+- State exactly what the output is, and how it depends on the branch solver.
 
-### A3. The complexity argument does not support the method (the authors' own TODO says so)
+### A3. The complexity argument does not support the method
 - `introduction.tex:46` and `method.tex:8` cite Mayr–Meyer's doubly exponential bound in the **number of variables**, but factor branching keeps every variable, so the bound doesn't explain why branches are easier (`introduction.tex:45` TODO).
 - The added cost is not analyzed: the number of minimal hitting sets can reach ∏|Cᵢ|, and the enumeration algorithm is never named. **Fix:** state what the implementation does and cite the minimal-transversal enumeration literature (Berge; Eiter–Gottlob; Fredman–Khachiyan).
 
@@ -126,54 +125,8 @@ Elsevier puts table captions **above** the table; the PDF has them below.
 
 ---
 
-## E. Prose (line level)
-
-| Location | Issue | Suggestion |
-|---|---|---|
-| `introduction.tex:20` | "Factorizing Gröbner-basis methods, split on…": stray comma | Remove the comma |
-| `introduction.tex:21` | "earlier methods also interreduce…": earlier than what? | — |
-| `introduction.tex:61` | "whereas standard standalone solvers timed out": tense change, solvers unnamed | "whereas every standalone baseline times out within 120 s" |
-| `method.tex:14-15` | Imperative fragment, contraction | "Refinement then recurses on each hitting set until no branch changes." |
-| `method.tex:17` | "Here is the pseudocode…" is informal | "Algorithm 2 gives the refinement procedure." |
-| `method.tex:190` | "without loss of correctness" is vague | State what is guaranteed |
-| `variable_zeroing.tex:18-20` | "work well with Algorithm 2" is vague | Say what it means (e.g., creates new factors) |
-| `experiments.tex:15` | Reads as three methods from Singular | "two from Singular (`facstd`, `primdecGTZ`), one from Macaulay2 (`…`)" |
-| `experiments.tex:22` | "each hitting-set computation": enumeration or solving? | "each branch-solver call" |
-| `experiments.tex:127` | "support this explanation": F shows early SAT, not easier branches | — |
-| `experiments.tex:143` vs `:165` | "five-second" vs "5-second" | Use one style |
-| `conclusion.tex:15-16` | "from `facstd` alone" reads as standalone `facstd` | "from the `facstd` backend alone" |
-| throughout | "Subsection 2.4" vs "Section 5.3" | Use one style |
-| throughout | "factor branching" / "factor-branching" | Hyphenate only as a modifier |
-
----
-
-## F. References
-
-### F1. Closest related work is missing
-Candidates to **verify before citing** (A1, A3, C4):
-- **Factorizing Gröbner bases:** Czapor, *JSC* 7 (1989); Melenk, Möller & Neun (1989).
-- **Triangular and regular-chain decomposition:** Wang, *JSC* 16 (1993); Kalkbrener, *JSC* 15 (1993); Chen & Moreno Maza, *JSC* 47 (2012).
-- **Comprehensive Gröbner systems:** Weispfenning, *JSC* 14 (1992); Kapur, Sun & Wang (ISSAC 2010).
-- **Minimal-transversal enumeration:** Eiter & Gottlob, *SIAM J. Comput.* 24 (1995); Fredman & Khachiyan, *J. Algorithms* 21 (1996).
-- **Rabinowitsch trick:** Rabinowitsch, *Math. Ann.* 102 (1930).
-- **Nonlinear SMT:** Jovanović & de Moura (IJCAR 2012).
-
-### F2. `\let\cite\citep` (`paper.tex:25`) makes every citation parenthetical
-This yields "Peifer et al. trained … (Peifer et al., 2020)" (`introduction.tex:29-30`, likewise Kera) and "Section 5 of (Sun et al., 2016)" (`method.tex:90-91`). Use `\citet{…}` and `\citep[Sect.~5]{sun2016}`.
-
-### F3. Bibliography casing
-`vacca2010asymptotic` prints "einstein". Protect it: `{Einstein}`.
-
-### F4. Sources to check
-- **Katsura:** usually credited to Katsura (1990) or PoSSo, not Böge–Gebauer–Kredel (1986).
-- **Symbolica:** entry dated 2023 but cites version 1.5; use that version's year.
-- **HomotopyContinuation.jl:** version missing (`experiments.tex:16`).
-- **DOIs:** 8 of 28 entries lack one.
-
----
-
 ## Suggested order of work
 1. Comparison with factorizing Gröbner bases, contribution statement, and abstract cuts (A1, A2, C1, C2).
 2. Fixed-backend comparison, benchmark-design disclosure, measurement details (A4, A7).
 3. Worked example, discussion section, ablation moved to §5 (C3, C7, A6).
-4. Tables, figures, references, prose (D, E, F).
+4. Tables (D)
