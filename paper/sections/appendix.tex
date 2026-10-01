@@ -4,8 +4,10 @@
 
 The tables below give every run summarized in
 Table~\ref{tab:baseline-comparison}.  Unless stated otherwise, entries are
-end-to-end wall times in seconds.  \textnormal{P} marks a partial run and
-\textnormal{TO} an outer timeout.  These are single measurements.
+end-to-end wall times in seconds.  \textnormal{P} marks a partial run, which
+reached the 60-second limit after finding at least one SAT branch, and
+\textnormal{TO} a run that reached the 60-second limit before reporting any
+result.  These are single measurements.
 
 \subsection{Factor branching}
 
@@ -15,9 +17,10 @@ text but left at least one branch unresolved.
 
 \begin{table}[pos=htbp]
 \centering
-\scriptsize
-\setlength{\tabcolsep}{3pt}
-\resizebox{\textwidth}{!}{%
+\caption{End-to-end wall times for every factor-branching configuration.}
+\label{tab:appendix-branching}
+\small
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{l r r r r r}
 \hline
 System & M4GB & F5 & GVW & F4 & Singular \\
@@ -43,18 +46,15 @@ Gated dense, $n=7$ & P $60.006$ & P $60.048$ & P $60.026$ & P $60.006$ & $42.704
 Square affine $(8,4)$ & $0.510$ & $0.513$ & $0.514$ & $0.518$ & $1.387$ \\
 Square affine $(10,5)$ & $0.883$ & $0.887$ & $0.880$ & $0.885$ & $2.579$ \\
 \hline
-\end{tabular}%
-}
-\caption{End-to-end wall times for every factor-branching configuration.}
-\label{tab:appendix-branching}
+\end{tabular}
 \end{table}
+\FloatBarrier
 
 \subsection{Variable zeroing}
 
-Table~\ref{tab:appendix-zeroing} gives the complete output of the fastest
-completed variable zeroing configuration evaluated across the baseline suite;
-where no configuration completes, it gives the partial run with the fewest
-unresolved branches.
+Table~\ref{tab:appendix-zeroing} gives, for each system, the fastest
+completed variable zeroing configuration; where no configuration completes, it
+gives the partial run with the fewest unresolved branches.
 Every backend receives three seconds per branch and a 60-second outer budget.
 Here $N$ is the number of recursion nodes,
 $E$ the number of hitting-set evaluations, $O/S$ the numbers of per-branch timeouts
@@ -63,9 +63,13 @@ branches.  The time entry is $T/F$.
 
 \begin{table}[pos=htbp]
 \centering
-\scriptsize
-\setlength{\tabcolsep}{3pt}
-\resizebox{\textwidth}{!}{%
+\caption{For each system, the fastest completed variable-zeroing
+configuration or, if none completes, the partial run with the fewest
+unresolved branches.  Times are end-to-end wall time and time to first SAT
+branch in seconds.}
+\label{tab:appendix-zeroing}
+\small
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{l l r r r r r l}
 \hline
 System & Backend & $T/F$ & $N$ & $E$ & $O/S$ & $C/U$ & Result \\
@@ -91,11 +95,7 @@ Gated dense, $n=7$ & F4 & $60.043/0.023$ & 12 & 8 & $7/6$ & $1/7$ & partial \\
 Square affine $(8,4)$ & F4 & $1.533/1.023$ & 1 & 178 & $0/0$ & $178/0$ & complete \\
 Square affine $(10,5)$ & M4GB & $2.671/1.792$ & 1 & 309 & $0/0$ & $309/0$ & complete \\
 \hline
-\end{tabular}%
-}
-\caption{Selected variable-zeroing result for every system.  Times are
-end-to-end wall time and time to first SAT branch in seconds.}
-\label{tab:appendix-zeroing}
+\end{tabular}
 \end{table}
 
 On the three signed-distance systems and positive affine $(12,10,6)$, refinement of the
@@ -103,14 +103,21 @@ root system exceeds the three-second per-branch limit, so no hitting set is
 evaluated.  With a 60-second per-branch limit this refinement finishes; for example,
 signed distance $n=12$ refines to 924 hitting sets in 23.2 seconds and positive
 affine $(12,10,6)$ to 833 in 4.7 seconds.
+\FloatBarrier
 
 \subsection{Direct whole-ideal Gr\"obner bases}
 
+Table~\ref{tab:appendix-direct} reports the six direct whole-ideal
+Gr\"obner-basis configurations described in
+Subsection~\ref{subsec:experimental-setup}.
+
 \begin{table}[pos=htbp]
 \centering
-\scriptsize
-\setlength{\tabcolsep}{3pt}
-\resizebox{\textwidth}{!}{%
+\caption{End-to-end wall times for every direct whole-ideal Gr\"obner-basis
+configuration.}
+\label{tab:appendix-direct}
+\small
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{l r r r r r r}
 \hline
 System & M4GB & F5 & GVW & F4 & Singular & Macaulay2 \\
@@ -136,48 +143,45 @@ Gated dense, $n=7$ & TO & TO & TO & TO & TO & TO \\
 Square affine $(8,4)$ & TO & TO & TO & TO & TO & TO \\
 Square affine $(10,5)$ & TO & TO & TO & TO & TO & TO \\
 \hline
-\end{tabular}%
-}
-\caption{End-to-end wall times for every direct whole-ideal Gr\"obner-basis
-configuration.}
-\label{tab:appendix-direct}
+\end{tabular}
 \end{table}
+\FloatBarrier
 
-\subsection{Decomposition and numerical methods}
+\subsection{Decomposition methods}
+
+Table~\ref{tab:appendix-decomposition} reports Singular's \texttt{facstd} and
+\texttt{primdecGTZ}, and Macaulay2's \texttt{decompose}.
 
 \begin{table}[pos=htbp]
 \centering
-\scriptsize
-\setlength{\tabcolsep}{3pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{l r r r r}
-\hline
-System & facstd & primdecGTZ & Macaulay2 & Homotopy \\
-\hline
-Signed distance, $n=12$ & $4.800$ & $3.056$ & $25.223$ & $36.880$ \\
-Signed distance, $n=14$ & TO & $29.894$ & TO & TO \\
-Signed distance, $n=16$ & TO & TO & TO & TO \\
-Overlapping $(4,6,2)$ & $0.265$ & TO & TO & $30.069$ \\
-Overlapping $(6,8,3)$ & TO & TO & TO & TO \\
-Overlapping $(8,10,3)$ & TO & TO & TO & TO \\
-Positive affine $(8,6,4)$ & $0.368$ & TO & TO & $50.934$ \\
-Positive affine $(10,8,5)$ & $1.836$ & TO & TO & TO \\
-Positive affine $(12,10,6)$ & $53.318$ & TO & TO & TO \\
-Gated Cyclic-5 & $0.181$ & $0.337$ & $0.709$ & $35.054$ \\
-Gated Cyclic-6 & $2.729$ & TO & $2.620$ & $37.314$ \\
-Gated Cyclic-7 & TO & TO & TO & $58.287$ \\
-Gated Katsura-6 & $0.233$ & TO & TO & $31.532$ \\
-Gated Katsura-7 & $0.539$ & TO & TO & $31.980$ \\
-Gated Katsura-8 & $3.596$ & TO & TO & $34.264$ \\
-Gated dense, $n=5$ & $0.198$ & TO & TO & $29.289$ \\
-Gated dense, $n=6$ & $0.755$ & TO & TO & $30.053$ \\
-Gated dense, $n=7$ & $48.820$ & TO & TO & $32.261$ \\
-Square affine $(8,4)$ & $0.601$ & TO & TO & TO \\
-Square affine $(10,5)$ & $2.141$ & TO & TO & TO \\
-\hline
-\end{tabular}%
-}
-\caption{End-to-end wall times for every decomposition and numerical
-configuration.}
+\caption{End-to-end wall times for every decomposition configuration.}
 \label{tab:appendix-decomposition}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l r r r}
+\hline
+System & facstd & primdecGTZ & Macaulay2 \\
+\hline
+Signed distance, $n=12$ & $4.800$ & $3.056$ & $25.223$ \\
+Signed distance, $n=14$ & TO & $29.894$ & TO \\
+Signed distance, $n=16$ & TO & TO & TO \\
+Overlapping $(4,6,2)$ & $0.265$ & TO & TO \\
+Overlapping $(6,8,3)$ & TO & TO & TO \\
+Overlapping $(8,10,3)$ & TO & TO & TO \\
+Positive affine $(8,6,4)$ & $0.368$ & TO & TO \\
+Positive affine $(10,8,5)$ & $1.836$ & TO & TO \\
+Positive affine $(12,10,6)$ & $53.318$ & TO & TO \\
+Gated Cyclic-5 & $0.181$ & $0.337$ & $0.709$ \\
+Gated Cyclic-6 & $2.729$ & TO & $2.620$ \\
+Gated Cyclic-7 & TO & TO & TO \\
+Gated Katsura-6 & $0.233$ & TO & TO \\
+Gated Katsura-7 & $0.539$ & TO & TO \\
+Gated Katsura-8 & $3.596$ & TO & TO \\
+Gated dense, $n=5$ & $0.198$ & TO & TO \\
+Gated dense, $n=6$ & $0.755$ & TO & TO \\
+Gated dense, $n=7$ & $48.820$ & TO & TO \\
+Square affine $(8,4)$ & $0.601$ & TO & TO \\
+Square affine $(10,5)$ & $2.141$ & TO & TO \\
+\hline
+\end{tabular}
 \end{table}

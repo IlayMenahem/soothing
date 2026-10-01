@@ -17,17 +17,17 @@
 ]
 
 % ---- initialization and refinement ----
-\node[blue box, text width=45mm] (factors) {%
-    \textcolor{blue}{\bfseries Refine}\\
-    Factor, then interreduce\\ and refactor to obtain $\mathcal L(P)$};
-
-\node[blue box, text width=43mm, right=8mm of factors] (init) {%
+\node[blue box, text width=43mm] (init) {%
     \textcolor{blue}{\bfseries Initialize}\\
     $P = \{p_1,\ldots,p_m\}$\\
     $S \leftarrow \emptyset$};
 
+\node[blue box, text width=45mm, right=8mm of init] (factors) {%
+    \textcolor{blue}{\bfseries Refine}\\
+    Factor, then interreduce\\ and refactor to obtain $\mathcal L(P)$};
+
 % ---- loop over terminal branches ----
-\node[loop box, below=9mm of factors, xshift=22mm] (loop) {%
+\node[loop box, below=9mm of factors, xshift=-22mm] (loop) {%
     \textcolor{orange!75!black}{\bfseries Next set}\\
     $H\in\mathcal L(P)$};
 
@@ -49,12 +49,13 @@
 \coordinate (railm) at (raill -| solve.south);
 \coordinate (railr) at (raill -| unsat.south);
 
-% ---- return ----
-\node[return box] (return) at ($(railm)+(0,-10mm)$)
+% ---- decision and return ----
+\node[decision] (more) at ($(railm)+(0,-10mm)$) {More $H$?};
+\node[return box, below=7mm of more] (return)
     {\textcolor{violet}{\bfseries Return $S$}};
 
 % ---- arrows: top pipeline ----
-\draw[arr] (init.west) -- (factors.east);
+\draw[arr] (init.east) -- (factors.west);
 \coordinate (entry) at ($(loop.north)+(0,4mm)$);
 \draw[arr, rounded corners=5pt]
     (factors.south) |- (entry) -- (loop.north);
@@ -70,15 +71,16 @@
     .. controls +(0,-2.2mm) and +(2.2mm,0) .. ++(-4mm,-4mm)
     -- (sat.east);
 
-% ---- bottom rail into return ----
+% ---- bottom rail into the decision ----
 \draw[line width=1pt] (sat.south) -- (raill) -- (railr) -- (unsat.south);
-\draw[arr] (railm) -- node[right] {done} (return);
+\draw[arr] (railm) -- (more);
+\draw[arr] (more) -- node[right] {no} (return);
 
-% ---- feedback: merge both routes before re-entering the loop ----
-\coordinate (fbcol) at ($(init.east)+(8mm,0)$);
-\coordinate (feedback) at (fbcol |- loop.east);
+% ---- feedback: another branch re-enters the loop ----
+\coordinate (fbcol) at ($(sat.west)+(-8mm,0)$);
+\coordinate (feedback) at (fbcol |- loop.west);
 \draw[line width=1pt, rounded corners=5pt]
-    (railr) -- node[below] {next $H$} (railr -| fbcol) -- (feedback);
-\draw[arr] (feedback) -- (loop.east);
+    (more.west) -- node[below] {yes} (more.west -| fbcol) -- (feedback);
+\draw[arr] (feedback) -- (loop.west);
 
 \end{tikzpicture}

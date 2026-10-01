@@ -12,10 +12,8 @@ F5, GVW, F4, and Singular 4.4.1~\cite{makarim2017m4gb,faugere2002f5,
 gao2016gvw,faugere1999f4,singular2025}.
 A basis containing $1$ certifies that the branch is UNSAT.
 The comparison also includes six direct whole-ideal
-Gr\"obner-basis configurations, three decomposition methods from Singular,
-Macaulay2 1.26.06, and a numerical method from HomotopyContinuation.jl under
-Julia 1.12.6~\cite{singular2025,macaulay2,breiding2018homotopy,
-bezanson2017julia}.
+Gr\"obner-basis configurations and three decomposition methods from Singular
+and Macaulay2 1.26.06~\cite{singular2025,macaulay2}.
 
 For Algorithm~\ref{alg:ZeroingBranching}, we test M4GB, F5, GVW, F4,
 and Singular as branch solvers and impose a
@@ -79,38 +77,38 @@ method in that class timed out.
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{l l l l l}
+\begin{tabular}{l l l l}
 \hline
-System & Best factor branching $T/F$ & Best direct GB & Best decomposition & Numerical \\
+System & Best factor branching $T/F$ & Best direct GB & Best decomposition \\
 \hline
-Signed distance, $n=12$ & GVW $2.642/0.003$ & \textbf{F4} $\mathbf{0.443}$ & primdec $3.056$ & $36.880$ \\
-Signed distance, $n=14$ & GVW $9.860/0.006$ & \textbf{Singular} $\mathbf{7.421}$ & primdec $29.894$ & timeout \\
-Signed distance, $n=16$ & \textbf{F5} $\mathbf{37.164/0.006}$ & timeout & timeout & timeout \\
+Signed distance, $n=12$ & GVW $2.642/0.003$ & \textbf{F4} $\mathbf{0.443}$ & primdec $3.056$ \\
+Signed distance, $n=14$ & GVW $9.860/0.006$ & \textbf{Singular} $\mathbf{7.421}$ & primdec $29.894$ \\
+Signed distance, $n=16$ & \textbf{F5} $\mathbf{37.164/0.006}$ & timeout & timeout \\
 \hline
-Overlapping $(4,6,2)$ & \textbf{F5} $\mathbf{0.014/0.003}$ & F4 $0.429$ & facstd $0.265$ & $30.069$ \\
-Overlapping $(6,8,3)$ & \textbf{F5} $\mathbf{0.153/0.006}$ & timeout & timeout & timeout \\
-Overlapping $(8,10,3)$ & \textbf{Singular} $\mathbf{2.677/0.013}$ & timeout & timeout & timeout \\
+Overlapping $(4,6,2)$ & \textbf{F5} $\mathbf{0.014/0.003}$ & F4 $0.429$ & facstd $0.265$ \\
+Overlapping $(6,8,3)$ & \textbf{F5} $\mathbf{0.153/0.006}$ & timeout & timeout \\
+Overlapping $(8,10,3)$ & \textbf{Singular} $\mathbf{2.677/0.013}$ & timeout & timeout \\
 \hline
-Positive affine $(8,6,4)$ & \textbf{F5} $\mathbf{0.177/0.003}$ & timeout & facstd $0.368$ & $50.934$ \\
-Positive affine $(10,8,5)$ & \textbf{GVW} $\mathbf{0.679/0.003}$ & timeout & facstd $1.836$ & timeout \\
-Positive affine $(12,10,6)$ & \textbf{F5} $\mathbf{2.383/0.003}$ & timeout & facstd $53.318$ & timeout \\
+Positive affine $(8,6,4)$ & \textbf{F5} $\mathbf{0.177/0.003}$ & timeout & facstd $0.368$ \\
+Positive affine $(10,8,5)$ & \textbf{GVW} $\mathbf{0.679/0.003}$ & timeout & facstd $1.836$ \\
+Positive affine $(12,10,6)$ & \textbf{F5} $\mathbf{2.383/0.003}$ & timeout & facstd $53.318$ \\
 \hline
-Gated Cyclic-5 & F4 $0.011/0.003$ & \textbf{GVW} $\mathbf{0.009}$ & facstd $0.181$ & $35.054$ \\
-Gated Cyclic-6 & \textbf{Singular} $\mathbf{0.043/0.010}$ & Singular $0.309$ & M2 $2.620$ & $37.314$ \\
-Gated Cyclic-7 & timeout & timeout & timeout & $\mathbf{58.287}$ \\
+Gated Cyclic-5 & F4 $0.011/0.003$ & \textbf{GVW} $\mathbf{0.009}$ & facstd $0.181$ \\
+Gated Cyclic-6 & \textbf{Singular} $\mathbf{0.043/0.010}$ & Singular $0.309$ & M2 $2.620$ \\
+Gated Cyclic-7 & timeout & timeout & timeout \\
 \hline
-Gated Katsura-6 & \textbf{Singular} $\mathbf{0.048/0.010}$ & GVW $0.226$ & facstd $0.233$ & $31.532$ \\
-Gated Katsura-7 & \textbf{Singular} $\mathbf{0.282/0.010}$ & GVW $3.176$ & facstd $0.539$ & $31.980$ \\
-Gated Katsura-8 & \textbf{Singular} $\mathbf{2.587/0.010}$ & timeout & facstd $3.596$ & $34.264$ \\
-Gated dense, $n=5$ & \textbf{Singular} $\mathbf{0.025/0.010}$ & M4GB $0.171$ & facstd $0.198$ & $29.289$ \\
-Gated dense, $n=6$ & \textbf{Singular} $\mathbf{0.534/0.010}$ & M4GB $4.736$ & facstd $0.755$ & $30.053$ \\
-Gated dense, $n=7$ & Singular $42.704/0.010$ & timeout & facstd $48.820$ & $\mathbf{32.261}$ \\
+Gated Katsura-6 & \textbf{Singular} $\mathbf{0.048/0.010}$ & GVW $0.226$ & facstd $0.233$ \\
+Gated Katsura-7 & \textbf{Singular} $\mathbf{0.282/0.010}$ & GVW $3.176$ & facstd $0.539$ \\
+Gated Katsura-8 & \textbf{Singular} $\mathbf{2.587/0.010}$ & timeout & facstd $3.596$ \\
+Gated dense, $n=5$ & \textbf{Singular} $\mathbf{0.025/0.010}$ & M4GB $0.171$ & facstd $0.198$ \\
+Gated dense, $n=6$ & \textbf{Singular} $\mathbf{0.534/0.010}$ & M4GB $4.736$ & facstd $0.755$ \\
+Gated dense, $n=7$ & \textbf{Singular} $\mathbf{42.704/0.010}$ & timeout & facstd $48.820$ \\
 \hline
-Square affine $(8,4)$ & \textbf{M4GB} $\mathbf{0.510/0.003}$ & timeout & facstd $0.601$ & timeout \\
-Square affine $(10,5)$ & \textbf{GVW} $\mathbf{0.880/0.003}$ & timeout & facstd $2.141$ & timeout \\
+Square affine $(8,4)$ & \textbf{M4GB} $\mathbf{0.510/0.003}$ & timeout & facstd $0.601$ \\
+Square affine $(10,5)$ & \textbf{GVW} $\mathbf{0.880/0.003}$ & timeout & facstd $2.141$ \\
 \hline
-\#systems solved & $19$ & $9$ & $16$ & $12$ \\
-\#fastest (ties counted) & $15$ & $3$ & $0$ & $2$ \\
+\#systems solved & $19$ & $9$ & $16$ \\
+\#fastest (ties counted) & $16$ & $3$ & $0$ \\
 \hline
 \end{tabular}%
 }
@@ -169,15 +167,15 @@ zeroing also uses a 5-second limit per branch.  Both methods refine the
 system into the same 33 terminal branches; the factor branching result column
 counts them by outcome.
 A split is one $x=0$ versus $x\neq0$ case split; an unresolved branch is one
-still open when the total limit expires.  The ten standalone baselines, including
+still open when the total limit expires.  The nine standalone baselines, including
 standalone \texttt{facstd}, all time out and are omitted.}
 \label{tab:physical-system}
 \end{table}
 
-All ten standalone baselines time out after 120 seconds on the physical system:
+All nine standalone baselines time out after 120 seconds on the physical system:
 M4GB, F5, GVW, and F4 in grevlex order, Singular and Macaulay2 lex Gr\"obner
-bases, Singular \texttt{facstd} and \texttt{primdecGTZ}, Macaulay2
-\texttt{decompose}, and HomotopyContinuation.jl.  Factor branching with
+bases, Singular \texttt{facstd} and \texttt{primdecGTZ}, and Macaulay2
+\texttt{decompose}.  Factor branching with
 \texttt{facstd} completes in 1.018 seconds.  Every backend solves the same 32
 of the 33 terminal branches as SAT within 0.13 seconds in total, and times out on
 the last one.  Only \texttt{facstd} shows that this branch is UNSAT, so

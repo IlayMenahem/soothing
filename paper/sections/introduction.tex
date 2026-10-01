@@ -29,10 +29,12 @@ Recent work has also explored machine-learning methods for polynomial systems.
 Peifer et al.\ trained a reinforcement-learning policy for pair selection in
 Buchberger's algorithm \cite{peifer2020learning}. Kera et al.\ trained
 transformers to compute Gr\"obner bases directly for a restricted class of
-zero-dimensional radical ideals \cite{kera2024learning}.
+zero-dimensional radical ideals \cite{kera2024learning}. Yet these works are
+limited to small and specific polynomial ideals.
 
 % What's the gap?
-Despite this progress, large systems can remain inaccessible.
+Despite this progress, large systems such as a system that came up in our
+research of quantum gravity can remain inaccessible.
 
 % Technical description of the method - hitting sets
 Here, we introduce a solver-agnostic framework that breaks down a polynomial
@@ -55,7 +57,7 @@ While this is one of many possible splitting criteria, it proves particularly ef
 % Theoretical and experimental backing
 We prove that refinement and variable zeroing terminate and preserve the full
 solution set. We compare the resulting implementation with
-direct Gr\"obner-basis computation, symbolic decomposition, and numerical
-homotopy on generated benchmarks. We also apply the framework to a system from
+direct Gr\"obner-basis computation and symbolic decomposition on generated
+benchmarks. We also apply the framework to a system from
 quantum field theory: with the \texttt{facstd} backend, the framework completes
 the computation, whereas standard standalone solvers timed out.
