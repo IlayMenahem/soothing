@@ -409,6 +409,23 @@ def generate_matrix(output: Path) -> list[Instance]:
     return instances
 
 
+def kill_group(group: int) -> None:
+    """SIGKILL every process in ``group``. Once the group leader is an
+    unreaped zombie, macOS refuses ``killpg`` with EPERM and signals no one, so
+    fall back to the live members, e.g. Singular children of an exited solver."""
+    try:
+        os.killpg(group, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except PermissionError:
+        members = subprocess.run(
+            ["pgrep", "-g", str(group)], capture_output=True, text=True
+        ).stdout.split()
+        for member in members:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.kill(int(member), signal.SIGKILL)
+
+
 def run(
     argv: list[str], timeout: float, cwd: Path | None = None
 ) -> tuple[str, str, float, bool, int]:
@@ -425,10 +442,7 @@ def run(
         stdout, stderr = process.communicate(timeout=timeout)
         return stdout, stderr, time.perf_counter() - start, False, process.returncode
     except subprocess.TimeoutExpired:
-        # macOS reports EPERM when the group has exited but its leader is
-        # not yet reaped.
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(process.pid, signal.SIGKILL)
+        kill_group(process.pid)
         stdout, stderr = process.communicate()
         return stdout, stderr, timeout, True, -signal.SIGKILL
 
