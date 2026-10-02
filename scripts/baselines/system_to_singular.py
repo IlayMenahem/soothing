@@ -2,6 +2,8 @@
 
 Tasks:
     gb         — lex Gröbner basis via ``std(I)``; reports ``basis_len``.
+    gb-dp      — the same in degrevlex, the order of the ``singular-gb``
+                 branch backend.
     facstd     — factorizing Gröbner bases via Gräbe's ``facstd``;
                  reports ``num_components`` and ``max_dim``.
     decompose  — primary decomposition via ``primdec.lib``'s ``primdecGTZ``;
@@ -29,6 +31,7 @@ from _common import BaselineResult, load_system, require_tool, run_subprocess, t
 
 _BASELINE_LABEL_BY_TASK = {
     "gb": "singular-gb-lex",
+    "gb-dp": "singular-gb-dp",
     "facstd": "singular-facstd",
     "decompose": "singular-primdecGTZ",
 }
@@ -52,12 +55,12 @@ def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str
         if coefficient_symbols
         else "0"
     )
-    ordering = "dp" if task == "facstd" else "lp"
+    ordering = "dp" if task in {"facstd", "gb-dp"} else "lp"
     ring_vars = ",".join(str(s) for s in polynomial_symbols)
     ideal_body = ",\n    ".join(_poly_to_singular(p) for p in polys)
     # Singular's `printf` only accepts a literal format with no substitution;
     # we use `print("LABEL " + string(value))` instead, which auto-newlines.
-    if task == "gb":
+    if task in {"gb", "gb-dp"}:
         body = (
             'option(redSB);\n'
             'int t0 = rtimer;\n'
@@ -176,7 +179,7 @@ def main() -> int:
         status="ok",
         elapsed_secs=parsed["SOLVE_MS"] / 1000.0,
     )
-    if args.task == "gb":
+    if args.task in {"gb", "gb-dp"}:
         result.basis_len = parsed.get("BASIS_LEN")
     elif args.task in {"facstd", "decompose"}:
         result.num_components = parsed.get("NUM_COMPONENTS")
