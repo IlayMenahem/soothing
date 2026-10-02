@@ -5,7 +5,9 @@
 //! hitting sets replace it until the set no longer changes. The resulting
 //! terminal hitting sets, less those whose zero set is certified to lie in
 //! that of another (every generator of the other reduces to zero modulo
-//! them), are shared by factor branching and variable zeroing.
+//! them), are shared by factor branching and variable zeroing. Siblings in
+//! the refinement tree are not compared, which keeps pruning cheap when
+//! refinement returns many root-level hitting sets.
 //! Interreduction and factorization are supplied by the caller through
 //! [`RefineOps`] so that they can run in a worker process with a deadline.
 
@@ -90,25 +92,43 @@ fn factor_cover_candidates<O: RefineOps>(
         .collect())
 }
 
-fn push_unique(terminal: &mut Vec<Vec<PolyExtLex>>, candidate: Vec<PolyExtLex>) {
-    if !terminal
-        .iter()
-        .any(|existing| same_polynomial_set(existing, &candidate))
-    {
-        terminal.push(candidate);
+/// A terminal hitting set and the refinement node whose child it is.
+struct TerminalBranch {
+    generators: Vec<PolyExtLex>,
+    parent: usize,
+}
+
+/// What a refinement run accumulates: the terminal branches, the counters,
+/// and the number of refinement-tree nodes named so far (the root is node 0).
+#[derive(Default)]
+struct RefinementState {
+    terminal: Vec<TerminalBranch>,
+    stats: RefinementStats,
+    nodes: usize,
+}
+
+impl RefinementState {
+    fn push_unique(&mut self, generators: Vec<PolyExtLex>, parent: usize) {
+        if !self
+            .terminal
+            .iter()
+            .any(|existing| same_polynomial_set(&existing.generators, &generators))
+        {
+            self.terminal.push(TerminalBranch { generators, parent });
+        }
     }
 }
 
 fn refine_cover_with<O: RefineOps>(
     candidate: Vec<PolyExtLex>,
     depth: usize,
+    parent: usize,
     ancestors: &mut Vec<Vec<PolyExtLex>>,
-    terminal: &mut Vec<Vec<PolyExtLex>>,
-    stats: &mut RefinementStats,
+    state: &mut RefinementState,
     ops: &mut O,
 ) -> Result<(), O::Error> {
-    stats.passes += 1;
-    stats.max_depth = stats.max_depth.max(depth);
+    state.stats.passes += 1;
+    state.stats.max_depth = state.stats.max_depth.max(depth);
 
     let candidate = normalize_candidate(candidate);
     let reduced = ops.interreduce(candidate.clone())?;
@@ -120,55 +140,107 @@ fn refine_cover_with<O: RefineOps>(
 
     let reduced = normalize_candidate(reduced);
     if children.len() == 1 && same_polynomial_set(&children[0], &reduced) {
-        push_unique(terminal, children.into_iter().next().expect("one child"));
+        state.push_unique(children.into_iter().next().expect("one child"), parent);
         return Ok(());
     }
 
     if children.len() > 1 {
-        stats.subdivisions += children.len() - 1;
+        state.stats.subdivisions += children.len() - 1;
     }
+    state.nodes += 1;
+    let node = state.nodes;
     ancestors.push(candidate);
     for child in children {
         if ancestors
             .iter()
             .any(|ancestor| same_polynomial_set(ancestor, &child))
         {
-            push_unique(terminal, child);
+            state.push_unique(child, node);
         } else {
-            refine_cover_with(child, depth + 1, ancestors, terminal, stats, ops)?;
+            refine_cover_with(child, depth + 1, node, ancestors, state, ops)?;
         }
     }
     ancestors.pop();
     Ok(())
 }
 
-/// Whether every generator of `other` reduces to zero modulo `branch`, which
-/// certifies `V(branch) ⊆ V(other)`.
-fn certified_contained(branch: &[PolyExtLex], other: &[PolyExtLex]) -> bool {
-    other
+/// The variables of each generator's leading monomial, as a bitmask; `None`
+/// when the ring has more than 64 variables.
+fn leading_supports(branch: &[PolyExtLex]) -> Option<Vec<u64>> {
+    branch
         .iter()
-        .all(|polynomial| branch.contains(polynomial) || polynomial.reduce(branch).is_zero())
+        .map(|polynomial| {
+            (polynomial.nvars() <= 64).then(|| {
+                polynomial
+                    .max_exp()
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &exponent)| exponent > 0)
+                    .fold(0u64, |mask, (variable, _)| mask | (1u64 << variable))
+            })
+        })
+        .collect()
+}
+
+/// A terminal branch with the leading-monomial supports of its generators.
+struct PruneCandidate {
+    branch: TerminalBranch,
+    leading_supports: Option<Vec<u64>>,
+}
+
+/// A necessary condition for every generator of `other` to reduce to zero
+/// modulo `branch`: each leading monomial of `other` must be divisible by one
+/// of `branch`, so in particular contain all its variables.
+fn may_be_contained(branch: &PruneCandidate, other: &PruneCandidate) -> bool {
+    match (&branch.leading_supports, &other.leading_supports) {
+        (Some(divisors), Some(monomials)) => monomials
+            .iter()
+            .all(|&monomial| divisors.iter().any(|&divisor| divisor & !monomial == 0)),
+        _ => true,
+    }
+}
+
+/// Whether every generator of `other` reduces to zero modulo `branch`, which
+/// certifies `V(branch) ⊆ V(other)`. Siblings, distinct minimal hitting sets
+/// of the same factor sets, are never compared; the cheap necessary test on
+/// leading monomials runs before any reduction.
+fn certified_contained(branch: &PruneCandidate, other: &PruneCandidate) -> bool {
+    branch.branch.parent != other.branch.parent
+        && may_be_contained(branch, other)
+        && other.branch.generators.iter().all(|polynomial| {
+            branch.branch.generators.contains(polynomial)
+                || polynomial.reduce(&branch.branch.generators).is_zero()
+        })
 }
 
 /// Drop every branch whose zero set is certified to lie in that of a kept
 /// branch, preserving the union of the zero sets. Branches are visited in
 /// order; a newly kept branch evicts the kept branches it certifiably
 /// contains, so every dropped branch stays covered by a kept one.
-fn prune_contained(branches: Vec<Vec<PolyExtLex>>) -> Vec<Vec<PolyExtLex>> {
-    branches.into_iter().fold(Vec::new(), |kept, branch| {
-        if kept
-            .iter()
-            .any(|existing: &Vec<PolyExtLex>| certified_contained(&branch, existing))
-        {
-            return kept;
-        }
-        let mut kept: Vec<Vec<PolyExtLex>> = kept
-            .into_iter()
-            .filter(|existing| !certified_contained(existing, &branch))
-            .collect();
-        kept.push(branch);
-        kept
-    })
+fn prune_contained(branches: Vec<TerminalBranch>) -> Vec<Vec<PolyExtLex>> {
+    branches
+        .into_iter()
+        .map(|branch| PruneCandidate {
+            leading_supports: leading_supports(&branch.generators),
+            branch,
+        })
+        .fold(Vec::new(), |kept: Vec<PruneCandidate>, branch| {
+            if kept
+                .iter()
+                .any(|existing| certified_contained(&branch, existing))
+            {
+                return kept;
+            }
+            let mut kept: Vec<PruneCandidate> = kept
+                .into_iter()
+                .filter(|existing| !certified_contained(existing, &branch))
+                .collect();
+            kept.push(branch);
+            kept
+        })
+        .into_iter()
+        .map(|candidate| candidate.branch.generators)
+        .collect()
 }
 
 /// Refine every minimal hitting set in `covers` into terminal hitting sets,
@@ -188,19 +260,23 @@ pub fn refine_covers_with<O: RefineOps>(
     covers: &[u64],
     ops: &mut O,
 ) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), O::Error> {
-    let mut terminal = Vec::new();
-    let mut stats = RefinementStats::default();
+    let mut state = RefinementState::default();
     for &cover in covers {
         refine_cover_with(
             decode_cover(factors, cover),
             1,
+            0,
             &mut Vec::new(),
-            &mut terminal,
-            &mut stats,
+            &mut state,
             ops,
         )?;
     }
-    terminal.sort_by_key(Vec::len);
+    let RefinementState {
+        mut terminal,
+        mut stats,
+        ..
+    } = state;
+    terminal.sort_by_key(|branch| branch.generators.len());
     let count = terminal.len();
     let mut terminal = prune_contained(terminal);
     stats.pruned = count - terminal.len();
@@ -246,7 +322,7 @@ mod tests {
     fn prune_drops_a_branch_inside_another() {
         let branches = systems(&["x == 0, y == 0", "x == 0", "y - 1 == 0"]);
 
-        let kept = prune_contained(branches.clone());
+        let kept = prune_contained(cousins(&branches));
 
         assert_eq!(kept, vec![branches[1].clone(), branches[2].clone()]);
     }
@@ -256,7 +332,7 @@ mod tests {
         // x*y lies in ⟨x⟩, so V(x) ⊆ V(x*y) although x*y is not a generator.
         let branches = systems(&["x == 0", "x*y == 0"]);
 
-        let kept = prune_contained(branches.clone());
+        let kept = prune_contained(cousins(&branches));
 
         assert_eq!(kept, vec![branches[1].clone()]);
     }
@@ -265,13 +341,39 @@ mod tests {
     fn prune_keeps_one_of_equal_zero_sets() {
         let branches = systems(&["x + y == 0, y == 0", "x == 0, y == 0"]);
 
-        assert_eq!(prune_contained(branches).len(), 1);
+        assert_eq!(prune_contained(cousins(&branches)).len(), 1);
     }
 
     #[test]
     fn prune_keeps_incomparable_branches() {
         let branches = systems(&["x == 0", "y == 0"]);
 
-        assert_eq!(prune_contained(branches.clone()), branches);
+        assert_eq!(prune_contained(cousins(&branches)), branches);
+    }
+
+    #[test]
+    fn prune_does_not_compare_siblings() {
+        let branches = systems(&["x == 0", "x*y == 0"]);
+        let siblings = branches
+            .iter()
+            .map(|generators| TerminalBranch {
+                generators: generators.clone(),
+                parent: 1,
+            })
+            .collect();
+
+        assert_eq!(prune_contained(siblings), branches);
+    }
+
+    /// Each branch as the child of its own refinement node.
+    fn cousins(branches: &[Vec<PolyExtLex>]) -> Vec<TerminalBranch> {
+        branches
+            .iter()
+            .enumerate()
+            .map(|(index, generators)| TerminalBranch {
+                generators: generators.clone(),
+                parent: index + 1,
+            })
+            .collect()
     }
 }
