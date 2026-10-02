@@ -411,11 +411,17 @@ SIGNIFICANT_SECS = 1.0
 
 
 def seconds(row: dict[str, object] | None) -> float | None:
-    """Time of a complete run, or None. The Macaulay2 driver reports CPU time
-    summed over threads, which can exceed the wall time of the run."""
+    """Time of a complete run, or None. FB and VZ count their whole process,
+    and so does Macaulay2, whose driver reports CPU time over all threads;
+    Singular and the direct engines report their internal timers, which
+    exclude parsing and start-up, so ties favor the baselines. An internal
+    timer is capped by the wall time: Singular's ``rtimer`` difference
+    occasionally reports minutes for a run that took a second."""
     if row is None or row["status"] != "ok":
         return None
-    return min(float(row["solve_secs"]), float(row.get("wall_secs", row["solve_secs"])))
+    wall = float(row["wall_secs"])
+    whole_process = str(row["label"]).startswith(("branching-", "zeroing-", "m2-"))
+    return wall if whole_process else min(float(row["solve_secs"]), wall)
 
 
 def gave_up(row: dict[str, object] | None) -> bool:
@@ -603,9 +609,10 @@ def render_report(systems: list[dict[str, object]], timeout: int) -> str:
             "zeroing (VZ) that use the same tool as their branch solver. *Rescued*: the",
             "tool alone times out and FB or VZ completes; *faster*/*slower*: the faster of",
             f"FB and VZ differs by at least {SIGNIFICANT_FACTOR:g}x and {SIGNIFICANT_SECS:g} s;",
-            "*lost*: the tool alone completes and both FB and VZ time out. Standalone",
-            "times are Singular's internal timer; FB and VZ times are end-to-end and",
-            "include factorization and one Singular start per branch. TO = time limit.",
+            "*lost*: the tool alone completes and both FB and VZ time out. Times of",
+            "the tools alone are their internal timers; FB, VZ and Macaulay2 are",
+            "timed by process wall time, including factorization and one Singular",
+            "start per branch. TO = time limit.",
             "*FB branches* counts the terminal branches of Algorithm Refine; with one",
             "branch, FB differs from the tool alone only by the lex interreduction it",
             "applies first. *[splits]* counts the zero/nonzero splits of VZ.",
