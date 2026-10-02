@@ -43,7 +43,7 @@ Five issues most affect acceptance:
 - **Scope.** On the 20 baseline systems zeroing never helped (0 splits everywhere; Cyclic-7 partial, dense n=7 partial; Table 5). Its only positive result is two extra backends completing one physical system, where the best configuration, FB+`facstd`, needs no splits.
   - **Fix:** frame the result as "makes completion less dependent on the backend, on this system", and remove "proves particularly effective" (`introduction.tex:55`).
 - **Ablation misplaced and under-reported.** The x = 1 versus random-a comparison sits in §4.1 with no backend, timeout, seed, or numbers, and Fig. 3 sits in §4 but shows a §5.3 result. "Substantially more effective" rests on one system and one run per variant.
-  - **Fix:** move both to §5.3, report the comparison in a table, and restrict the claim to that system. Data in `results/split_value_comparison.json`: M4GB, 5 s per branch, 600 s total, seed 0; x = 1 → 89 splits, 36 unresolved; random a → 85 splits, 50 unresolved.
+  - **Fix:** move both to §5.3, report the comparison in a table, and restrict the claim to that system. Data in `results/split_value_comparison.json`: M4GB, 5 s per branch, 600 s total, seed 0; x = 1 → 63 splits, 38 unresolved; random a → 84 splits, 50 unresolved.
 
 ### A7. Measurement method (`experiments.tex:20-36`, appendix)
 - **Startup cost.** Baseline times are process wall time, so they include startup; FB+Singular starts a Singular process per branch. Say so.
@@ -67,15 +67,11 @@ Five issues most affect acceptance:
 ### C3. Add a small worked example (highest-value addition)
 The paper has no example. A 3–4 equation system should show the factor sets, minimal hitting sets, one refinement step that creates new factors, a terminal branch, and one zero/nonzero split. Reuse it for Theorem 1 and §4.3.
 
-### C4. Unused or misplaced material
-- §3.2 (UNSAT-core learning, `method.tex:81`) reports a negative result with no data; the UNSAT-core definitions (`preliminaries.tex:85-87`) serve only it.
-
 ### C7. No discussion or limitations section
 The 20-line conclusion only restates results. Add a discussion covering when the method helps (factor structure) and when it doesn't (Cyclic-7, exponential hitting sets), redundant output (A2), backend dependence, benchmark design (A4), one physical system and one run per result, and the most important future work. "Future work will test this benefit on other systems" is too vague.
 
 ### C8. Implementation details needed to reproduce the work
 - Factorization routine (Symbolica, over ℚ) and monomial order (interreduction in lex, branch GBs in grevlex).
-- Whether interreduction is on in each experiment, including the physical system (it is: no script passes `--no-interreduce`).
 - Which backends are the authors' own (M4GB, F5, GVW) and which are library code; the "F4" backend is Symbolica's built-in routine, labelled `symbolica` in the results.
 
 ### C9. Reproducibility of the benchmarks
@@ -94,20 +90,17 @@ The recursion is drawn as a loop, hiding that each child re-runs the whole proce
 ### D3. Figure 3 (`figs/variable_zeroing_tree.tex`)
 - Labels under timed-out nodes (`pph`, `DpDph2`, …) are splitting variables, but this is never stated and the names are undefined.
 - Define node and edge in the caption, and mark the SAT branch.
-- Caption gives 33.113 s, Table 3 gives 24.611 s for the same configuration: the figure is a separate run (source JSON `results/physical_system_m4gb_5s_figure_run.json` is missing). Reconcile, ideally by regenerating the figure from the Table 3 run.
+- Caption gives 24.639 s, Table 3 gives 24.710 s for the same configuration: the figure is a separate run (`results/physical_system_m4gb_5s_figure_run.json`). Consider drawing it from the Table 3 run.
 
 ### D5. Table 2
 - Define T/F, the 60 s limit, and "Timeout" in the caption; partial runs (P in Table 4) appear as "timeout".
 - "Baseline" is ambiguous (systems or methods).
 
 ### D6. Table 3
-`$timeout/0.004$` sets "timeout" in math italic. Use `timeout$/0.004$`.
+`$timeout/0.003$` sets "timeout" in math italic. Use `timeout$/0.003$`.
 
 ### D7. Inconsistent table font sizes
 `\resizebox{\textwidth}` still scales Tables 1–3 (main text) differently from the appendix tables. Use `\small` at natural width, as in the appendix.
-
-### D8. Appendix consistency
-- Positive affine (8,6,4) takes 0.543 s with zeroing (0 splits) but 0.177 s with FB+F5. Explain the overhead.
 
 ### D9. Table caption position
 Elsevier puts table captions **above** the table; Tables 1–3 in the main text still have them below.

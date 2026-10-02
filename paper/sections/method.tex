@@ -16,7 +16,9 @@ branch changes.
 
 Algorithm~\ref{alg:Refine} first factors $P$ and then applies these two
 operations to every branch until it reaches a fixed point. We call a branch
-\emph{terminal} if one round leaves it unchanged.
+\emph{terminal} if one round leaves it unchanged. Finally, it drops the
+terminal branches whose solutions lie among those of another
+(Subsection~\ref{subsec:pruning}).
 
 We note $\mathcal H(P)$ as the minimal hitting sets of the factor sets.
 
@@ -34,6 +36,7 @@ We note $\mathcal H(P)$ as the minimal hitting sets of the factor sets.
             \State $W\gets W\cup\mathcal H(Q)$
         \EndFor
     \Until{$W=W_{\mathrm{prev}}$}
+    \State $W\gets\Call{Prune}{W}$ \Comment{Subsection~\ref{subsec:pruning}}
     \State \Return $W$
 \end{algorithmic}
 \end{algorithm}
@@ -78,18 +81,18 @@ cost, processing smaller branches first.
 \end{figure}
 
 
-\subsection{UNSAT-core learning}
-\label{subsec:unsat-core-learning}
+\subsection{Pruning contained branches}
+\label{subsec:pruning}
 
-We also evaluated UNSAT-core learning, following ideas from polynomial
-UNSAT-core extraction and conflict-driven
-learning~\cite{sun2016,marques1999grasp,marques2009cdcl}.
-After certifying a branch $H$ as UNSAT, this extension extracts a subset
-$U\subseteq H$ with $V(U)=\emptyset$ by iterative refinement as in
-Section 5 of~\cite{sun2016}. Any later branch containing $U$ can be
-discarded, since every solution of that branch would also have to solve $U$.
-However, UNSAT-core learning provided no performance benefit on the systems
-we tested. We therefore omit it from the algorithms presented here.
+Hitting sets are minimal only among the children of one branch, so the loop
+of Algorithm~\ref{alg:Refine} can end with distinct branches $H$ and $H'$
+such that $V(H)\subseteq V(H')$. Solving $H$ then adds no solutions. If every
+generator of $H'$ reduces to zero modulo $H$, then
+$H'\subseteq\langle H\rangle$, which certifies $V(H)\subseteq V(H')$.
+
+$\Call{Prune}{W}$ returns the branches it can't certify there solution sets to be contained in each other.
+Factorizing Gr\"obner-basis methods also discard redundant branches~\cite{graebe1995factorized}.
+
 
 % Theoretical analysis of the method
 \subsection{Theoretical analysis}
@@ -205,8 +208,8 @@ Hence $W_k$ equals the set $\mathcal T$ of all nonroot terminal nodes for every
 $k\geq d$, and the loop stops after at most $d+1$ rounds. If it stops
 earlier, with $W_{k+1}=W_k$, then $W_j=W_k$ for all $j\geq k$ because each
 round depends only on $W$. In particular $W_k=W_d=\mathcal T$. In both
-cases, Algorithm~\ref{alg:Refine} returns the finite set $\mathcal T$ of
-terminal branches.\qed
+cases, the loop ends with the finite set $\mathcal T$ of terminal branches,
+and Algorithm~\ref{alg:Refine} returns a subset of it.\qed
 \end{proof}
 
 \begin{lemma}[Refinement preserves solutions]
