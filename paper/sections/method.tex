@@ -88,7 +88,7 @@ Hitting sets are minimal only among the children of one branch, so the loop
 of Algorithm~\ref{alg:Refine} can end with distinct branches $H$ and $H'$
 such that $V(H)\subseteq V(H')$. Solving $H$ then adds no solutions. If every
 generator of $H'$ reduces to zero modulo $H$, then
-$H'\subseteq\langle H\rangle$, which certifies $V(H)\subseteq V(H')$.
+$H'\subseteq\langle H\rangle$~\cite[Ch.~2, \S3]{cox2015ideals}, which certifies $V(H)\subseteq V(H')$.
 
 $\Call{Prune}{W}$ returns the branches it can't certify there solution sets to be contained in each other.
 Factorizing Gr\"obner-basis methods also discard redundant branches~\cite{graebe1995factorized}.
@@ -109,15 +109,12 @@ Let $S$ be a collection of solution-set representations, and $\operatorname{Sol}
 
 \begin{proof}
 Write $Q=\{q_1,\ldots,q_m\}$ and let $C_i$ be the monic nonconstant
-irreducible factors of $q_i$. Take $x \in V(Q)$. Since $q_i(x)=0$, at least
-one factor in $C_i$ vanishes at $x$ for every $i$. The set of all factors that
-vanish at $x$ is therefore a hitting set of $C_1,\ldots,C_m$. Because the
-factor sets are finite, this set contains a minimal hitting set $H$. Every
-factor in $H$ vanishes at $x$, so $x \in V(H)$.
-
-For the reverse inclusion, take $x \in V(H)$ for some
-$H \in \mathcal{H}(Q)$. The set $H$ intersects every $C_i$, so each $q_i$ has
-a factor that vanishes at $x$. Hence $q_i(x)=0$ for every $i$, and $x \in V(Q)$.
+irreducible factors of $q_i$. Since $V(fg)=V(f)\cup V(g)$~\cite[Ch.~4,
+\S3]{cox2015ideals}, $V(Q)=\bigcap_i\bigcup_{f\in C_i}V(f)$. Distributing the
+intersection over the unions and keeping the minimal terms gives the union
+over the minimal transversals of $C_1,\ldots,C_m$~\cite{eiter1995transversals};
+this is the splitting step of factorizing Gr\"obner-basis
+methods~\cite{graebe1995factorized}.
 
 If some $q_i$ is a nonzero constant, then $C_i=\emptyset$, and both sides
 are empty: $V(Q)=\emptyset$, and $\mathcal H(Q)=\emptyset$ because no set meets
@@ -195,8 +192,8 @@ $Q_{i+1}$ that is not terminal satisfies $\mu(Q_i)\subsetneq\mu(Q_{i+1})$ by
 Lemma~\ref{lem:refinement-step}, and only the last nonroot node of a path can
 be terminal. The monomial ideals $\mu(Q_1)\subsetneq\mu(Q_2)\subsetneq\cdots$
 therefore form a strictly ascending chain, which is finite by Dickson's
-lemma. Thus every path is finite. Every node has finitely many children,
-because its factor sets are finite. By K\"onig's lemma, the tree is finite;
+lemma~\cite[Ch.~2, \S4]{cox2015ideals}. Thus every path is finite. Every node has finitely many children,
+because its factor sets are finite. By K\"onig's lemma~\cite{konig1927schlussweise}, the tree is finite;
 let $d$ be its depth.
 
 Let $W_k$ be the value of $W$ after $k$ rounds of the loop in
