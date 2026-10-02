@@ -411,8 +411,11 @@ SIGNIFICANT_SECS = 1.0
 
 
 def seconds(row: dict[str, object] | None) -> float | None:
-    """Time of a complete run, or None."""
-    return float(row["solve_secs"]) if row is not None and row["status"] == "ok" else None
+    """Time of a complete run, or None. The Macaulay2 driver reports CPU time
+    summed over threads, which can exceed the wall time of the run."""
+    if row is None or row["status"] != "ok":
+        return None
+    return min(float(row["solve_secs"]), float(row.get("wall_secs", row["solve_secs"])))
 
 
 def gave_up(row: dict[str, object] | None) -> bool:
@@ -452,7 +455,7 @@ def cell(row: dict[str, object] | None) -> str:
     if row is None:
         return "-"
     if row["status"] == "ok":
-        return f"{float(row['solve_secs']):.2f}"
+        return f"{seconds(row):.2f}"
     return "TO" if gave_up(row) else "err"
 
 
@@ -495,6 +498,55 @@ def beats_every_tool(rows: dict[str, dict[str, object]]) -> bool:
         return all(gave_up(rows.get(standalone)) for standalone, _ in PAIRS.values())
     best_alone, best_ours = min(finished), min(ours)
     return best_ours * SIGNIFICANT_FACTOR <= best_alone and best_alone - best_ours >= SIGNIFICANT_SECS
+
+
+def best_in_class(rows: dict[str, dict[str, object]], labels: tuple[str, ...]) -> str:
+    """Fastest complete run among ``labels`` as 'label seconds', or 'TO'."""
+    completed = [(time, label) for label in labels if (time := seconds(rows.get(label))) is not None]
+    if not completed:
+        return "TO" if any(label in rows for label in labels) else "-"
+    time, label = min(completed)
+    return f"{label} {time:.2f}"
+
+
+METHOD_CLASSES: dict[str, tuple[str, ...]] = {
+    "factor branching": tuple(f"branching-{engine}" for engine in ENGINES),
+    "variable zeroing": tuple(f"zeroing-{engine}" for engine in ENGINES),
+    "direct GB": (
+        *(f"{algorithm}-grevlex" for algorithm in DIRECT_ALGORITHMS),
+        "singular-gb-dp",
+        "singular-gb-lex",
+        "m2-gb-lex",
+    ),
+    "decomposition": ("singular-facstd", "singular-primdecGTZ", "m2-decompose"),
+}
+
+
+def class_table(
+    measured: list[dict[str, object]], grouped: dict[str, dict[str, dict[str, object]]]
+) -> list[str]:
+    """Fastest complete method per class, for systems run with every method."""
+    complete = [
+        system for system in measured if set(METHODS) <= grouped[str(system["name"])].keys()
+    ]
+    if not complete:
+        return []
+    return [
+        "## Fastest method per class (systems run with every method)",
+        "",
+        "| System | FB branches | " + " | ".join(METHOD_CLASSES) + " |",
+        "|---|---|" + "---|" * len(METHOD_CLASSES),
+        *(
+            f"| {system['name']} | {branch_count(grouped[str(system['name'])])} | "
+            + " | ".join(
+                best_in_class(grouped[str(system["name"])], labels)
+                for labels in METHOD_CLASSES.values()
+            )
+            + " |"
+            for system in complete
+        ),
+        "",
+    ]
 
 
 def render_report(systems: list[dict[str, object]], timeout: int) -> str:
@@ -560,6 +612,7 @@ def render_report(systems: list[dict[str, object]], timeout: int) -> str:
             "",
             *summary,
             "",
+            *class_table(measured, grouped),
             "## Systems where FB or VZ beats every tool alone",
             "",
             *table(lambda name: beats_every_tool(grouped[name])),

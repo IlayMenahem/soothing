@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import itertools
 import json
 import os
@@ -424,7 +425,10 @@ def run(
         stdout, stderr = process.communicate(timeout=timeout)
         return stdout, stderr, time.perf_counter() - start, False, process.returncode
     except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
+        # macOS reports EPERM when the group has exited but its leader is
+        # not yet reaped.
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(process.pid, signal.SIGKILL)
         stdout, stderr = process.communicate()
         return stdout, stderr, timeout, True, -signal.SIGKILL
 
