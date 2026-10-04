@@ -168,12 +168,13 @@ fn factor_cover_candidates<O: RefineOps>(
     ))
 }
 
-/// Whether some condition lies in the ideal of `generators`, so that no
-/// point of the branch has all its conditions nonzero.
+/// Whether some condition lies in the ideal of the nonzero `generators`, so
+/// that no point of the branch has all its conditions nonzero.
 fn violates_condition(generators: &[PolyExtLex], conditions: &[PolyExtLex]) -> bool {
-    conditions
-        .iter()
-        .any(|condition| condition.reduce(generators).is_zero())
+    !generators.is_empty()
+        && conditions
+            .iter()
+            .any(|condition| condition.reduce(generators).is_zero())
 }
 
 /// A terminal hitting set and the refinement node whose child it is.
@@ -220,7 +221,7 @@ fn refine_cover_with<O: RefineOps>(
     } = branch;
     let candidate = normalize_candidate(generators);
     let reduced = ops.interreduce(candidate.clone())?;
-    if violates_condition(&reduced, &conditions) {
+    if violates_condition(&normalize_candidate(reduced.clone()), &conditions) {
         state.stats.condition_kills += 1;
         return Ok(());
     }
