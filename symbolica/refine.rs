@@ -10,6 +10,15 @@
 //! refinement returns many root-level hitting sets.
 //! Interreduction and factorization are supplied by the caller through
 //! [`RefineOps`] so that they can run in a worker process with a deadline.
+//!
+//! Siblings are refined in order, and a branch carries nonzero side
+//! conditions: a factor `f` with `H_k \ H_j = {f}` for an earlier sibling
+//! `H_k` may be assumed nonzero on `H_j`, since a common zero of `H_j` and `f`
+//! is a zero of `H_k`. Descendants inherit the conditions. A branch is dropped
+//! once a condition reduces to zero modulo it, and the conditions are removed
+//! from every factor set before hitting sets are enumerated. The conditions
+//! only discard points that an earlier branch keeps, so the terminal zero sets
+//! still cover `V(P)`; the solver never sees them.
 
 use crate::cover::{build_factor_index, decode_cover, minimal_covers, ordered_cover_masks};
 use crate::factor_prep::{PolyExtLex, interreduce_polys, try_factor_groups_from_polys};
@@ -23,6 +32,8 @@ pub struct RefinementStats {
     /// Terminal hitting sets dropped because their zero set lies in that of
     /// another terminal hitting set.
     pub pruned: usize,
+    /// Branches dropped because a nonzero side condition vanishes on them.
+    pub condition_kills: usize,
 }
 
 fn normalize_candidate(polynomials: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
@@ -74,11 +85,75 @@ impl RefineOps for InProcess {
     }
 }
 
+/// For each cover, in order, the factors `f` such that some earlier cover
+/// exceeds it by exactly `f`, as a bitmask over the same factor universe.
+fn sibling_conditions(covers: &[u64]) -> Vec<u64> {
+    covers
+        .iter()
+        .enumerate()
+        .map(|(index, &cover)| {
+            covers[..index]
+                .iter()
+                .map(|&earlier| earlier & !cover)
+                .filter(|extra| extra.count_ones() == 1)
+                .fold(0u64, |conditions, extra| conditions | extra)
+        })
+        .collect()
+}
+
+/// A hitting set to refine and the nonzero side conditions it carries.
+struct Branch {
+    generators: Vec<PolyExtLex>,
+    conditions: Vec<PolyExtLex>,
+}
+
+/// The ordered covers of `factors` as branches, each carrying the parent's
+/// conditions together with its own sibling conditions.
+fn branches_of_covers(
+    factors: &[PolyExtLex],
+    covers: &[u64],
+    parent_conditions: &[PolyExtLex],
+) -> Vec<Branch> {
+    covers
+        .iter()
+        .zip(sibling_conditions(covers))
+        .map(|(&cover, conditions)| Branch {
+            generators: decode_cover(factors, cover),
+            conditions: union(parent_conditions, decode_cover(factors, conditions)),
+        })
+        .collect()
+}
+
+fn union(left: &[PolyExtLex], right: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
+    right
+        .into_iter()
+        .fold(left.to_vec(), |mut all, polynomial| {
+            if !all.contains(&polynomial) {
+                all.push(polynomial);
+            }
+            all
+        })
+}
+
+/// Each factor group less the factors assumed nonzero.
+fn without_conditions(groups: FactorGroups, conditions: &[PolyExtLex]) -> FactorGroups {
+    groups
+        .into_iter()
+        .map(|group| {
+            group
+                .into_iter()
+                .filter(|factor| !conditions.contains(&factor.clone().make_monic()))
+                .collect()
+        })
+        .collect()
+}
+
 fn factor_cover_candidates<O: RefineOps>(
     polynomials: Vec<PolyExtLex>,
+    conditions: &[PolyExtLex],
     ops: &mut O,
-) -> Result<Vec<Vec<PolyExtLex>>, O::Error> {
-    let groups = ops.factor(polynomials)?;
+) -> Result<Vec<Branch>, O::Error> {
+    let groups = without_conditions(ops.factor(polynomials)?, conditions);
     let (factors, index_groups) = build_factor_index(&groups);
     let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
         O::Error::from(format!(
@@ -86,10 +161,19 @@ fn factor_cover_candidates<O: RefineOps>(
             factors.len()
         ))
     })?;
-    Ok(ordered_cover_masks(&covers)
-        .into_iter()
-        .map(|cover| decode_cover(&factors, cover))
-        .collect())
+    Ok(branches_of_covers(
+        &factors,
+        &ordered_cover_masks(&covers),
+        conditions,
+    ))
+}
+
+/// Whether some condition lies in the ideal of `generators`, so that no
+/// point of the branch has all its conditions nonzero.
+fn violates_condition(generators: &[PolyExtLex], conditions: &[PolyExtLex]) -> bool {
+    conditions
+        .iter()
+        .any(|condition| condition.reduce(generators).is_zero())
 }
 
 /// A terminal hitting set and the refinement node whose child it is.
@@ -120,7 +204,7 @@ impl RefinementState {
 }
 
 fn refine_cover_with<O: RefineOps>(
-    candidate: Vec<PolyExtLex>,
+    branch: Branch,
     depth: usize,
     parent: usize,
     ancestors: &mut Vec<Vec<PolyExtLex>>,
@@ -130,17 +214,26 @@ fn refine_cover_with<O: RefineOps>(
     state.stats.passes += 1;
     state.stats.max_depth = state.stats.max_depth.max(depth);
 
-    let candidate = normalize_candidate(candidate);
+    let Branch {
+        generators,
+        conditions,
+    } = branch;
+    let candidate = normalize_candidate(generators);
     let reduced = ops.interreduce(candidate.clone())?;
-    let children = factor_cover_candidates(reduced.clone(), ops)?;
+    if violates_condition(&reduced, &conditions) {
+        state.stats.condition_kills += 1;
+        return Ok(());
+    }
+    let children = factor_cover_candidates(reduced.clone(), &conditions, ops)?;
 
     if children.is_empty() {
         return Ok(());
     }
 
     let reduced = normalize_candidate(reduced);
-    if children.len() == 1 && same_polynomial_set(&children[0], &reduced) {
-        state.push_unique(children.into_iter().next().expect("one child"), parent);
+    if children.len() == 1 && same_polynomial_set(&children[0].generators, &reduced) {
+        let child = children.into_iter().next().expect("one child");
+        state.push_unique(child.generators, parent);
         return Ok(());
     }
 
@@ -153,9 +246,9 @@ fn refine_cover_with<O: RefineOps>(
     for child in children {
         if ancestors
             .iter()
-            .any(|ancestor| same_polynomial_set(ancestor, &child))
+            .any(|ancestor| same_polynomial_set(ancestor, &child.generators))
         {
-            state.push_unique(child, node);
+            state.push_unique(child.generators, node);
         } else {
             refine_cover_with(child, depth + 1, node, ancestors, state, ops)?;
         }
@@ -261,15 +354,8 @@ pub fn refine_covers_with<O: RefineOps>(
     ops: &mut O,
 ) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), O::Error> {
     let mut state = RefinementState::default();
-    for &cover in covers {
-        refine_cover_with(
-            decode_cover(factors, cover),
-            1,
-            0,
-            &mut Vec::new(),
-            &mut state,
-            ops,
-        )?;
+    for branch in branches_of_covers(factors, covers, &[]) {
+        refine_cover_with(branch, 1, 0, &mut Vec::new(), &mut state, ops)?;
     }
     let RefinementState {
         mut terminal,
@@ -316,6 +402,33 @@ mod tests {
                     .collect()
             })
             .collect()
+    }
+
+    #[test]
+    fn sibling_conditions_take_single_extra_factors_of_earlier_covers() {
+        // {0}, {1, 2}, {0, 3}: {0} \ {1, 2} = {0} gives the second cover the
+        // condition 0; neither earlier cover exceeds {0, 3} by one factor.
+        assert_eq!(
+            sibling_conditions(&[0b0001, 0b0110, 0b1001]),
+            vec![0, 0b0001, 0]
+        );
+    }
+
+    #[test]
+    fn side_condition_drops_a_branch_whose_points_an_earlier_sibling_keeps() {
+        // x*(y - x) = x*(y + x) = 0 has the hitting sets {x} and
+        // {y - x, y + x}; the second assumes x ≠ 0 but interreduces to {x, y}.
+        let polynomials = systems(&["x*(y - x) == 0, x*(y + x) == 0"]).remove(0);
+        let x = systems(&["x == 0, y == 0"]).remove(0).remove(0);
+        let groups = try_factor_groups_from_polys(polynomials).expect("factor");
+        let (factors, index_groups) = build_factor_index(&groups);
+        let covers = minimal_covers(&index_groups, factors.len()).expect("covers");
+
+        let (terminal, stats) =
+            refine_covers(&factors, &ordered_cover_masks(&covers)).expect("refine");
+
+        assert_eq!(terminal, vec![vec![x]]);
+        assert_eq!(stats.condition_kills, 1);
     }
 
     #[test]

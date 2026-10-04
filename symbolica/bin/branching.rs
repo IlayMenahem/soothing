@@ -286,12 +286,13 @@ fn main() {
     let (covers, refinement) = refine_covers(&factors, &covers)
         .unwrap_or_else(|error| die(format!("hitting-set refinement error: {error}"), 1));
     println!(
-        "  recursive refinement produced {} terminal hitting set(s) in {} pass(es), {} subdivision(s), maximum depth {}, {} pruned as contained in another",
+        "  recursive refinement produced {} terminal hitting set(s) in {} pass(es), {} subdivision(s), maximum depth {}, {} pruned as contained in another, {} dropped by a side condition",
         covers.len(),
         refinement.passes,
         refinement.subdivisions,
         refinement.max_depth,
-        refinement.pruned
+        refinement.pruned,
+        refinement.condition_kills
     );
     let result = run_search(&options, &covers, nvars);
 
