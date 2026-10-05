@@ -74,6 +74,9 @@ pub enum GbBackend {
     Symbolica,
     SingularGb,
     SingularFacstd,
+    /// Singular's `primdecGTZ`; each primary component is reported by its
+    /// associated prime.
+    SingularPrimdecGtz,
     /// `SingularGb` after replacing each Rabinowitsch generator by an ideal
     /// saturation.
     SingularGbSat,
@@ -91,6 +94,7 @@ impl GbBackend {
             "symbolica" => Some(Self::Symbolica),
             "singular-gb" | "singular" => Some(Self::SingularGb),
             "singular-facstd" | "facstd" => Some(Self::SingularFacstd),
+            "singular-primdecGTZ" | "primdecGTZ" => Some(Self::SingularPrimdecGtz),
             "singular-gb-sat" | "singular-sat" => Some(Self::SingularGbSat),
             "singular-facstd-sat" | "facstd-sat" => Some(Self::SingularFacstdSat),
             _ => None,
@@ -105,6 +109,7 @@ impl GbBackend {
             Self::Symbolica => "symbolica",
             Self::SingularGb => "singular-gb",
             Self::SingularFacstd => "singular-facstd",
+            Self::SingularPrimdecGtz => "singular-primdecGTZ",
             Self::SingularGbSat => "singular-gb-sat",
             Self::SingularFacstdSat => "singular-facstd-sat",
         }
@@ -240,16 +245,35 @@ fn singular_program(cover: &[PolyExtLex], saturate: bool) -> String {
     )
 }
 
-fn singular_facstd_program(cover: &[PolyExtLex], saturate: bool) -> String {
+/// How a component-reporting Singular backend splits the cover's ideal.
+#[derive(Clone, Copy)]
+enum SingularSplitter {
+    /// Gräbe's factorizing Gröbner bases after `interred`.
+    Facstd,
+    /// Primary decomposition; a component is represented by its associated
+    /// prime, which has the same zero set.
+    PrimdecGtz,
+}
+
+fn singular_components_program(
+    cover: &[PolyExtLex],
+    saturate: bool,
+    splitter: SingularSplitter,
+) -> String {
     let ideal = singular_ideal(cover, saturate);
+    let (split, component) = match splitter {
+        SingularSplitter::Facstd => ("ideal FI=interred(I);\nlist F=facstd(FI);\n", "F[i]"),
+        SingularSplitter::PrimdecGtz => {
+            ("LIB \"primdec.lib\";\nlist F=primdecGTZ(I);\n", "F[i][2]")
+        }
+    };
     format!(
         "{ideal}\
-         ideal FI=interred(I);\n\
-         list F=facstd(FI);\n\
+         {split}\
          int i; ideal J; ideal G;\n\
          for(i=1;i<=size(F);i=i+1){{\n\
            print(\"SINGULAR_COMPONENT\");\n\
-           J=F[i]; G=std(J);\n\
+           J={component}; G=std(J);\n\
            print(\"SINGULAR_UNIT \"+string(reduce(1,G)==0));\n\
            int j;\n\
            for(j=1;j<=size(G);j=j+1){{print(\"SINGULAR_LEAD \"+string(leadexp(G[j])));}};\n\
@@ -403,14 +427,15 @@ fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration, saturate: 
         )
 }
 
-/// Like [`evaluate_cover_singular`], but splits the ideal with `facstd` and
+/// Like [`evaluate_cover_singular`], but splits the ideal with `splitter` and
 /// reports the leading-monomial ideal of every nonunit component.
-fn evaluate_cover_singular_facstd(
+fn evaluate_cover_singular_components(
     cover: Vec<PolyExtLex>,
     timeout: Duration,
     saturate: bool,
+    splitter: SingularSplitter,
 ) -> Outcome {
-    let program = singular_facstd_program(&cover, saturate);
+    let program = singular_components_program(&cover, saturate, splitter);
     let stdout = match completed_singular_stdout(&program, timeout) {
         Ok(stdout) => stdout,
         Err(outcome) => return outcome,
@@ -488,10 +513,30 @@ pub fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBack
     }
     match backend {
         GbBackend::SingularGb => return evaluate_cover_singular(cover, timeout, false),
-        GbBackend::SingularFacstd => return evaluate_cover_singular_facstd(cover, timeout, false),
+        GbBackend::SingularFacstd => {
+            return evaluate_cover_singular_components(
+                cover,
+                timeout,
+                false,
+                SingularSplitter::Facstd,
+            );
+        }
+        GbBackend::SingularPrimdecGtz => {
+            return evaluate_cover_singular_components(
+                cover,
+                timeout,
+                false,
+                SingularSplitter::PrimdecGtz,
+            );
+        }
         GbBackend::SingularGbSat => return evaluate_cover_singular(cover, timeout, true),
         GbBackend::SingularFacstdSat => {
-            return evaluate_cover_singular_facstd(cover, timeout, true);
+            return evaluate_cover_singular_components(
+                cover,
+                timeout,
+                true,
+                SingularSplitter::Facstd,
+            );
         }
         _ => {}
     }
@@ -513,6 +558,7 @@ pub(crate) fn evaluate_cover_in_process(cover: Vec<PolyExtLex>, backend: GbBacke
         }
         GbBackend::SingularGb
         | GbBackend::SingularFacstd
+        | GbBackend::SingularPrimdecGtz
         | GbBackend::SingularGbSat
         | GbBackend::SingularFacstdSat => {
             return Outcome::BackendError(
@@ -725,5 +771,35 @@ mod tests {
             }
             _ => panic!("Singular facstd should split the product ideal"),
         }
+    }
+
+    #[test]
+    fn singular_primdec_backend_reports_associated_primes() {
+        if Command::new("Singular").arg("--version").output().is_err() {
+            return;
+        }
+
+        match evaluate_cover(
+            vec![test_poly("x*y"), test_poly("x^2")],
+            Duration::from_secs(5),
+            GbBackend::SingularPrimdecGtz,
+        ) {
+            Outcome::ConsistentComponents(components) => {
+                let dimensions: Vec<Option<usize>> = components
+                    .iter()
+                    .map(|basis| solution_dimension(&basis.elements, 2))
+                    .collect();
+                assert_eq!(dimensions, vec![Some(1), Some(0)]);
+            }
+            _ => panic!("primdecGTZ should report the prime (x) and the embedded prime (x, y)"),
+        }
+        assert!(matches!(
+            evaluate_cover(
+                vec![test_poly("x"), test_poly("x-1")],
+                Duration::from_secs(5),
+                GbBackend::SingularPrimdecGtz,
+            ),
+            Outcome::Inconsistent
+        ));
     }
 }
