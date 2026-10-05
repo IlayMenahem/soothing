@@ -53,12 +53,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
             }
             "--gb" => {
                 let value = args.next().ok_or_else(|| {
-                    "--gb requires one of: m4gb, f5, gvw, symbolica, singular-gb, singular-facstd, singular-primdecGTZ"
+                    "--gb requires one of: m4gb, f5, gvw, symbolica, singular-gb, singular-facstd, singular-primdecGTZ, m2-decompose"
                         .to_string()
                 })?;
                 gb_backend = GbBackend::parse(&value).ok_or_else(|| {
                     format!(
-                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, singular-gb, singular-facstd, or singular-primdecGTZ"
+                        "invalid --gb {value:?}: expected m4gb, f5, gvw, symbolica, singular-gb, singular-facstd, singular-primdecGTZ, or m2-decompose"
                     )
                 })?;
             }

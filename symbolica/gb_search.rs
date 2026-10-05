@@ -83,6 +83,8 @@ pub enum GbBackend {
     /// `SingularFacstd` after replacing each Rabinowitsch generator by an
     /// ideal saturation.
     SingularFacstdSat,
+    /// Macaulay2's `decompose`; each minimal prime is reported as a component.
+    M2Decompose,
 }
 
 impl GbBackend {
@@ -97,6 +99,7 @@ impl GbBackend {
             "singular-primdecGTZ" | "primdecGTZ" => Some(Self::SingularPrimdecGtz),
             "singular-gb-sat" | "singular-sat" => Some(Self::SingularGbSat),
             "singular-facstd-sat" | "facstd-sat" => Some(Self::SingularFacstdSat),
+            "m2-decompose" => Some(Self::M2Decompose),
             _ => None,
         }
     }
@@ -112,6 +115,7 @@ impl GbBackend {
             Self::SingularPrimdecGtz => "singular-primdecGTZ",
             Self::SingularGbSat => "singular-gb-sat",
             Self::SingularFacstdSat => "singular-facstd-sat",
+            Self::M2Decompose => "m2-decompose",
         }
     }
 }
@@ -284,6 +288,64 @@ fn singular_components_program(
     )
 }
 
+/// The external computer-algebra system a child-process backend runs.
+#[derive(Clone, Copy)]
+enum ExternalTool {
+    Singular,
+    Macaulay2,
+}
+
+impl ExternalTool {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Singular => "Singular",
+            Self::Macaulay2 => "Macaulay2",
+        }
+    }
+
+    /// A command that reads its program from standard input. Macaulay2 echoes
+    /// each input line behind an `iN :` prompt, which never matches a marker line.
+    fn command(self) -> Command {
+        match self {
+            Self::Singular => {
+                let mut command = Command::new("Singular");
+                command.args(["-q", "--no-tty"]);
+                command
+            }
+            Self::Macaulay2 => {
+                let mut command = Command::new("M2");
+                command.args(["--no-readline", "--silent", "--stop", "-q"]);
+                command
+            }
+        }
+    }
+}
+
+/// The cover's minimal primes from Macaulay2's `decompose`, printed with the
+/// marker lines of [`singular_components_program`].
+fn m2_components_program(cover: &[PolyExtLex]) -> String {
+    let variables = (0..cover[0].nvars())
+        .map(|index| format!("x{index}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let generators = cover
+        .iter()
+        .map(singular_polynomial)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "R = QQ[{variables}, MonomialOrder => GRevLex];\n\
+         I = ideal({generators});\n\
+         C = decompose I;\n\
+         scan(C, P -> (print \"SINGULAR_COMPONENT\"; G = gens gb P; \
+         scan(flatten entries G, g -> print(\"SINGULAR_LEAD \" | \
+         demark(\",\", apply(first exponents leadMonomial g, toString)))); \
+         print \"SINGULAR_END_COMPONENT\"));\n\
+         print \"SINGULAR_DONE\";\n\
+         exit 0;\n"
+    )
+}
+
 enum SingularRun {
     Completed {
         status: ExitStatus,
@@ -293,20 +355,25 @@ enum SingularRun {
     Timeout,
 }
 
-fn run_singular(program: &str, timeout: Duration) -> Result<SingularRun, String> {
+fn run_singular(
+    tool: ExternalTool,
+    program: &str,
+    timeout: Duration,
+) -> Result<SingularRun, String> {
     let deadline = Instant::now() + timeout;
     let Some(_permit) = crate::solver_process::acquire_solver_process(deadline) else {
         return Ok(SingularRun::Timeout);
     };
-    let mut child = Command::new("Singular")
-        .args(["-q", "--no-tty"])
+    let name = tool.name();
+    let mut child = tool
+        .command()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("could not start Singular: {error}"))?;
-    let mut stdout = child.stdout.take().expect("piped Singular stdout");
-    let mut stderr = child.stderr.take().expect("piped Singular stderr");
+        .map_err(|error| format!("could not start {name}: {error}"))?;
+    let mut stdout = child.stdout.take().expect("piped solver stdout");
+    let mut stderr = child.stderr.take().expect("piped solver stderr");
     let stdout_reader = thread::spawn(move || {
         let mut text = String::new();
         let _ = stdout.read_to_string(&mut text);
@@ -325,7 +392,7 @@ fn run_singular(program: &str, timeout: Duration) -> Result<SingularRun, String>
         let stdout = stdout_reader.join().unwrap_or_default();
         let stderr = stderr_reader.join().unwrap_or_default();
         return Err(format!(
-            "could not send input to Singular: {error}; stdout={stdout:?}; stderr={stderr:?}"
+            "could not send input to {name}: {error}; stdout={stdout:?}; stderr={stderr:?}"
         ));
     }
 
@@ -344,7 +411,7 @@ fn run_singular(program: &str, timeout: Duration) -> Result<SingularRun, String>
                 let stdout = stdout_reader.join().unwrap_or_default();
                 let stderr = stderr_reader.join().unwrap_or_default();
                 return Err(format!(
-                    "failed while waiting for Singular: {error}; stdout={stdout:?}; stderr={stderr:?}"
+                    "failed while waiting for {name}: {error}; stdout={stdout:?}; stderr={stderr:?}"
                 ));
             }
         }
@@ -361,10 +428,14 @@ fn run_singular(program: &str, timeout: Duration) -> Result<SingularRun, String>
     })
 }
 
-/// Run a Singular program that ends by printing `SINGULAR_DONE` and return its
+/// Run a program that ends by printing `SINGULAR_DONE` and return its
 /// standard output, or the outcome that ends the evaluation early.
-fn completed_singular_stdout(program: &str, timeout: Duration) -> Result<String, Outcome> {
-    match run_singular(program, timeout) {
+fn completed_singular_stdout(
+    tool: ExternalTool,
+    program: &str,
+    timeout: Duration,
+) -> Result<String, Outcome> {
+    match run_singular(tool, program, timeout) {
         Ok(SingularRun::Completed { status, stdout, .. })
             if status.success() && stdout.lines().any(|line| line.trim() == "SINGULAR_DONE") =>
         {
@@ -375,7 +446,8 @@ fn completed_singular_stdout(program: &str, timeout: Duration) -> Result<String,
             stdout,
             stderr,
         }) => Err(Outcome::BackendError(format!(
-            "Singular exited with {status}; stdout={stdout:?}; stderr={stderr:?}"
+            "{} exited with {status}; stdout={stdout:?}; stderr={stderr:?}",
+            tool.name()
         ))),
         Ok(SingularRun::Timeout) => Err(Outcome::Timeout),
         Err(error) => Err(Outcome::BackendError(error)),
@@ -403,7 +475,8 @@ fn leading_monomial(template: &PolyExtGrevLex, encoded: &str) -> Result<PolyExtG
 /// so the compact `leadexp` output is reconstructed as monomials in the
 /// original ring.
 fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration, saturate: bool) -> Outcome {
-    let stdout = match completed_singular_stdout(&singular_program(&cover, saturate), timeout) {
+    let program = singular_program(&cover, saturate);
+    let stdout = match completed_singular_stdout(ExternalTool::Singular, &program, timeout) {
         Ok(stdout) => stdout,
         Err(outcome) => return outcome,
     };
@@ -427,16 +500,15 @@ fn evaluate_cover_singular(cover: Vec<PolyExtLex>, timeout: Duration, saturate: 
         )
 }
 
-/// Like [`evaluate_cover_singular`], but splits the ideal with `splitter` and
-/// reports the leading-monomial ideal of every nonunit component.
-fn evaluate_cover_singular_components(
+/// Like [`evaluate_cover_singular`], but runs a `program` of `tool` that splits
+/// the ideal and reports the leading-monomial ideal of every nonunit component.
+fn evaluate_cover_components(
     cover: Vec<PolyExtLex>,
     timeout: Duration,
-    saturate: bool,
-    splitter: SingularSplitter,
+    tool: ExternalTool,
+    program: &str,
 ) -> Outcome {
-    let program = singular_components_program(&cover, saturate, splitter);
-    let stdout = match completed_singular_stdout(&program, timeout) {
+    let stdout = match completed_singular_stdout(tool, program, timeout) {
         Ok(stdout) => stdout,
         Err(outcome) => return outcome,
     };
@@ -454,7 +526,8 @@ fn evaluate_cover_singular_components(
             "SINGULAR_END_COMPONENT" => {
                 let Some(elements) = current.take() else {
                     return Outcome::BackendError(
-                        "Singular facstd ended a component before starting it".to_string(),
+                        "the decomposition backend ended a component before starting it"
+                            .to_string(),
                     );
                 };
                 if !current_is_unit {
@@ -474,7 +547,8 @@ fn evaluate_cover_singular_components(
                 };
                 let Some(elements) = current.as_mut() else {
                     return Outcome::BackendError(
-                        "Singular facstd reported a basis outside a component".to_string(),
+                        "the decomposition backend reported a basis outside a component"
+                            .to_string(),
                     );
                 };
                 elements.push(monomial);
@@ -482,7 +556,9 @@ fn evaluate_cover_singular_components(
         }
     }
     if current.is_some() {
-        return Outcome::BackendError("Singular facstd left a component unfinished".to_string());
+        return Outcome::BackendError(
+            "the decomposition backend left a component unfinished".to_string(),
+        );
     }
     if components.is_empty() {
         Outcome::Inconsistent
@@ -511,32 +587,25 @@ pub fn evaluate_cover(cover: Vec<PolyExtLex>, timeout: Duration, backend: GbBack
     if is_unit_ideal(&cover) {
         return Outcome::Inconsistent;
     }
+    let singular_components = |cover: Vec<PolyExtLex>, saturate, splitter| {
+        let program = singular_components_program(&cover, saturate, splitter);
+        evaluate_cover_components(cover, timeout, ExternalTool::Singular, &program)
+    };
     match backend {
         GbBackend::SingularGb => return evaluate_cover_singular(cover, timeout, false),
         GbBackend::SingularFacstd => {
-            return evaluate_cover_singular_components(
-                cover,
-                timeout,
-                false,
-                SingularSplitter::Facstd,
-            );
+            return singular_components(cover, false, SingularSplitter::Facstd);
         }
         GbBackend::SingularPrimdecGtz => {
-            return evaluate_cover_singular_components(
-                cover,
-                timeout,
-                false,
-                SingularSplitter::PrimdecGtz,
-            );
+            return singular_components(cover, false, SingularSplitter::PrimdecGtz);
         }
         GbBackend::SingularGbSat => return evaluate_cover_singular(cover, timeout, true),
         GbBackend::SingularFacstdSat => {
-            return evaluate_cover_singular_components(
-                cover,
-                timeout,
-                true,
-                SingularSplitter::Facstd,
-            );
+            return singular_components(cover, true, SingularSplitter::Facstd);
+        }
+        GbBackend::M2Decompose => {
+            let program = m2_components_program(&cover);
+            return evaluate_cover_components(cover, timeout, ExternalTool::Macaulay2, &program);
         }
         _ => {}
     }
@@ -560,9 +629,11 @@ pub(crate) fn evaluate_cover_in_process(cover: Vec<PolyExtLex>, backend: GbBacke
         | GbBackend::SingularFacstd
         | GbBackend::SingularPrimdecGtz
         | GbBackend::SingularGbSat
-        | GbBackend::SingularFacstdSat => {
+        | GbBackend::SingularFacstdSat
+        | GbBackend::M2Decompose => {
             return Outcome::BackendError(
-                "Singular cannot run through the in-process worker entry point".to_string(),
+                "Singular and Macaulay2 cannot run through the in-process worker entry point"
+                    .to_string(),
             );
         }
     };
@@ -798,6 +869,37 @@ mod tests {
                 vec![test_poly("x"), test_poly("x-1")],
                 Duration::from_secs(5),
                 GbBackend::SingularPrimdecGtz,
+            ),
+            Outcome::Inconsistent
+        ));
+    }
+
+    #[test]
+    fn m2_decompose_backend_reports_minimal_primes() {
+        if Command::new("M2").arg("--version").output().is_err() {
+            return;
+        }
+
+        match evaluate_cover(
+            vec![test_poly("x*y"), test_poly("x^2-x")],
+            Duration::from_secs(30),
+            GbBackend::M2Decompose,
+        ) {
+            Outcome::ConsistentComponents(components) => {
+                let mut dimensions: Vec<Option<usize>> = components
+                    .iter()
+                    .map(|basis| solution_dimension(&basis.elements, 2))
+                    .collect();
+                dimensions.sort();
+                assert_eq!(dimensions, vec![Some(0), Some(1)]);
+            }
+            _ => panic!("decompose should report the primes (x) and (x-1, y)"),
+        }
+        assert!(matches!(
+            evaluate_cover(
+                vec![test_poly("x"), test_poly("x-1")],
+                Duration::from_secs(30),
+                GbBackend::M2Decompose,
             ),
             Outcome::Inconsistent
         ));
