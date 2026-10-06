@@ -62,3 +62,7 @@ open FactorBranching
 #print axioms FactorBranching.auxGen_not_reduced_by_auxGen
 #print axioms FactorBranching.mem_of_isHitting_auxGen
 #print axioms FactorBranching.contraction_nonzero_unsat
+-- Termination of interreduction
+#print axioms FactorBranching.wellFounded_interStep
+#print axioms FactorBranching.exists_isInterRun
+#print axioms FactorBranching.Interreducer.ofTermination

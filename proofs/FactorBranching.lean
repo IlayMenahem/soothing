@@ -2,6 +2,7 @@ import FactorBranching.Basic
 import FactorBranching.Monomial
 import FactorBranching.Factorization
 import FactorBranching.Interreduce
+import FactorBranching.InterreduceTermination
 import FactorBranching.Refine
 import FactorBranching.PrimeBranching
 import FactorBranching.IdealReduction

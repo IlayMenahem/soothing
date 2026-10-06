@@ -8,8 +8,7 @@ Algorithm `alg:interreduction` and Lemma `lem:lm-monotone` (Preliminaries).
 One loop iteration (`InterStep`) cancels a term `c u` of `p` using `q` with `LM(q) ∣ u`, replacing
 `p` by `r = p - (c u / LT(q)) q` (dropped if zero). A run (`IsInterRun`) iterates steps until none
 applies and then makes every element monic. An `Interreducer` is any procedure whose output is such
-a run; the paper's termination remark (multiset order) is what makes one exist and is not
-formalized here.
+a run; `InterreduceTermination.lean` proves the loop terminates and builds one.
 -/
 
 open MvPolynomial
