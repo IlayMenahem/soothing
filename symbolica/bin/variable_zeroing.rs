@@ -4,7 +4,7 @@
 //! Usage: `variable_zeroing [path] [--timeout MS]
 //! [--max-runtime MS] [--gb BACKEND]
 //! [--saturate-each-variable|--shared-product-saturation|--ideal-saturation]
-//! [--prune]
+//! [--prune] [--leaf-timeout MS] [--jobs N]
 //! [--split-value INTEGER|random] [--random-seed N] [--summary]
 //! [--plot OUT.tex]` (default path: `systems/system.txt`; default
 //! Gröbner backend: Singular).
@@ -30,6 +30,8 @@ use polynomial_cdcl::{
 struct CliOptions {
     path: PathBuf,
     timeout_ms: u64,
+    leaf_timeout_ms: Option<u64>,
+    jobs: usize,
     max_runtime_ms: Option<u64>,
     gb_backend: GbBackend,
     nonzero_encoding: NonzeroEncoding,
@@ -51,6 +53,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut path = None;
     let mut timeout_ms = 1_000;
     let mut max_runtime_ms = None;
+    let mut leaf_timeout_ms = None;
+    let mut jobs = 1;
     let mut gb_backend = GbBackend::SingularGb;
     let mut nonzero_encoding = NonzeroEncoding::Separate;
     let mut prune_by_solutions = false;
@@ -66,6 +70,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
             }
             "--max-runtime" => {
                 max_runtime_ms = Some(parse_usize(&mut args, "--max-runtime")? as u64);
+            }
+            "--leaf-timeout" => {
+                leaf_timeout_ms = Some(parse_usize(&mut args, "--leaf-timeout")? as u64);
+            }
+            "--jobs" => {
+                jobs = parse_usize(&mut args, "--jobs")?.max(1);
             }
             "--gb" => {
                 let value = args.next().ok_or_else(|| {
@@ -116,6 +126,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     Ok(CliOptions {
         path: path.unwrap_or_else(|| default_systems_dir_from_manifest().join("system.txt")),
         timeout_ms,
+        leaf_timeout_ms,
+        jobs,
         max_runtime_ms,
         gb_backend,
         nonzero_encoding,
@@ -160,8 +172,11 @@ fn main() {
         load_started.elapsed()
     );
     println!(
-        "Recursive branching: {}ms/cover, {} backend, nonzero encoding {}, pruning by solutions {}, split values {}, max runtime {}",
+        "Recursive branching: {}ms/cover, leaf timeout {}, {} job(s), {} backend, nonzero encoding {}, pruning by solutions {}, split values {}, max runtime {}",
         cli.timeout_ms,
+        cli.leaf_timeout_ms
+            .map_or_else(|| "per cover".to_string(), |value| format!("{value}ms")),
+        cli.jobs,
         cli.gb_backend.label(),
         cli.nonzero_encoding.label(),
         if cli.prune_by_solutions { "on" } else { "off" },
@@ -175,6 +190,8 @@ fn main() {
 
     let options = VariableZeroingOptions {
         timeout: Duration::from_millis(cli.timeout_ms),
+        leaf_timeout: cli.leaf_timeout_ms.map(Duration::from_millis),
+        jobs: cli.jobs,
         max_runtime: cli.max_runtime_ms.map(Duration::from_millis),
         gb_backend: cli.gb_backend,
         nonzero_encoding: cli.nonzero_encoding,
@@ -240,7 +257,7 @@ fn main() {
         }
     }
     println!(
-        "ZEROING_SUMMARY nodes={} covers={} evaluations={} components={} inconsistent={} timeouts={} splits={} factorization_timeouts={} factorization_errors={} unresolved={} complete={} largest_depth={} first_solution_secs={} elapsed_secs={:.6} saturations={} saturation_units={} saturation_fallbacks={} pruned_covers={} redundant_components={}",
+        "ZEROING_SUMMARY nodes={} covers={} evaluations={} components={} inconsistent={} timeouts={} splits={} factorization_timeouts={} factorization_errors={} unresolved={} complete={} largest_depth={} first_solution_secs={} elapsed_secs={:.6} saturations={} saturation_units={} saturation_fallbacks={} pruned_covers={} redundant_components={} leaf_evaluations={}",
         result.stats.nodes,
         result.stats.covers,
         result.stats.evaluations,
@@ -259,7 +276,8 @@ fn main() {
         result.stats.saturation_units,
         result.stats.saturation_fallbacks,
         result.stats.pruned_covers,
-        result.stats.redundant_components
+        result.stats.redundant_components,
+        result.stats.leaf_evaluations
     );
 }
 
@@ -665,6 +683,19 @@ mod tests {
 
         assert_eq!(options.nonzero_encoding, NonzeroEncoding::Saturation);
         assert!(options.prune_by_solutions);
+    }
+
+    #[test]
+    fn parse_args_reads_leaf_timeout_and_jobs() {
+        let options = parse_args(
+            ["--leaf-timeout", "600000", "--jobs", "8"]
+                .into_iter()
+                .map(String::from),
+        )
+        .expect("arguments");
+
+        assert_eq!(options.leaf_timeout_ms, Some(600_000));
+        assert_eq!(options.jobs, 8);
     }
 
     #[test]

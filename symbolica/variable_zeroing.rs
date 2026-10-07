@@ -19,10 +19,12 @@
 //! elements and the zero/nonzero decisions are exposed by the projected
 //! result.
 
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
+use rayon::prelude::*;
 use symbolica::domains::rational::{Q, Rational};
 use symbolica::poly::{
     GrevLexOrder, LexOrder, MonomialOrder, PolyVariable, polynomial::MultivariatePolynomial,
@@ -141,6 +143,13 @@ impl BranchConditions {
 pub struct VariableZeroingOptions {
     /// Per-cover Gröbner-basis and per-node factorization time budget.
     pub timeout: Duration,
+    /// Time budget of a leaf: a cover with no variable left to split on.
+    /// `None` gives leaves the per-cover `timeout`.
+    pub leaf_timeout: Option<Duration>,
+    /// Worker threads; the covers of a node and the two children of a split
+    /// are solved concurrently. Keep it at most the solver-process limit
+    /// (cores - 2), or covers wait for a process slot within their timeout.
+    pub jobs: usize,
     /// Optional wall-clock budget for the entire recursive search.
     pub max_runtime: Option<Duration>,
     /// Gröbner-basis implementation used to evaluate covers. Defaults to
@@ -164,6 +173,8 @@ impl Default for VariableZeroingOptions {
     fn default() -> Self {
         Self {
             timeout: Duration::from_millis(1_000),
+            leaf_timeout: None,
+            jobs: 1,
             max_runtime: None,
             gb_backend: GbBackend::SingularGb,
             nonzero_encoding: NonzeroEncoding::Separate,
@@ -326,6 +337,8 @@ pub struct VariableZeroingStats {
     pub pruned_covers: usize,
     /// Solved components dropped because another contains them.
     pub redundant_components: usize,
+    /// Covers evaluated with the leaf timeout.
+    pub leaf_evaluations: usize,
 }
 
 /// Outcome recorded for one hitting-set check in the recursion tree.
@@ -397,21 +410,87 @@ impl VariableZeroingResult {
 
 type Evaluator<'a> = dyn Fn(Vec<PolyExtLex>, Duration, GbBackend) -> Outcome + Send + Sync + 'a;
 
-struct Solver<'a> {
-    options: &'a VariableZeroingOptions,
-    evaluator: &'a Evaluator<'a>,
-    started: Instant,
+/// What the search accumulates, shared by the worker threads.
+#[derive(Default)]
+struct SearchState {
     components: Vec<ProjectedComponent>,
     unresolved: Vec<UnresolvedBranch>,
     nodes: Vec<VariableZeroingNodeResult>,
     stats: VariableZeroingStats,
     first_solution: Option<Duration>,
-    random: StdRng,
 }
 
-impl Solver<'_> {
-    fn next_split_value(&mut self) -> i64 {
-        next_split_value(self.options.split_value_strategy, &mut self.random)
+/// What the cover checks of one recursion node share.
+struct NodeContext<'n> {
+    node_id: usize,
+    node_nvars: usize,
+    variables: &'n [ZeroingVariable],
+    decisions: &'n [SplitDecision],
+    conditions: &'n BranchConditions,
+    /// Whether the node's unique cover may be split without a solver call.
+    contract: bool,
+}
+
+/// One cover check and the counters it adds to its node.
+struct CoverCheck {
+    result: VariableZeroingCoverResult,
+    evaluations: usize,
+    timeouts: usize,
+    splits: usize,
+}
+
+impl CoverCheck {
+    fn evaluated(
+        cover_index: usize,
+        outcome: VariableZeroingCoverOutcome,
+        elapsed: Duration,
+    ) -> Self {
+        Self {
+            result: VariableZeroingCoverResult {
+                cover_index,
+                outcome,
+                elapsed,
+                split_variable: None,
+                zero_child: None,
+                nonzero_child: None,
+            },
+            evaluations: 1,
+            timeouts: usize::from(outcome == VariableZeroingCoverOutcome::Timeout),
+            splits: 0,
+        }
+    }
+}
+
+struct Solver<'a> {
+    options: &'a VariableZeroingOptions,
+    evaluator: &'a Evaluator<'a>,
+    started: Instant,
+    state: Mutex<SearchState>,
+    random: Mutex<StdRng>,
+}
+
+impl<'a> Solver<'a> {
+    fn new(options: &'a VariableZeroingOptions, evaluator: &'a Evaluator<'a>) -> Self {
+        Self {
+            options,
+            evaluator,
+            started: Instant::now(),
+            state: Mutex::default(),
+            random: Mutex::new(StdRng::seed_from_u64(options.random_seed)),
+        }
+    }
+
+    /// The shared state. It is never held across a solver call or a recursive
+    /// search, so worker threads only wait for bookkeeping.
+    fn state(&self) -> MutexGuard<'_, SearchState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn next_split_value(&self) -> i64 {
+        next_split_value(
+            self.options.split_value_strategy,
+            &mut self.random.lock().unwrap_or_else(PoisonError::into_inner),
+        )
     }
 
     fn runtime_exhausted(&self) -> bool {
@@ -420,24 +499,25 @@ impl Solver<'_> {
             .is_some_and(|limit| self.started.elapsed() >= limit)
     }
 
+    /// `limit`, cut to what remains of the global budget.
+    fn within_budget(&self, limit: Duration) -> Duration {
+        self.options.max_runtime.map_or(limit, |budget| {
+            limit.min(budget.saturating_sub(self.started.elapsed()))
+        })
+    }
+
     fn evaluation_timeout(&self) -> Duration {
-        self.options
-            .max_runtime
-            .map_or(self.options.timeout, |limit| {
-                self.options
-                    .timeout
-                    .min(limit.saturating_sub(self.started.elapsed()))
-            })
+        self.within_budget(self.options.timeout)
     }
 
     fn retain_unresolved(
-        &mut self,
+        &self,
         polynomials: Vec<PolyExtLex>,
         variables: &[ZeroingVariable],
         decisions: &[SplitDecision],
         reason: UnresolvedReason,
     ) {
-        self.unresolved.push(UnresolvedBranch {
+        self.state().unresolved.push(UnresolvedBranch {
             decisions: decisions.to_vec(),
             polynomials,
             remaining_variables: variables.to_vec(),
@@ -446,7 +526,7 @@ impl Solver<'_> {
     }
 
     fn solve_node(
-        &mut self,
+        &self,
         polynomials: Vec<PolyExtLex>,
         variables: Vec<ZeroingVariable>,
         decisions: Vec<SplitDecision>,
@@ -479,8 +559,40 @@ impl Solver<'_> {
         }
     }
 
+    /// Record a node whose factorization failed and retain its branch.
+    fn preprocessing_failed(
+        &self,
+        mut node_result: VariableZeroingNodeResult,
+        polynomials: Vec<PolyExtLex>,
+        variables: &[ZeroingVariable],
+        failure: PreprocessingFailure,
+        detail: &str,
+    ) -> usize {
+        let node_id = node_result.node_id;
+        let reason = match failure {
+            PreprocessingFailure::Timeout => UnresolvedReason::FactorizationTimeout,
+            PreprocessingFailure::Error => UnresolvedReason::FactorizationError,
+        };
+        self.retain_unresolved(polynomials, variables, &node_result.decisions, reason);
+        node_result.preprocessing_failure = Some(failure);
+        if self.options.verbose {
+            println!(
+                "node #{node_id} depth {}: factorization {detail} ({:?})",
+                node_result.decisions.len(),
+                node_result.elapsed
+            );
+        }
+        let mut state = self.state();
+        match failure {
+            PreprocessingFailure::Timeout => state.stats.factorization_timeouts += 1,
+            PreprocessingFailure::Error => state.stats.factorization_errors += 1,
+        }
+        state.nodes.push(node_result);
+        node_id
+    }
+
     fn solve_node_with_contraction(
-        &mut self,
+        &self,
         polynomials: Vec<PolyExtLex>,
         variables: Vec<ZeroingVariable>,
         decisions: Vec<SplitDecision>,
@@ -488,7 +600,10 @@ impl Solver<'_> {
         contract_unique_cover: bool,
     ) -> Result<Option<usize>, String> {
         let depth = decisions.len();
-        self.stats.largest_depth = self.stats.largest_depth.max(depth);
+        {
+            let mut state = self.state();
+            state.stats.largest_depth = state.stats.largest_depth.max(depth);
+        }
         if self.runtime_exhausted() {
             self.retain_unresolved(
                 polynomials,
@@ -499,10 +614,12 @@ impl Solver<'_> {
             return Ok(None);
         }
 
-        let node_id = self.stats.nodes;
-        self.stats.nodes += 1;
+        let node_id = {
+            let mut state = self.state();
+            state.stats.nodes += 1;
+            state.stats.nodes - 1
+        };
         let node_started = Instant::now();
-        let mut child_elapsed = Duration::ZERO;
         let mut node_result = VariableZeroingNodeResult {
             node_id,
             decisions: decisions.clone(),
@@ -528,47 +645,28 @@ impl Solver<'_> {
             Ok(preprocessed) => preprocessed,
             Err(HittingSetFailure::Fatal(error)) => return Err(format!("node {node_id}: {error}")),
             Err(HittingSetFailure::Timeout) => {
-                self.stats.factorization_timeouts += 1;
-                node_result.preprocessing_failure = Some(PreprocessingFailure::Timeout);
-                self.retain_unresolved(
+                node_result.elapsed = node_started.elapsed();
+                return Ok(Some(self.preprocessing_failed(
+                    node_result,
                     polynomials,
                     &variables,
-                    &decisions,
-                    UnresolvedReason::FactorizationTimeout,
-                );
-                node_result.elapsed = node_started.elapsed();
-                if self.options.verbose {
-                    println!(
-                        "node #{node_id} depth {depth}: factorization timed out ({:?})",
-                        node_result.elapsed
-                    );
-                }
-                self.nodes.push(node_result);
-                return Ok(Some(node_id));
+                    PreprocessingFailure::Timeout,
+                    "timed out",
+                )));
             }
             Err(HittingSetFailure::Factorization(error)) => {
-                self.stats.factorization_errors += 1;
-                node_result.preprocessing_failure = Some(PreprocessingFailure::Error);
-                self.retain_unresolved(
+                node_result.elapsed = node_started.elapsed();
+                return Ok(Some(self.preprocessing_failed(
+                    node_result,
                     polynomials,
                     &variables,
-                    &decisions,
-                    UnresolvedReason::FactorizationError,
-                );
-                node_result.elapsed = node_started.elapsed();
-                if self.options.verbose {
-                    println!(
-                        "node #{node_id} depth {depth}: factorization failed ({:?}): {error}",
-                        node_result.elapsed
-                    );
-                }
-                self.nodes.push(node_result);
-                return Ok(Some(node_id));
+                    PreprocessingFailure::Error,
+                    &format!("failed: {error}"),
+                )));
             }
         };
-        self.stats.covers += covers.len();
         node_result.covers = covers.len();
-
+        self.state().stats.covers += covers.len();
         if self.options.verbose {
             println!(
                 "node #{node_id} depth {depth}: {groups} factor group(s), {} cover(s), {} variable(s) left",
@@ -577,242 +675,217 @@ impl Solver<'_> {
             );
         }
 
-        for (cover_index, hitting_set) in covers.iter().enumerate() {
-            let cover_started = Instant::now();
-            let candidate = hitting_set.clone();
-            if self.runtime_exhausted() {
-                self.retain_unresolved(
-                    candidate,
-                    &variables,
-                    &decisions,
-                    UnresolvedReason::RuntimeBudget,
-                );
-                for pending in &covers[cover_index + 1..] {
-                    self.retain_unresolved(
-                        pending.clone(),
-                        &variables,
-                        &decisions,
-                        UnresolvedReason::RuntimeBudget,
-                    );
-                }
-                break;
-            }
-            if self.options.prune_by_solutions
-                && self
-                    .components
-                    .iter()
-                    .any(|component| component.covers_branch(&candidate, &conditions))
-            {
-                self.stats.pruned_covers += 1;
-                if self.options.verbose {
-                    println!("  cover #{cover_index}: pruned, inside a solved component");
-                }
-                node_result.checks.push(VariableZeroingCoverResult {
-                    cover_index,
-                    outcome: VariableZeroingCoverOutcome::Pruned,
-                    elapsed: cover_started.elapsed(),
-                    split_variable: None,
-                    zero_child: None,
-                    nonzero_child: None,
-                });
-                continue;
-            }
+        let preprocessing = node_started.elapsed();
+        let context = NodeContext {
+            node_id,
+            node_nvars,
+            variables: &variables,
+            decisions: &decisions,
+            conditions: &conditions,
             // The caller has already established that this is the unique
-            // cover on one side of an equality/inequality split and that the sibling
-            // has no cover. Hence this cover represents the entire parent
-            // branch, and another zeroing split is sound without first asking
-            // the Gröbner solver to rediscover that the branch is difficult.
-            if contract_unique_cover
-                && covers.len() == 1
-                && let Some(selected_index) = choose_variable(&candidate, &variables)
-            {
-                let selected = variables[selected_index].clone();
-                if self.options.verbose {
-                    println!(
-                        "  cover #{cover_index}: branch-contracted; splitting {}",
-                        selected.name
-                    );
-                }
-                let (zero_child, nonzero_child, recursive_elapsed) = self.split_and_solve(
-                    candidate,
-                    &variables,
-                    &decisions,
-                    &conditions,
-                    selected_index,
-                )?;
-                self.stats.zeroing_splits += 1;
-                node_result.zeroing_splits += 1;
-                child_elapsed += recursive_elapsed;
-                node_result.checks.push(VariableZeroingCoverResult {
+            // cover on one side of an equality/inequality split and that the
+            // sibling has no cover. Hence this cover represents the entire
+            // parent branch, and another zeroing split is sound without first
+            // asking the Gröbner solver to rediscover that the branch is
+            // difficult.
+            contract: contract_unique_cover && covers.len() == 1,
+        };
+        let checks = covers
+            .into_par_iter()
+            .enumerate()
+            .map(|(cover_index, candidate)| self.check_cover(&context, cover_index, candidate))
+            .collect::<Result<Vec<Option<CoverCheck>>, String>>()?;
+        for check in checks.into_iter().flatten() {
+            node_result.evaluations += check.evaluations;
+            node_result.timeouts += check.timeouts;
+            node_result.zeroing_splits += check.splits;
+            match check.result.outcome {
+                VariableZeroingCoverOutcome::Consistent => node_result.consistent += 1,
+                VariableZeroingCoverOutcome::Inconsistent => node_result.inconsistent += 1,
+                _ => {}
+            }
+            node_result.elapsed += check.result.elapsed;
+            node_result.checks.push(check.result);
+        }
+        node_result.elapsed += preprocessing;
+        let mut state = self.state();
+        state.stats.evaluations += node_result.evaluations;
+        state.stats.timeouts += node_result.timeouts;
+        state.stats.zeroing_splits += node_result.zeroing_splits;
+        state.stats.consistent += node_result.consistent;
+        state.stats.inconsistent += node_result.inconsistent;
+        state.nodes.push(node_result);
+        Ok(Some(node_id))
+    }
+
+    /// Check one cover of a node: prune it, contract it, or evaluate it and
+    /// split it on a timeout. A cover with no variable left to split on is a
+    /// leaf and receives the leaf timeout. Returns `None` when the global
+    /// budget ran out before the check started.
+    fn check_cover(
+        &self,
+        node: &NodeContext<'_>,
+        cover_index: usize,
+        candidate: Vec<PolyExtLex>,
+    ) -> Result<Option<CoverCheck>, String> {
+        let cover_started = Instant::now();
+        if self.runtime_exhausted() {
+            self.retain_unresolved(
+                candidate,
+                node.variables,
+                node.decisions,
+                UnresolvedReason::RuntimeBudget,
+            );
+            return Ok(None);
+        }
+        if self.options.prune_by_solutions
+            && self
+                .state()
+                .components
+                .iter()
+                .any(|component| component.covers_branch(&candidate, node.conditions))
+        {
+            self.state().stats.pruned_covers += 1;
+            if self.options.verbose {
+                println!("  cover #{cover_index}: pruned, inside a solved component");
+            }
+            let mut check = CoverCheck::evaluated(
+                cover_index,
+                VariableZeroingCoverOutcome::Pruned,
+                cover_started.elapsed(),
+            );
+            check.evaluations = 0;
+            return Ok(Some(check));
+        }
+        let split_variable = choose_variable(&candidate, node.variables);
+        if node.contract
+            && let Some(selected_index) = split_variable
+        {
+            let selected = node.variables[selected_index].name.clone();
+            if self.options.verbose {
+                println!("  cover #{cover_index}: branch-contracted; splitting {selected}");
+            }
+            let (zero_child, nonzero_child, recursive_elapsed) = self.split_and_solve(
+                candidate,
+                node.variables,
+                node.decisions,
+                node.conditions,
+                selected_index,
+            )?;
+            return Ok(Some(CoverCheck {
+                result: VariableZeroingCoverResult {
                     cover_index,
                     outcome: VariableZeroingCoverOutcome::Contracted,
                     elapsed: cover_started.elapsed().saturating_sub(recursive_elapsed),
-                    split_variable: Some(selected.name),
+                    split_variable: Some(selected),
                     zero_child,
                     nonzero_child,
-                });
-                continue;
-            }
+                },
+                evaluations: 0,
+                timeouts: 0,
+                splits: 1,
+            }));
+        }
 
-            self.stats.evaluations += 1;
-            node_result.evaluations += 1;
-            let outcome = (self.evaluator)(
-                candidate.clone(),
-                self.evaluation_timeout(),
-                self.options.gb_backend,
-            );
-            let cover_elapsed = cover_started.elapsed();
-            match outcome {
-                Outcome::Consistent(basis) => {
-                    self.record_consistent_components(
-                        vec![basis],
-                        node_id,
-                        node_nvars,
-                        &decisions,
-                        &conditions,
-                        cover_index,
-                        cover_elapsed,
-                        &mut node_result,
+        let limit = match (split_variable, self.options.leaf_timeout) {
+            (None, Some(leaf_timeout)) => {
+                self.state().stats.leaf_evaluations += 1;
+                leaf_timeout
+            }
+            _ => self.options.timeout,
+        };
+        let outcome = (self.evaluator)(
+            candidate.clone(),
+            self.within_budget(limit),
+            self.options.gb_backend,
+        );
+        let cover_elapsed = cover_started.elapsed();
+        let evaluated = |outcome| {
+            Ok(Some(CoverCheck::evaluated(
+                cover_index,
+                outcome,
+                cover_elapsed,
+            )))
+        };
+        match outcome {
+            Outcome::Consistent(basis) => {
+                self.record_consistent_components(vec![basis], node, cover_index, cover_elapsed);
+                evaluated(VariableZeroingCoverOutcome::Consistent)
+            }
+            Outcome::ConsistentComponents(bases) => {
+                self.record_consistent_components(bases, node, cover_index, cover_elapsed);
+                evaluated(VariableZeroingCoverOutcome::Consistent)
+            }
+            Outcome::Inconsistent => {
+                if self.options.verbose {
+                    println!("  cover #{cover_index}: inconsistent ({cover_elapsed:?})");
+                }
+                evaluated(VariableZeroingCoverOutcome::Inconsistent)
+            }
+            Outcome::Timeout => {
+                if self.options.verbose {
+                    println!(
+                        "  cover #{cover_index}: timed-out hitting set ({} generators) under {}",
+                        candidate.len(),
+                        format_decision_path(node.decisions)
                     );
-                }
-                Outcome::ConsistentComponents(bases) => {
-                    self.record_consistent_components(
-                        bases,
-                        node_id,
-                        node_nvars,
-                        &decisions,
-                        &conditions,
-                        cover_index,
-                        cover_elapsed,
-                        &mut node_result,
-                    );
-                }
-                Outcome::Inconsistent => {
-                    self.stats.inconsistent += 1;
-                    node_result.inconsistent += 1;
-                    if self.options.verbose {
-                        println!("  cover #{cover_index}: inconsistent ({:?})", cover_elapsed);
+                    for (index, polynomial) in candidate.iter().enumerate() {
+                        println!("    t{index} = {polynomial}");
                     }
-                    node_result.checks.push(VariableZeroingCoverResult {
-                        cover_index,
-                        outcome: VariableZeroingCoverOutcome::Inconsistent,
-                        elapsed: cover_elapsed,
-                        split_variable: None,
-                        zero_child: None,
-                        nonzero_child: None,
-                    });
                 }
-                Outcome::Timeout => {
-                    self.stats.timeouts += 1;
-                    node_result.timeouts += 1;
-                    if self.options.verbose {
-                        println!(
-                            "  cover #{cover_index}: timed-out hitting set ({} generators) under {}",
-                            candidate.len(),
-                            format_decision_path(&decisions)
-                        );
-                        for (index, polynomial) in candidate.iter().enumerate() {
-                            println!("    t{index} = {polynomial}");
-                        }
-                    }
-                    if self.runtime_exhausted() {
-                        self.retain_unresolved(
-                            candidate,
-                            &variables,
-                            &decisions,
-                            UnresolvedReason::RuntimeBudget,
-                        );
-                        for pending in &covers[cover_index + 1..] {
-                            self.retain_unresolved(
-                                pending.clone(),
-                                &variables,
-                                &decisions,
-                                UnresolvedReason::RuntimeBudget,
-                            );
-                        }
-                        node_result.checks.push(VariableZeroingCoverResult {
-                            cover_index,
-                            outcome: VariableZeroingCoverOutcome::Timeout,
-                            elapsed: cover_elapsed,
-                            split_variable: None,
-                            zero_child: None,
-                            nonzero_child: None,
-                        });
-                        break;
-                    }
-                    let Some(selected_index) = choose_variable(&candidate, &variables) else {
-                        let reason = if variables.is_empty() {
+                let selected_index = match (split_variable, self.runtime_exhausted()) {
+                    (Some(selected_index), false) => selected_index,
+                    (_, exhausted) => {
+                        let reason = if exhausted {
+                            UnresolvedReason::RuntimeBudget
+                        } else if node.variables.is_empty() {
                             UnresolvedReason::TimeoutAfterVariablesExhausted
                         } else {
                             UnresolvedReason::NoUsefulVariable
                         };
-                        self.retain_unresolved(candidate, &variables, &decisions, reason);
-                        node_result.checks.push(VariableZeroingCoverResult {
-                            cover_index,
-                            outcome: VariableZeroingCoverOutcome::Timeout,
-                            elapsed: cover_elapsed,
-                            split_variable: None,
-                            zero_child: None,
-                            nonzero_child: None,
-                        });
-                        continue;
-                    };
-
-                    let selected = variables[selected_index].clone();
-                    if self.options.verbose {
-                        println!(
-                            "  cover #{cover_index}: timed out ({:?}); splitting {}",
-                            cover_elapsed, selected.name
-                        );
+                        self.retain_unresolved(candidate, node.variables, node.decisions, reason);
+                        return evaluated(VariableZeroingCoverOutcome::Timeout);
                     }
-                    let (zero_child, nonzero_child, recursive_elapsed) = self.split_and_solve(
-                        candidate,
-                        &variables,
-                        &decisions,
-                        &conditions,
-                        selected_index,
-                    )?;
-                    self.stats.zeroing_splits += 1;
-                    node_result.zeroing_splits += 1;
-                    child_elapsed += recursive_elapsed;
-                    node_result.checks.push(VariableZeroingCoverResult {
-                        cover_index,
-                        outcome: VariableZeroingCoverOutcome::Timeout,
-                        elapsed: cover_elapsed,
-                        split_variable: Some(selected.name.clone()),
-                        zero_child,
-                        nonzero_child,
-                    });
+                };
+                let selected = node.variables[selected_index].name.clone();
+                if self.options.verbose {
+                    println!(
+                        "  cover #{cover_index}: timed out ({cover_elapsed:?}); splitting {selected}"
+                    );
                 }
-                Outcome::BackendError(error) => {
-                    return Err(format!(
-                        "node {node_id}, cover {cover_index}, {} backend: {error}",
-                        self.options.gb_backend.label()
-                    ));
-                }
+                let (zero_child, nonzero_child, _) = self.split_and_solve(
+                    candidate,
+                    node.variables,
+                    node.decisions,
+                    node.conditions,
+                    selected_index,
+                )?;
+                let mut check = CoverCheck::evaluated(
+                    cover_index,
+                    VariableZeroingCoverOutcome::Timeout,
+                    cover_elapsed,
+                );
+                check.result.split_variable = Some(selected);
+                check.result.zero_child = zero_child;
+                check.result.nonzero_child = nonzero_child;
+                check.splits = 1;
+                Ok(Some(check))
             }
+            Outcome::BackendError(error) => Err(format!(
+                "node {}, cover {cover_index}, {} backend: {error}",
+                node.node_id,
+                self.options.gb_backend.label()
+            )),
         }
-        node_result.elapsed = node_started.elapsed().saturating_sub(child_elapsed);
-        self.nodes.push(node_result);
-        Ok(Some(node_id))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn record_consistent_components(
-        &mut self,
+        &self,
         bases: Vec<ComputedBasis>,
-        node_id: usize,
-        node_nvars: usize,
-        decisions: &[SplitDecision],
-        conditions: &BranchConditions,
+        node: &NodeContext<'_>,
         cover_index: usize,
         elapsed: Duration,
-        node_result: &mut VariableZeroingNodeResult,
     ) {
-        self.stats.consistent += 1;
-        node_result.consistent += 1;
-        self.first_solution
-            .get_or_insert_with(|| self.started.elapsed());
         if self.options.verbose {
             let basis_elements = bases
                 .iter()
@@ -824,28 +897,25 @@ impl Solver<'_> {
                 elapsed
             );
         }
-        node_result.checks.push(VariableZeroingCoverResult {
-            cover_index,
-            outcome: VariableZeroingCoverOutcome::Consistent,
-            elapsed,
-            split_variable: None,
-            zero_child: None,
-            nonzero_child: None,
+        let components = bases.into_iter().map(|basis| ProjectedComponent {
+            node_id: node.node_id,
+            decisions: node.decisions.to_vec(),
+            dimension: solution_dimension(&basis.elements, node.node_nvars),
+            basis,
+            conditions: node.conditions.clone(),
         });
-        self.components.extend(bases.into_iter().map(|basis| {
-            let dimension = solution_dimension(&basis.elements, node_nvars);
-            ProjectedComponent {
-                node_id,
-                decisions: decisions.to_vec(),
-                dimension,
-                basis,
-                conditions: conditions.clone(),
-            }
-        }));
+        let mut state = self.state();
+        state
+            .first_solution
+            .get_or_insert_with(|| self.started.elapsed());
+        state.components.extend(components);
     }
 
+    /// Split `candidate` on the selected variable and solve both children,
+    /// concurrently. Returns the children's node ids and the wall time spent
+    /// on them.
     fn split_and_solve(
-        &mut self,
+        &self,
         candidate: Vec<PolyExtLex>,
         variables: &[ZeroingVariable],
         decisions: &[SplitDecision],
@@ -903,42 +973,49 @@ impl Solver<'_> {
             },
         );
 
-        let mut equal_decisions = decisions.to_vec();
-        equal_decisions.push(SplitDecision {
-            variable: selected.name.clone(),
-            value: split_value,
-            is_equal: true,
-        });
+        let child_decisions = |is_equal| {
+            [
+                decisions,
+                &[SplitDecision {
+                    variable: selected.name.clone(),
+                    value: split_value,
+                    is_equal,
+                }],
+            ]
+            .concat()
+        };
+        let equal_decisions = child_decisions(true);
+        let unequal_decisions = child_decisions(false);
+        let equal_remaining = remaining.clone();
         let children_started = Instant::now();
-        let equal_child = self.solve_node_with_contraction(
-            equal_branch,
-            remaining.clone(),
-            equal_decisions,
-            equal_conditions,
-            contract_equal,
-        )?;
-
-        let mut unequal_decisions = decisions.to_vec();
-        unequal_decisions.push(SplitDecision {
-            variable: selected.name,
-            value: split_value,
-            is_equal: false,
-        });
-        let unequal_child = self.solve_node_with_contraction(
-            unequal_branch,
-            remaining,
-            unequal_decisions,
-            unequal_conditions,
-            contract_unequal,
-        )?;
-        Ok((equal_child, unequal_child, children_started.elapsed()))
+        let (equal_child, unequal_child) = rayon::join(
+            move || {
+                self.solve_node_with_contraction(
+                    equal_branch,
+                    equal_remaining,
+                    equal_decisions,
+                    equal_conditions,
+                    contract_equal,
+                )
+            },
+            move || {
+                self.solve_node_with_contraction(
+                    unequal_branch,
+                    remaining,
+                    unequal_decisions,
+                    unequal_conditions,
+                    contract_unequal,
+                )
+            },
+        );
+        Ok((equal_child?, unequal_child?, children_started.elapsed()))
     }
 
     /// The saturation of the Rabinowitsch-free generators of `candidate` by
     /// the product of the `x - a` in `unequal`, or `None` when it did not
     /// finish within the per-cover timeout. The unit ideal is returned as `{1}`.
     fn saturated_branch(
-        &mut self,
+        &self,
         candidate: &[PolyExtLex],
         unequal: &[(PolyVariable, i64)],
     ) -> Option<Vec<PolyExtLex>> {
@@ -953,7 +1030,7 @@ impl Solver<'_> {
             .map(|(variable, value)| difference(&template, variable, *value))
             .collect::<Result<Vec<_>, _>>()
             .ok()?;
-        self.stats.saturations += 1;
+        self.state().stats.saturations += 1;
         let started = Instant::now();
         let (branch, description) = match saturate(&ordinary, &divisors, self.evaluation_timeout())
         {
@@ -962,15 +1039,15 @@ impl Solver<'_> {
                 (Some(basis), description)
             }
             Saturation::Unit => {
-                self.stats.saturation_units += 1;
+                self.state().stats.saturation_units += 1;
                 (Some(vec![template.one()]), "the unit ideal".to_string())
             }
             Saturation::Timeout => {
-                self.stats.saturation_fallbacks += 1;
+                self.state().stats.saturation_fallbacks += 1;
                 (None, "timed out; using Rabinowitsch equations".to_string())
             }
             Saturation::Error(error) => {
-                self.stats.saturation_fallbacks += 1;
+                self.state().stats.saturation_fallbacks += 1;
                 (
                     None,
                     format!("failed ({error}); using Rabinowitsch equations"),
@@ -1036,36 +1113,38 @@ fn solve_by_zeroing_with(
     options: &VariableZeroingOptions,
     evaluator: &Evaluator<'_>,
 ) -> Result<VariableZeroingResult, String> {
-    let started = Instant::now();
-    let mut solver = Solver {
-        options,
-        evaluator,
-        started,
-        components: Vec::new(),
-        unresolved: Vec::new(),
-        nodes: Vec::new(),
-        stats: VariableZeroingStats::default(),
-        first_solution: None,
-        random: StdRng::seed_from_u64(options.random_seed),
-    };
-    solver.solve_node(polynomials, variables, Vec::new())?;
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(options.jobs.max(1))
+        .build()
+        .map_err(|error| format!("cannot start {} worker thread(s): {error}", options.jobs))?;
+    let solver = Solver::new(options, evaluator);
+    pool.install(|| solver.solve_node(polynomials, variables, Vec::new()))?;
+    let elapsed = solver.started.elapsed();
+    let SearchState {
+        components,
+        unresolved,
+        mut nodes,
+        mut stats,
+        first_solution,
+    } = solver
+        .state
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner);
     let components = if options.prune_by_solutions {
-        let (kept, dropped) = drop_redundant_components(solver.components);
-        solver.stats.redundant_components = dropped;
+        let (kept, dropped) = drop_redundant_components(components);
+        stats.redundant_components = dropped;
         kept
     } else {
-        solver.components
+        components
     };
+    nodes.sort_unstable_by_key(|node| node.node_id);
     Ok(VariableZeroingResult {
         components,
-        unresolved: solver.unresolved,
-        nodes: {
-            solver.nodes.sort_unstable_by_key(|node| node.node_id);
-            solver.nodes
-        },
-        stats: solver.stats,
-        first_solution: solver.first_solution,
-        elapsed: started.elapsed(),
+        unresolved,
+        nodes,
+        stats,
+        first_solution,
+        elapsed,
     })
 }
 
@@ -1561,6 +1640,72 @@ mod tests {
     }
 
     #[test]
+    fn parallel_search_builds_the_same_tree() {
+        let (loaded, polynomials) = load("{(x + y*z)*w == 0, x*v == 0}");
+        let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
+        let search = |jobs| {
+            let options = VariableZeroingOptions {
+                jobs,
+                ..VariableZeroingOptions::default()
+            };
+            solve_by_zeroing_with(
+                polynomials.clone(),
+                candidates(&loaded),
+                &options,
+                &always_timeout,
+            )
+            .expect("search")
+        };
+
+        let sequential = search(1);
+        let parallel = search(4);
+
+        assert_eq!(parallel.stats.nodes, sequential.stats.nodes);
+        assert_eq!(
+            parallel.stats.zeroing_splits,
+            sequential.stats.zeroing_splits
+        );
+        assert_eq!(parallel.stats.evaluations, sequential.stats.evaluations);
+        assert_eq!(parallel.unresolved.len(), sequential.unresolved.len());
+        let decision_sets = |result: &VariableZeroingResult| {
+            let mut sets = result
+                .nodes
+                .iter()
+                .map(|node| format_decision_path(&node.decisions))
+                .collect::<Vec<_>>();
+            sets.sort();
+            sets
+        };
+        assert_eq!(decision_sets(&parallel), decision_sets(&sequential));
+    }
+
+    #[test]
+    fn a_cover_without_a_split_variable_gets_the_leaf_timeout() {
+        let (_, polynomials) = load("{x + y == 0}");
+        let options = VariableZeroingOptions {
+            timeout: Duration::from_millis(5),
+            leaf_timeout: Some(Duration::from_secs(600)),
+            ..VariableZeroingOptions::default()
+        };
+        let longest_limit = std::sync::Mutex::new(Duration::ZERO);
+        let evaluator = |_: Vec<PolyExtLex>, limit: Duration, _: GbBackend| {
+            let mut longest = longest_limit.lock().unwrap();
+            *longest = (*longest).max(limit);
+            Outcome::Timeout
+        };
+
+        let result =
+            solve_by_zeroing_with(polynomials, Vec::new(), &options, &evaluator).expect("search");
+
+        assert_eq!(*longest_limit.lock().unwrap(), Duration::from_secs(600));
+        assert_eq!(result.stats.leaf_evaluations, 1);
+        assert_eq!(
+            result.unresolved[0].reason,
+            UnresolvedReason::TimeoutAfterVariablesExhausted
+        );
+    }
+
+    #[test]
     fn exhausted_runtime_retains_the_root_without_evaluating_it() {
         let (loaded, polynomials) = load("{x + y == 0}");
         let options = VariableZeroingOptions {
@@ -1751,17 +1896,7 @@ mod tests {
             ..VariableZeroingOptions::default()
         };
         let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
-        let solver = Solver {
-            options: &options,
-            evaluator: &always_timeout,
-            started: Instant::now(),
-            components: Vec::new(),
-            unresolved: Vec::new(),
-            nodes: Vec::new(),
-            stats: VariableZeroingStats::default(),
-            first_solution: None,
-            random: StdRng::seed_from_u64(0),
-        };
+        let solver = Solver::new(&options, &always_timeout);
         let conditions = solver.refinement_conditions(&polynomials, &[(x, 0)]);
 
         let (_, unconditioned) =
@@ -1792,23 +1927,13 @@ mod tests {
             ..VariableZeroingOptions::default()
         };
         let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
-        let mut solver = Solver {
-            options: &options,
-            evaluator: &always_timeout,
-            started: Instant::now(),
-            components: Vec::new(),
-            unresolved: Vec::new(),
-            nodes: Vec::new(),
-            stats: VariableZeroingStats::default(),
-            first_solution: None,
-            random: StdRng::seed_from_u64(0),
-        };
+        let solver = Solver::new(&options, &always_timeout);
 
         let saturated = solver
             .saturated_branch(&polynomials, &[(x.clone(), 0)])
             .expect("saturation");
 
-        assert_eq!(solver.stats.saturations, 1);
+        assert_eq!(solver.state().stats.saturations, 1);
         assert_eq!(saturated.len(), 2);
         assert!(
             saturated
@@ -1838,23 +1963,13 @@ mod tests {
             ..VariableZeroingOptions::default()
         };
         let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
-        let mut solver = Solver {
-            options: &options,
-            evaluator: &always_timeout,
-            started: Instant::now(),
-            components: Vec::new(),
-            unresolved: Vec::new(),
-            nodes: Vec::new(),
-            stats: VariableZeroingStats::default(),
-            first_solution: None,
-            random: StdRng::seed_from_u64(0),
-        };
+        let solver = Solver::new(&options, &always_timeout);
 
         let saturated = solver
             .saturated_branch(&polynomials, &[(x, 0)])
             .expect("saturation");
 
-        assert_eq!(solver.stats.saturation_units, 1);
+        assert_eq!(solver.state().stats.saturation_units, 1);
         let (_, covers) =
             terminal_hitting_sets_with_timeout(saturated, Duration::from_secs(5), &[])
                 .expect("covers");
