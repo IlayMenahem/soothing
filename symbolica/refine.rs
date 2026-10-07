@@ -136,7 +136,7 @@ fn union(left: &[PolyExtLex], right: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
 }
 
 /// Each factor group less the factors assumed nonzero.
-fn without_conditions(groups: FactorGroups, conditions: &[PolyExtLex]) -> FactorGroups {
+pub(crate) fn without_conditions(groups: FactorGroups, conditions: &[PolyExtLex]) -> FactorGroups {
     groups
         .into_iter()
         .map(|group| {
@@ -354,8 +354,22 @@ pub fn refine_covers_with<O: RefineOps>(
     covers: &[u64],
     ops: &mut O,
 ) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), O::Error> {
+    refine_covers_under_conditions(factors, covers, &[], ops)
+}
+
+/// [`refine_covers_with`] for covers on which the monic `conditions` are known
+/// to be nonzero. Every branch carries them as side conditions, so a branch
+/// is dropped once one of them reduces to zero modulo it, and they are removed
+/// from the factor sets of every refined branch. The caller removes them from
+/// the factor sets that produced `covers`.
+pub fn refine_covers_under_conditions<O: RefineOps>(
+    factors: &[PolyExtLex],
+    covers: &[u64],
+    conditions: &[PolyExtLex],
+    ops: &mut O,
+) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), O::Error> {
     let mut state = RefinementState::default();
-    for branch in branches_of_covers(factors, covers, &[]) {
+    for branch in branches_of_covers(factors, covers, conditions) {
         refine_cover_with(branch, 1, 0, &mut Vec::new(), &mut state, ops)?;
     }
     let RefinementState {

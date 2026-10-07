@@ -7,7 +7,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use symbolica::domains::Ring;
-use symbolica::domains::rational::Q;
+use symbolica::domains::integer::Integer;
+use symbolica::domains::rational::{Q, Rational};
 use symbolica::poly::polynomial::MultivariatePolynomial;
 use symbolica::poly::{GrevLexOrder, MonomialOrder, PolyVariable};
 
@@ -565,6 +566,120 @@ fn evaluate_cover_components(
     } else {
         Outcome::ConsistentComponents(components)
     }
+}
+
+/// Outcome of saturating an ideal by a product of polynomials.
+pub enum Saturation {
+    /// Reduced degrevlex Gröbner basis of the saturation, in the input ring.
+    Basis(Vec<PolyExtLex>),
+    /// The saturation is the whole ring.
+    Unit,
+    Timeout,
+    Error(String),
+}
+
+/// Singular program printing every term of the reduced degrevlex basis of
+/// `⟨generators⟩ : (∏ divisors)^∞`, computed by Singular's `sat`. All
+/// polynomials share one ring.
+fn singular_saturation_program(generators: &[PolyExtLex], divisors: &[PolyExtLex]) -> String {
+    let variables = (0..generators[0].nvars())
+        .map(|index| format!("x{index}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let ideal = generators
+        .iter()
+        .map(singular_polynomial)
+        .collect::<Vec<_>>()
+        .join(",");
+    let product = divisors
+        .iter()
+        .map(|divisor| format!("({})", singular_polynomial(divisor)))
+        .collect::<Vec<_>>()
+        .join("*");
+    format!(
+        "LIB \"elim.lib\";\n\
+         ring r=0,({variables}),dp;\n\
+         ideal I={ideal};\n\
+         def S=sat(I,ideal({product}));\n\
+         if(typeof(S)==\"list\"){{I=S[1];}}else{{I=S;}}\n\
+         option(redSB);\n\
+         I=std(I);\n\
+         print(\"SINGULAR_UNIT \"+string(reduce(1,I)==0));\n\
+         int i; int k;\n\
+         for(i=1;i<=size(I);i=i+1){{\n\
+           print(\"SINGULAR_POLY\");\n\
+           for(k=1;k<=size(I[i]);k=k+1){{print(\"SINGULAR_TERM \"+string(leadcoef(I[i][k]))+\" \"+string(leadexp(I[i][k])));}};\n\
+         }};\n\
+         print(\"SINGULAR_DONE\");\n\
+         exit;\n"
+    )
+}
+
+/// Decode a Singular `SINGULAR_TERM` payload `c e1,...,en`, where `c` is an
+/// integer or a fraction `p/q`.
+fn singular_term(encoded: &str, nvars: usize) -> Result<(Rational, Vec<u16>), String> {
+    let invalid = || format!("invalid Singular term {encoded:?}");
+    let (coefficient, exponents) = encoded.split_once(' ').ok_or_else(invalid)?;
+    let (numerator, denominator) = coefficient.split_once('/').unwrap_or((coefficient, "1"));
+    let coefficient = Rational::from((
+        numerator.parse::<Integer>().map_err(|_| invalid())?,
+        denominator.parse::<Integer>().map_err(|_| invalid())?,
+    ));
+    let exponents = exponents
+        .split(',')
+        .map(str::parse::<u16>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+        .filter(|exponents| exponents.len() == nvars)
+        .ok_or_else(invalid)?;
+    Ok((coefficient, exponents))
+}
+
+/// The polynomials printed by [`singular_saturation_program`], in the ring of
+/// `template`.
+fn singular_basis(template: &PolyExtLex, stdout: &str) -> Result<Vec<PolyExtLex>, String> {
+    stdout
+        .lines()
+        .map(str::trim)
+        .try_fold(Vec::new(), |mut basis: Vec<PolyExtLex>, line| {
+            if line == "SINGULAR_POLY" {
+                basis.push(template.zero());
+            } else if let Some(term) = line.strip_prefix("SINGULAR_TERM ") {
+                let (coefficient, exponents) = singular_term(term, template.nvars())?;
+                basis
+                    .last_mut()
+                    .ok_or_else(|| "Singular printed a term outside a polynomial".to_string())?
+                    .append_monomial(coefficient, &exponents);
+            }
+            Ok(basis)
+        })
+}
+
+/// Compute `⟨generators⟩ : (∏ divisors)^∞` with Singular's `sat` in a killable
+/// child process. The basis is returned in the ring of the first generator,
+/// extended by any variable that only a divisor uses.
+pub fn saturate(
+    generators: &[PolyExtLex],
+    divisors: &[PolyExtLex],
+    timeout: Duration,
+) -> Saturation {
+    if generators.is_empty() || divisors.is_empty() {
+        return Saturation::Error("saturation needs generators and divisors".to_string());
+    }
+    let mut ring: Vec<PolyExtLex> = generators.iter().chain(divisors).cloned().collect();
+    MultivariatePolynomial::unify_variables_list(&mut ring);
+    let (generators, divisors) = ring.split_at(generators.len());
+    let program = singular_saturation_program(generators, divisors);
+    let stdout = match completed_singular_stdout(ExternalTool::Singular, &program, timeout) {
+        Ok(stdout) => stdout,
+        Err(Outcome::Timeout) => return Saturation::Timeout,
+        Err(Outcome::BackendError(error)) => return Saturation::Error(error),
+        Err(_) => return Saturation::Error("unexpected Singular outcome".to_string()),
+    };
+    if stdout.lines().any(|line| line.trim() == "SINGULAR_UNIT 1") {
+        return Saturation::Unit;
+    }
+    singular_basis(&generators[0], &stdout).map_or_else(Saturation::Error, Saturation::Basis)
 }
 
 /// Compute the cover's Gröbner basis in a killable child process. The cover is

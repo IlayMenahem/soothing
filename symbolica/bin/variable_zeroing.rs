@@ -3,7 +3,8 @@
 //!
 //! Usage: `variable_zeroing [path] [--timeout MS]
 //! [--max-runtime MS] [--gb BACKEND]
-//! [--saturate-each-variable|--shared-product-saturation]
+//! [--saturate-each-variable|--shared-product-saturation|--ideal-saturation]
+//! [--prune]
 //! [--split-value INTEGER|random] [--random-seed N] [--summary]
 //! [--plot OUT.tex]` (default path: `systems/system.txt`; default
 //! Gröbner backend: Singular).
@@ -19,7 +20,7 @@ use symbolica::poly::PolyVariable;
 
 use polynomial_cdcl::gb_search::GbBackend;
 use polynomial_cdcl::{
-    PreprocessingFailure, SplitValueStrategy, VariableZeroingCoverOutcome,
+    NonzeroEncoding, PreprocessingFailure, SplitValueStrategy, VariableZeroingCoverOutcome,
     VariableZeroingNodeResult, VariableZeroingOptions, ZeroingVariable,
     default_systems_dir_from_manifest, load_mathematica_system_from_path_with_var_names,
     polynomials_from_loaded, solve_by_zeroing,
@@ -31,7 +32,8 @@ struct CliOptions {
     timeout_ms: u64,
     max_runtime_ms: Option<u64>,
     gb_backend: GbBackend,
-    saturate_each_variable: bool,
+    nonzero_encoding: NonzeroEncoding,
+    prune_by_solutions: bool,
     split_value_strategy: SplitValueStrategy,
     random_seed: u64,
     summary: bool,
@@ -50,7 +52,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut timeout_ms = 1_000;
     let mut max_runtime_ms = None;
     let mut gb_backend = GbBackend::SingularGb;
-    let mut saturate_each_variable = true;
+    let mut nonzero_encoding = NonzeroEncoding::Separate;
+    let mut prune_by_solutions = false;
     let mut split_value_strategy = SplitValueStrategy::Fixed(0);
     let mut random_seed = 0;
     let mut summary = false;
@@ -75,8 +78,10 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     )
                 })?;
             }
-            "--saturate-each-variable" => saturate_each_variable = true,
-            "--shared-product-saturation" => saturate_each_variable = false,
+            "--saturate-each-variable" => nonzero_encoding = NonzeroEncoding::Separate,
+            "--shared-product-saturation" => nonzero_encoding = NonzeroEncoding::SharedProduct,
+            "--ideal-saturation" => nonzero_encoding = NonzeroEncoding::Saturation,
+            "--prune" => prune_by_solutions = true,
             "--split-value" => {
                 let value = args
                     .next()
@@ -113,7 +118,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         timeout_ms,
         max_runtime_ms,
         gb_backend,
-        saturate_each_variable,
+        nonzero_encoding,
+        prune_by_solutions,
         split_value_strategy,
         random_seed,
         summary,
@@ -154,14 +160,11 @@ fn main() {
         load_started.elapsed()
     );
     println!(
-        "Recursive branching: {}ms/cover, {} backend, saturation equations {}, split values {}, max runtime {}",
+        "Recursive branching: {}ms/cover, {} backend, nonzero encoding {}, pruning by solutions {}, split values {}, max runtime {}",
         cli.timeout_ms,
         cli.gb_backend.label(),
-        if cli.saturate_each_variable {
-            "per variable"
-        } else {
-            "shared product"
-        },
+        cli.nonzero_encoding.label(),
+        if cli.prune_by_solutions { "on" } else { "off" },
         match cli.split_value_strategy {
             SplitValueStrategy::Fixed(value) => value.to_string(),
             SplitValueStrategy::Random => format!("random in [-10,10] (seed {})", cli.random_seed),
@@ -174,7 +177,8 @@ fn main() {
         timeout: Duration::from_millis(cli.timeout_ms),
         max_runtime: cli.max_runtime_ms.map(Duration::from_millis),
         gb_backend: cli.gb_backend,
-        saturate_each_variable: cli.saturate_each_variable,
+        nonzero_encoding: cli.nonzero_encoding,
+        prune_by_solutions: cli.prune_by_solutions,
         split_value_strategy: cli.split_value_strategy,
         random_seed: cli.random_seed,
         verbose: !cli.summary,
@@ -236,7 +240,7 @@ fn main() {
         }
     }
     println!(
-        "ZEROING_SUMMARY nodes={} covers={} evaluations={} components={} inconsistent={} timeouts={} splits={} factorization_timeouts={} factorization_errors={} unresolved={} complete={} largest_depth={} first_solution_secs={} elapsed_secs={:.6}",
+        "ZEROING_SUMMARY nodes={} covers={} evaluations={} components={} inconsistent={} timeouts={} splits={} factorization_timeouts={} factorization_errors={} unresolved={} complete={} largest_depth={} first_solution_secs={} elapsed_secs={:.6} saturations={} saturation_units={} saturation_fallbacks={} pruned_covers={} redundant_components={}",
         result.stats.nodes,
         result.stats.covers,
         result.stats.evaluations,
@@ -250,7 +254,12 @@ fn main() {
         result.complete(),
         result.stats.largest_depth,
         first_solution,
-        result.elapsed.as_secs_f64()
+        result.elapsed.as_secs_f64(),
+        result.stats.saturations,
+        result.stats.saturation_units,
+        result.stats.saturation_fallbacks,
+        result.stats.pruned_covers,
+        result.stats.redundant_components
     );
 }
 
@@ -340,6 +349,7 @@ fn render_tikz_plot(
 \providecommand{\vzNoCovers}{\ensuremath{\textcolor{gray!75!black}{\boldsymbol{\varnothing}}}}
 \providecommand{\vzTimeout}{\tikz[baseline=-0.55ex,scale=0.105]{\filldraw[fill=yellow!70,draw=orange!85!black,line width=1.2pt] (0,0) circle (1);\draw[orange!85!black,line width=1.4pt,line cap=round] (0,0) -- (0,0.58) (0,0) -- (0.48,-0.28);}}
 \providecommand{\vzContracted}{\ensuremath{\textcolor{violet!80!black}{\boldsymbol{\leadsto}}}}
+\providecommand{\vzPruned}{\ensuremath{\textcolor{gray!75!black}{\boldsymbol{\subseteq}}}}
 \providecommand{\vzError}{\ensuremath{\textcolor{red!75!black}{\boldsymbol{!}}}}
 
 \begin{tikzpicture}[
@@ -387,6 +397,7 @@ fn render_tikz_plot(
                 VariableZeroingCoverOutcome::Inconsistent => "\\vzInconsistent",
                 VariableZeroingCoverOutcome::Timeout => "\\vzTimeout",
                 VariableZeroingCoverOutcome::Contracted => "\\vzContracted",
+                VariableZeroingCoverOutcome::Pruned => "\\vzPruned",
             };
             let split = check
                 .split_variable
@@ -612,7 +623,7 @@ mod tests {
         assert_eq!(options.timeout_ms, 75);
         assert_eq!(options.max_runtime_ms, Some(900_000));
         assert_eq!(options.gb_backend, GbBackend::Gvw);
-        assert!(options.saturate_each_variable);
+        assert_eq!(options.nonzero_encoding, NonzeroEncoding::Separate);
         assert_eq!(options.split_value_strategy, SplitValueStrategy::Fixed(1));
         assert_eq!(options.random_seed, 42);
         assert_eq!(options.plot, Some(PathBuf::from("tree.tex")));
@@ -625,7 +636,8 @@ mod tests {
 
         assert_eq!(options.timeout_ms, 1_000);
         assert_eq!(options.gb_backend, GbBackend::SingularGb);
-        assert!(options.saturate_each_variable);
+        assert_eq!(options.nonzero_encoding, NonzeroEncoding::Separate);
+        assert!(!options.prune_by_solutions);
         assert_eq!(options.split_value_strategy, SplitValueStrategy::Fixed(0));
         assert_eq!(options.random_seed, 0);
     }
@@ -639,7 +651,20 @@ mod tests {
         )
         .expect("arguments");
 
-        assert!(!options.saturate_each_variable);
+        assert_eq!(options.nonzero_encoding, NonzeroEncoding::SharedProduct);
+    }
+
+    #[test]
+    fn parse_args_can_select_ideal_saturation_and_pruning() {
+        let options = parse_args(
+            ["--ideal-saturation", "--prune"]
+                .into_iter()
+                .map(String::from),
+        )
+        .expect("arguments");
+
+        assert_eq!(options.nonzero_encoding, NonzeroEncoding::Saturation);
+        assert!(options.prune_by_solutions);
     }
 
     #[test]

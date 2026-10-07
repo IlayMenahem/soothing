@@ -8,9 +8,14 @@
 //! `x` is replaced by `a`. Each inequality decision gets its own equation
 //! `1 - s_i*(x_i-a_i) = 0` by default. An option instead makes all
 //! inequality decisions on a branch share the saturation equation
-//! `1 - s*(x_1-a_1)*...*(x_n-a_n) = 0`. If one side of a split has no factor
+//! `1 - s*(x_1-a_1)*...*(x_n-a_n) = 0`. A third option replaces the
+//! inequality branch by the ideal saturation `⟨H⟩ : (∏ (x_i-a_i))^∞` in the
+//! original variables; refinement then treats the `x_i - a_i` as nonzero side
+//! conditions. If one side of a split has no factor
 //! cover and the other has a unique cover, the unique cover is split again
-//! without a redundant Gröbner-basis call. Only original-variable basis
+//! without a redundant Gröbner-basis call. Optionally, a cover whose zero set
+//! lies in that of a solved component is skipped, and solved components that
+//! lie in another are dropped. Only original-variable basis
 //! elements and the zero/nonzero decisions are exposed by the projected
 //! result.
 
@@ -19,16 +24,19 @@ use std::time::{Duration, Instant};
 use rand::rngs::StdRng;
 use rand::{RngExt, SeedableRng};
 use symbolica::domains::rational::{Q, Rational};
-use symbolica::poly::{MonomialOrder, PolyVariable, polynomial::MultivariatePolynomial};
+use symbolica::poly::{
+    GrevLexOrder, LexOrder, MonomialOrder, PolyVariable, polynomial::MultivariatePolynomial,
+};
 
 use crate::cover::{build_factor_index, minimal_covers, ordered_cover_masks};
 use crate::factor_prep::{
     PolyExtLex, interreduce_polys, reorder_by_min_fill, try_factor_groups_from_polys,
 };
 use crate::gb_search::{
-    ComputedBasis, GbBackend, Outcome, PolyExtGrevLex, evaluate_cover, solution_dimension,
+    ComputedBasis, GbBackend, Outcome, PolyExtGrevLex, Saturation, evaluate_cover, saturate,
+    solution_dimension,
 };
-use crate::refine::{FactorGroups, RefineOps, refine_covers_with};
+use crate::refine::{FactorGroups, RefineOps, refine_covers_under_conditions, without_conditions};
 use crate::solver_process::{
     ProcessRun, factor_groups_isolated, interreduce_isolated, running_under_test_harness,
 };
@@ -82,6 +90,52 @@ impl Default for SplitValueStrategy {
     }
 }
 
+/// How an inequality branch encodes the conditions `x_i != a_i` of its path.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NonzeroEncoding {
+    /// One Rabinowitsch equation `1 - s_i*(x_i-a_i) = 0` per condition.
+    #[default]
+    Separate,
+    /// One equation `1 - s*(x_1-a_1)*...*(x_n-a_n) = 0` for all conditions.
+    SharedProduct,
+    /// The saturation `⟨H⟩ : (∏ (x_i-a_i))^∞`, computed by Singular within the
+    /// per-cover timeout; on timeout or error the branch falls back to
+    /// [`NonzeroEncoding::Separate`].
+    Saturation,
+}
+
+impl NonzeroEncoding {
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Separate => "per variable",
+            Self::SharedProduct => "shared product",
+            Self::Saturation => "ideal saturation",
+        }
+    }
+}
+
+/// The `x = a` and `x != a` decisions of a branch.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct BranchConditions {
+    equal: Vec<(PolyVariable, i64)>,
+    unequal: Vec<(PolyVariable, i64)>,
+}
+
+impl BranchConditions {
+    /// Whether every decision of `self` is also a decision of `other`, so that
+    /// the points satisfying `other` satisfy `self`.
+    fn implied_by(&self, other: &Self) -> bool {
+        self.equal
+            .iter()
+            .all(|decision| other.equal.contains(decision))
+            && self
+                .unequal
+                .iter()
+                .all(|decision| other.unequal.contains(decision))
+    }
+}
+
 /// Search controls for recursive variable zeroing.
 #[derive(Clone, Debug)]
 pub struct VariableZeroingOptions {
@@ -92,9 +146,12 @@ pub struct VariableZeroingOptions {
     /// Gröbner-basis implementation used to evaluate covers. Defaults to
     /// Singular.
     pub gb_backend: GbBackend,
-    /// Use one Rabinowitsch variable and equation per nonzero variable instead
-    /// of one equation for their product.
-    pub saturate_each_variable: bool,
+    /// Encoding of the inequality branch of a split.
+    pub nonzero_encoding: NonzeroEncoding,
+    /// Skip a cover whose zero set, under the branch's decisions, is
+    /// certified to lie in that of a solved component, and drop solved
+    /// components that lie in another.
+    pub prune_by_solutions: bool,
     /// Select the value `a` in each `x = a` / `x != a` split.
     pub split_value_strategy: SplitValueStrategy,
     /// Seed used by `SplitValueStrategy::Random`.
@@ -109,7 +166,8 @@ impl Default for VariableZeroingOptions {
             timeout: Duration::from_millis(1_000),
             max_runtime: None,
             gb_backend: GbBackend::SingularGb,
-            saturate_each_variable: true,
+            nonzero_encoding: NonzeroEncoding::Separate,
+            prune_by_solutions: false,
             split_value_strategy: SplitValueStrategy::Fixed(0),
             random_seed: 0,
             verbose: false,
@@ -123,6 +181,7 @@ pub struct ProjectedComponent {
     pub decisions: Vec<SplitDecision>,
     pub dimension: Option<usize>,
     basis: ComputedBasis,
+    conditions: BranchConditions,
 }
 
 impl ProjectedComponent {
@@ -147,6 +206,76 @@ impl ProjectedComponent {
             .iter()
             .filter(|polynomial| !uses_temporary_variable(polynomial))
     }
+
+    /// Whether the full basis lies in the original variables, so that it
+    /// describes the component's zero set without a projection.
+    fn has_original_basis(&self) -> bool {
+        !self.basis.leading_monomials_only
+            && !self.basis.elements.iter().any(uses_temporary_variable)
+    }
+
+    /// Whether the points of `branch` that satisfy `conditions` certifiably lie
+    /// in this component: its decisions are among `conditions`, and each basis
+    /// element, with the equality decisions of `conditions` substituted,
+    /// reduces to zero modulo the generators of `branch`.
+    fn covers_branch(&self, branch: &[PolyExtLex], conditions: &BranchConditions) -> bool {
+        self.has_original_basis()
+            && self.conditions.implied_by(conditions)
+            && self.basis.elements.iter().all(|element| {
+                reduces_to_zero(
+                    &substitute_values(element.reorder::<LexOrder>(), &conditions.equal),
+                    branch,
+                )
+            })
+    }
+
+    /// Whether this component certifiably lies in `other`: the decisions of
+    /// `other` are among its own, and each basis element of `other` reduces to
+    /// zero modulo this component's Gröbner basis, an exact membership test.
+    fn lies_in(&self, other: &Self) -> bool {
+        self.has_original_basis()
+            && other.has_original_basis()
+            && other.conditions.implied_by(&self.conditions)
+            && other.basis.elements.iter().all(|element| {
+                let element =
+                    substitute_values(element.reorder::<LexOrder>(), &self.conditions.equal);
+                reduces_to_zero(&element.reorder::<GrevLexOrder>(), &self.basis.elements)
+            })
+    }
+}
+
+/// `polynomial` with each variable of `values` that occurs in its ring
+/// replaced by the paired value.
+fn substitute_values(polynomial: PolyExtLex, values: &[(PolyVariable, i64)]) -> PolyExtLex {
+    values
+        .iter()
+        .fold(polynomial, |polynomial, (variable, value)| {
+            polynomial
+                .variables()
+                .iter()
+                .position(|candidate| candidate == variable)
+                .map_or(polynomial.clone(), |position| {
+                    polynomial.replace(position, &Rational::from(*value))
+                })
+        })
+}
+
+/// Whether `polynomial` has remainder zero on division by `divisors`, after
+/// both are expressed in the ring of the first divisor extended by the
+/// variables of `polynomial`. Appending variables keeps a Gröbner basis one.
+fn reduces_to_zero<O: MonomialOrder>(
+    polynomial: &MultivariatePolynomial<Q, u16, O>,
+    divisors: &[MultivariatePolynomial<Q, u16, O>],
+) -> bool {
+    let mut ring: Vec<_> = divisors
+        .iter()
+        .filter(|divisor| !divisor.is_zero())
+        .cloned()
+        .chain(std::iter::once(polynomial.clone()))
+        .collect();
+    MultivariatePolynomial::unify_variables_list(&mut ring);
+    let (polynomial, divisors) = ring.split_last().expect("the polynomial itself");
+    polynomial.is_zero() || (!divisors.is_empty() && polynomial.reduce(divisors).is_zero())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -186,6 +315,17 @@ pub struct VariableZeroingStats {
     pub factorization_timeouts: usize,
     pub factorization_errors: usize,
     pub largest_depth: usize,
+    /// Inequality branches for which a saturation was attempted.
+    pub saturations: usize,
+    /// Saturations equal to the unit ideal.
+    pub saturation_units: usize,
+    /// Saturations that timed out or failed and fell back to the separate
+    /// Rabinowitsch encoding.
+    pub saturation_fallbacks: usize,
+    /// Covers skipped because a solved component contains their zero set.
+    pub pruned_covers: usize,
+    /// Solved components dropped because another contains them.
+    pub redundant_components: usize,
 }
 
 /// Outcome recorded for one hitting-set check in the recursion tree.
@@ -197,6 +337,9 @@ pub enum VariableZeroingCoverOutcome {
     /// The solver call was bypassed because the sibling branch had no cover
     /// and this branch had a unique cover.
     Contracted,
+    /// The solver call was bypassed because a solved component contains the
+    /// cover's zero set.
+    Pruned,
 }
 
 /// Trace information for one hitting set considered at a recursion node.
@@ -308,7 +451,32 @@ impl Solver<'_> {
         variables: Vec<ZeroingVariable>,
         decisions: Vec<SplitDecision>,
     ) -> Result<Option<usize>, String> {
-        self.solve_node_with_contraction(polynomials, variables, decisions, Vec::new(), false)
+        self.solve_node_with_contraction(
+            polynomials,
+            variables,
+            decisions,
+            BranchConditions::default(),
+            false,
+        )
+    }
+
+    /// The monic polynomials `x - a` of the inequality decisions, in the ring
+    /// of `polynomials`, for refinement to treat as nonzero. Only saturated
+    /// branches need them; the Rabinowitsch encodings carry the decisions in
+    /// their equations.
+    fn refinement_conditions(
+        &self,
+        polynomials: &[PolyExtLex],
+        unequal: &[(PolyVariable, i64)],
+    ) -> Vec<PolyExtLex> {
+        match (self.options.nonzero_encoding, polynomials.first()) {
+            (NonzeroEncoding::Saturation, Some(template)) => unequal
+                .iter()
+                .filter_map(|(variable, value)| difference(template, variable, *value).ok())
+                .map(PolyExtLex::make_monic)
+                .collect(),
+            _ => Vec::new(),
+        }
     }
 
     fn solve_node_with_contraction(
@@ -316,7 +484,7 @@ impl Solver<'_> {
         polynomials: Vec<PolyExtLex>,
         variables: Vec<ZeroingVariable>,
         decisions: Vec<SplitDecision>,
-        inequality_conditions: Vec<(PolyVariable, i64)>,
+        conditions: BranchConditions,
         contract_unique_cover: bool,
     ) -> Result<Option<usize>, String> {
         let depth = decisions.len();
@@ -351,9 +519,11 @@ impl Solver<'_> {
         let polynomials =
             reorder_by_min_fill(polynomials).map_err(|error| format!("node {node_id}: {error}"))?;
         let node_nvars = polynomials.first().map_or(0, PolyExtLex::nvars);
+        let refinement_conditions = self.refinement_conditions(&polynomials, &conditions.unequal);
         let (groups, covers) = match terminal_hitting_sets_with_timeout(
             polynomials.clone(),
             self.evaluation_timeout(),
+            &refinement_conditions,
         ) {
             Ok(preprocessed) => preprocessed,
             Err(HittingSetFailure::Fatal(error)) => return Err(format!("node {node_id}: {error}")),
@@ -427,6 +597,26 @@ impl Solver<'_> {
                 }
                 break;
             }
+            if self.options.prune_by_solutions
+                && self
+                    .components
+                    .iter()
+                    .any(|component| component.covers_branch(&candidate, &conditions))
+            {
+                self.stats.pruned_covers += 1;
+                if self.options.verbose {
+                    println!("  cover #{cover_index}: pruned, inside a solved component");
+                }
+                node_result.checks.push(VariableZeroingCoverResult {
+                    cover_index,
+                    outcome: VariableZeroingCoverOutcome::Pruned,
+                    elapsed: cover_started.elapsed(),
+                    split_variable: None,
+                    zero_child: None,
+                    nonzero_child: None,
+                });
+                continue;
+            }
             // The caller has already established that this is the unique
             // cover on one side of an equality/inequality split and that the sibling
             // has no cover. Hence this cover represents the entire parent
@@ -447,7 +637,7 @@ impl Solver<'_> {
                     candidate,
                     &variables,
                     &decisions,
-                    &inequality_conditions,
+                    &conditions,
                     selected_index,
                 )?;
                 self.stats.zeroing_splits += 1;
@@ -479,6 +669,7 @@ impl Solver<'_> {
                         node_id,
                         node_nvars,
                         &decisions,
+                        &conditions,
                         cover_index,
                         cover_elapsed,
                         &mut node_result,
@@ -490,6 +681,7 @@ impl Solver<'_> {
                         node_id,
                         node_nvars,
                         &decisions,
+                        &conditions,
                         cover_index,
                         cover_elapsed,
                         &mut node_result,
@@ -577,7 +769,7 @@ impl Solver<'_> {
                         candidate,
                         &variables,
                         &decisions,
-                        &inequality_conditions,
+                        &conditions,
                         selected_index,
                     )?;
                     self.stats.zeroing_splits += 1;
@@ -612,6 +804,7 @@ impl Solver<'_> {
         node_id: usize,
         node_nvars: usize,
         decisions: &[SplitDecision],
+        conditions: &BranchConditions,
         cover_index: usize,
         elapsed: Duration,
         node_result: &mut VariableZeroingNodeResult,
@@ -646,6 +839,7 @@ impl Solver<'_> {
                 decisions: decisions.to_vec(),
                 dimension,
                 basis,
+                conditions: conditions.clone(),
             }
         }));
     }
@@ -655,26 +849,47 @@ impl Solver<'_> {
         candidate: Vec<PolyExtLex>,
         variables: &[ZeroingVariable],
         decisions: &[SplitDecision],
-        inequality_conditions: &[(PolyVariable, i64)],
+        conditions: &BranchConditions,
         selected_index: usize,
     ) -> Result<(Option<usize>, Option<usize>, Duration), String> {
         let selected = variables[selected_index].clone();
         let mut remaining = variables.to_vec();
         remaining.remove(selected_index);
         let split_value = self.next_split_value();
-        let mut updated_inequality_conditions = inequality_conditions.to_vec();
-        updated_inequality_conditions.push((selected.variable.clone(), split_value));
-        let (equal_branch, unequal_branch) = split_on_variable(
-            candidate,
+        let decision = (selected.variable.clone(), split_value);
+        let equal_conditions = BranchConditions {
+            equal: [conditions.equal.as_slice(), std::slice::from_ref(&decision)].concat(),
+            unequal: conditions.unequal.clone(),
+        };
+        let unequal_conditions = BranchConditions {
+            equal: conditions.equal.clone(),
+            unequal: [conditions.unequal.as_slice(), &[decision]].concat(),
+        };
+        let (equal_branch, rabinowitsch_branch) = split_on_variable(
+            candidate.clone(),
             &selected.variable,
             split_value,
-            &updated_inequality_conditions,
-            self.options.saturate_each_variable,
+            &unequal_conditions.unequal,
+            self.options.nonzero_encoding != NonzeroEncoding::SharedProduct,
         )?;
+        let unequal_branch = match self.options.nonzero_encoding {
+            NonzeroEncoding::Saturation => self
+                .saturated_branch(&candidate, &unequal_conditions.unequal)
+                .unwrap_or(rabinowitsch_branch),
+            NonzeroEncoding::Separate | NonzeroEncoding::SharedProduct => rabinowitsch_branch,
+        };
 
-        let equal_cover_count = terminal_cover_count(&equal_branch, self.evaluation_timeout())?;
+        let equal_cover_count = terminal_cover_count(
+            &equal_branch,
+            self.evaluation_timeout(),
+            &self.refinement_conditions(&equal_branch, &equal_conditions.unequal),
+        )?;
         let unequal_cover_count = if equal_cover_count.is_some() {
-            terminal_cover_count(&unequal_branch, self.evaluation_timeout())?
+            terminal_cover_count(
+                &unequal_branch,
+                self.evaluation_timeout(),
+                &self.refinement_conditions(&unequal_branch, &unequal_conditions.unequal),
+            )?
         } else {
             None
         };
@@ -699,7 +914,7 @@ impl Solver<'_> {
             equal_branch,
             remaining.clone(),
             equal_decisions,
-            inequality_conditions.to_vec(),
+            equal_conditions,
             contract_equal,
         )?;
 
@@ -713,11 +928,89 @@ impl Solver<'_> {
             unequal_branch,
             remaining,
             unequal_decisions,
-            updated_inequality_conditions,
+            unequal_conditions,
             contract_unequal,
         )?;
         Ok((equal_child, unequal_child, children_started.elapsed()))
     }
+
+    /// The saturation of the Rabinowitsch-free generators of `candidate` by
+    /// the product of the `x - a` in `unequal`, or `None` when it did not
+    /// finish within the per-cover timeout. The unit ideal is returned as `{1}`.
+    fn saturated_branch(
+        &mut self,
+        candidate: &[PolyExtLex],
+        unequal: &[(PolyVariable, i64)],
+    ) -> Option<Vec<PolyExtLex>> {
+        let ordinary: Vec<PolyExtLex> = candidate
+            .iter()
+            .filter(|polynomial| !uses_temporary_variable(polynomial))
+            .cloned()
+            .collect();
+        let template = ordinary.first()?.clone();
+        let divisors = unequal
+            .iter()
+            .map(|(variable, value)| difference(&template, variable, *value))
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        self.stats.saturations += 1;
+        let started = Instant::now();
+        let (branch, description) = match saturate(&ordinary, &divisors, self.evaluation_timeout())
+        {
+            Saturation::Basis(basis) => {
+                let description = format!("{} generator(s)", basis.len());
+                (Some(basis), description)
+            }
+            Saturation::Unit => {
+                self.stats.saturation_units += 1;
+                (Some(vec![template.one()]), "the unit ideal".to_string())
+            }
+            Saturation::Timeout => {
+                self.stats.saturation_fallbacks += 1;
+                (None, "timed out; using Rabinowitsch equations".to_string())
+            }
+            Saturation::Error(error) => {
+                self.stats.saturation_fallbacks += 1;
+                (
+                    None,
+                    format!("failed ({error}); using Rabinowitsch equations"),
+                )
+            }
+        };
+        if self.options.verbose {
+            println!(
+                "  saturation by {} condition(s): {description} ({:?})",
+                unequal.len(),
+                started.elapsed()
+            );
+        }
+        branch
+    }
+}
+
+/// Drop every component that certifiably lies in a kept one, visiting them in
+/// order; a newly kept component evicts the kept components it contains, so
+/// the union of the components' sets is preserved.
+fn drop_redundant_components(
+    components: Vec<ProjectedComponent>,
+) -> (Vec<ProjectedComponent>, usize) {
+    let count = components.len();
+    let kept =
+        components
+            .into_iter()
+            .fold(Vec::new(), |kept: Vec<ProjectedComponent>, component| {
+                if kept.iter().any(|existing| component.lies_in(existing)) {
+                    return kept;
+                }
+                let mut kept: Vec<ProjectedComponent> = kept
+                    .into_iter()
+                    .filter(|existing| !existing.lies_in(&component))
+                    .collect();
+                kept.push(component);
+                kept
+            });
+    let dropped = count - kept.len();
+    (kept, dropped)
 }
 
 fn next_split_value(strategy: SplitValueStrategy, random: &mut StdRng) -> i64 {
@@ -756,8 +1049,15 @@ fn solve_by_zeroing_with(
         random: StdRng::seed_from_u64(options.random_seed),
     };
     solver.solve_node(polynomials, variables, Vec::new())?;
+    let components = if options.prune_by_solutions {
+        let (kept, dropped) = drop_redundant_components(solver.components);
+        solver.stats.redundant_components = dropped;
+        kept
+    } else {
+        solver.components
+    };
     Ok(VariableZeroingResult {
-        components: solver.components,
+        components,
         unresolved: solver.unresolved,
         nodes: {
             solver.nodes.sort_unstable_by_key(|node| node.node_id);
@@ -860,21 +1160,26 @@ fn split_on_variable(
     if saturate_each_variable {
         for (index, (variable, value)) in inequality_conditions.iter().enumerate() {
             let inverse = template.variable(&PolyVariable::Temporary(index))?;
-            let difference =
-                template.variable(variable)? - template.constant(Rational::from(*value));
-            let product = inverse * &difference;
+            let product = inverse * &difference(&template, variable, *value)?;
             unequal_branch.push(template.one() - product);
         }
     } else {
         let mut product = template.variable(&PolyVariable::Temporary(0))?;
         for (variable, value) in inequality_conditions {
-            let difference =
-                template.variable(variable)? - template.constant(Rational::from(*value));
-            product = product * &difference;
+            product = product * &difference(&template, variable, *value)?;
         }
         unequal_branch.push(template.one() - product);
     }
     Ok((equal_branch, unequal_branch))
+}
+
+/// The polynomial `x - a` in the ring of `template`.
+fn difference(
+    template: &PolyExtLex,
+    variable: &PolyVariable,
+    value: i64,
+) -> Result<PolyExtLex, String> {
+    Ok(template.variable(variable)? - template.constant(Rational::from(value)))
 }
 
 fn uses_variable<O: MonomialOrder>(
@@ -915,6 +1220,7 @@ fn factor_groups_with_timeout(
 }
 
 /// Why a node's terminal hitting sets could not be computed.
+#[derive(Debug)]
 enum HittingSetFailure {
     Timeout,
     Factorization(String),
@@ -982,9 +1288,10 @@ fn factor_before_deadline(
 fn terminal_hitting_sets_with_timeout(
     polynomials: Vec<PolyExtLex>,
     timeout: Duration,
+    conditions: &[PolyExtLex],
 ) -> Result<(usize, Vec<Vec<PolyExtLex>>), HittingSetFailure> {
     let deadline = Instant::now() + timeout;
-    let groups = factor_before_deadline(polynomials, deadline)?;
+    let groups = without_conditions(factor_before_deadline(polynomials, deadline)?, conditions);
     let (factors, index_groups) = build_factor_index(&groups);
     let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
         HittingSetFailure::Fatal(format!(
@@ -992,9 +1299,10 @@ fn terminal_hitting_sets_with_timeout(
             factors.len()
         ))
     })?;
-    let (terminal, _) = refine_covers_with(
+    let (terminal, _) = refine_covers_under_conditions(
         &factors,
         &ordered_cover_masks(&covers),
+        conditions,
         &mut IsolatedBeforeDeadline { deadline },
     )?;
     Ok((groups.len(), terminal))
@@ -1007,8 +1315,9 @@ fn terminal_hitting_sets_with_timeout(
 fn terminal_cover_count(
     polynomials: &[PolyExtLex],
     timeout: Duration,
+    conditions: &[PolyExtLex],
 ) -> Result<Option<usize>, String> {
-    match terminal_hitting_sets_with_timeout(polynomials.to_vec(), timeout) {
+    match terminal_hitting_sets_with_timeout(polynomials.to_vec(), timeout, conditions) {
         Ok((_, terminal)) => Ok(Some(terminal.len())),
         Err(HittingSetFailure::Timeout | HittingSetFailure::Factorization(_)) => Ok(None),
         Err(HittingSetFailure::Fatal(error)) => Err(format!("split child: {error}")),
@@ -1060,7 +1369,8 @@ mod tests {
 
         assert_eq!(options.timeout, Duration::from_millis(1_000));
         assert_eq!(options.gb_backend, GbBackend::SingularGb);
-        assert!(options.saturate_each_variable);
+        assert_eq!(options.nonzero_encoding, NonzeroEncoding::Separate);
+        assert!(!options.prune_by_solutions);
     }
 
     #[test]
@@ -1345,10 +1655,209 @@ mod tests {
                 elements: vec![original, with_temp],
                 leading_monomials_only: false,
             },
+            conditions: BranchConditions::default(),
         };
 
         let projected = component.original_basis_elements().collect::<Vec<_>>();
         assert_eq!(projected.len(), 1);
         assert!(!projected[0].to_string().contains("_TMP_"));
+    }
+
+    fn variable(loaded: &LoadedMathematicaSystem, name: &str) -> PolyVariable {
+        PolyVariable::from(
+            loaded.id_to_sym[loaded
+                .var_names
+                .iter()
+                .position(|candidate| candidate == name)
+                .unwrap()],
+        )
+    }
+
+    /// A solved component with the full basis `sources`, in the ring of `ring`.
+    fn component(
+        ring: &[PolyExtLex],
+        sources: &[&str],
+        conditions: BranchConditions,
+    ) -> ProjectedComponent {
+        let (_, polynomials) = load(&format!(
+            "{{{}}}",
+            sources
+                .iter()
+                .map(|source| format!("{source} == 0"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        let mut elements: Vec<PolyExtLex> = ring.iter().cloned().chain(polynomials).collect();
+        MultivariatePolynomial::unify_variables_list(&mut elements);
+        ProjectedComponent {
+            node_id: 0,
+            decisions: Vec::new(),
+            dimension: None,
+            basis: ComputedBasis {
+                elements: elements[ring.len()..]
+                    .iter()
+                    .map(|polynomial| polynomial.reorder::<GrevLexOrder>())
+                    .collect(),
+                leading_monomials_only: false,
+            },
+            conditions,
+        }
+    }
+
+    #[test]
+    fn solved_component_covers_a_branch_inside_it_under_more_decisions() {
+        let (loaded, polynomials) = load("{x*z == 0, y == 0, z - 1 == 0}");
+        let x = variable(&loaded, "x");
+        let solved = component(&polynomials, &["x + y"], BranchConditions::default());
+        let branch = vec![polynomials[1].clone()];
+        let x_zero = BranchConditions {
+            equal: vec![(x.clone(), 0)],
+            unequal: Vec::new(),
+        };
+
+        assert!(solved.covers_branch(&branch, &x_zero));
+        assert!(!solved.covers_branch(&branch, &BranchConditions::default()));
+        let x_nonzero_only = component(
+            &polynomials,
+            &["x + y"],
+            BranchConditions {
+                equal: Vec::new(),
+                unequal: vec![(x, 0)],
+            },
+        );
+        assert!(!x_nonzero_only.covers_branch(&branch, &x_zero));
+    }
+
+    #[test]
+    fn redundant_components_are_dropped_by_exact_containment() {
+        let (_, polynomials) = load("{x*y == 0}");
+        let plane = component(&polynomials, &["x"], BranchConditions::default());
+        let line = component(&polynomials, &["x", "y"], BranchConditions::default());
+        let other_plane = component(&polynomials, &["y"], BranchConditions::default());
+
+        let (kept, dropped) = drop_redundant_components(vec![line, plane, other_plane]);
+
+        assert_eq!(dropped, 1);
+        assert_eq!(kept.len(), 2);
+        assert!(kept.iter().all(|component| component.basis_len() == 1));
+    }
+
+    #[test]
+    fn saturated_refinement_drops_the_factor_assumed_nonzero() {
+        let (loaded, polynomials) = load("{x*y == 0, x*(z - 1) == 0}");
+        let x = variable(&loaded, "x");
+        let options = VariableZeroingOptions {
+            nonzero_encoding: NonzeroEncoding::Saturation,
+            ..VariableZeroingOptions::default()
+        };
+        let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
+        let solver = Solver {
+            options: &options,
+            evaluator: &always_timeout,
+            started: Instant::now(),
+            components: Vec::new(),
+            unresolved: Vec::new(),
+            nodes: Vec::new(),
+            stats: VariableZeroingStats::default(),
+            first_solution: None,
+            random: StdRng::seed_from_u64(0),
+        };
+        let conditions = solver.refinement_conditions(&polynomials, &[(x, 0)]);
+
+        let (_, unconditioned) =
+            terminal_hitting_sets_with_timeout(polynomials.clone(), Duration::from_secs(5), &[])
+                .expect("covers");
+        let (_, conditioned) =
+            terminal_hitting_sets_with_timeout(polynomials, Duration::from_secs(5), &conditions)
+                .expect("covers");
+
+        assert_eq!(unconditioned.len(), 2);
+        assert_eq!(conditioned.len(), 1);
+        assert_eq!(conditioned[0].len(), 2);
+    }
+
+    #[test]
+    fn ideal_saturation_replaces_the_rabinowitsch_equation() {
+        if std::process::Command::new("Singular")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let (loaded, polynomials) = load("{x*y - x == 0, x*z == 0}");
+        let x = variable(&loaded, "x");
+        let options = VariableZeroingOptions {
+            nonzero_encoding: NonzeroEncoding::Saturation,
+            ..VariableZeroingOptions::default()
+        };
+        let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
+        let mut solver = Solver {
+            options: &options,
+            evaluator: &always_timeout,
+            started: Instant::now(),
+            components: Vec::new(),
+            unresolved: Vec::new(),
+            nodes: Vec::new(),
+            stats: VariableZeroingStats::default(),
+            first_solution: None,
+            random: StdRng::seed_from_u64(0),
+        };
+
+        let saturated = solver
+            .saturated_branch(&polynomials, &[(x.clone(), 0)])
+            .expect("saturation");
+
+        assert_eq!(solver.stats.saturations, 1);
+        assert_eq!(saturated.len(), 2);
+        assert!(
+            saturated
+                .iter()
+                .all(|polynomial| !uses_temporary_variable(polynomial))
+        );
+        assert!(
+            saturated
+                .iter()
+                .all(|polynomial| !uses_variable(polynomial, &x))
+        );
+    }
+
+    #[test]
+    fn unit_saturation_gives_a_branch_without_covers() {
+        if std::process::Command::new("Singular")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let (loaded, polynomials) = load("{x*y == 0, y - 1 == 0}");
+        let x = variable(&loaded, "x");
+        let options = VariableZeroingOptions {
+            nonzero_encoding: NonzeroEncoding::Saturation,
+            ..VariableZeroingOptions::default()
+        };
+        let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
+        let mut solver = Solver {
+            options: &options,
+            evaluator: &always_timeout,
+            started: Instant::now(),
+            components: Vec::new(),
+            unresolved: Vec::new(),
+            nodes: Vec::new(),
+            stats: VariableZeroingStats::default(),
+            first_solution: None,
+            random: StdRng::seed_from_u64(0),
+        };
+
+        let saturated = solver
+            .saturated_branch(&polynomials, &[(x, 0)])
+            .expect("saturation");
+
+        assert_eq!(solver.stats.saturation_units, 1);
+        let (_, covers) =
+            terminal_hitting_sets_with_timeout(saturated, Duration::from_secs(5), &[])
+                .expect("covers");
+        assert!(covers.is_empty());
     }
 }

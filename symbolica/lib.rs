@@ -37,8 +37,8 @@ pub use solver_process::exit_if_solver_worker;
 pub use system::PolynomialSystem;
 pub use var_id::VarId;
 pub use variable_zeroing::{
-    PreprocessingFailure, ProjectedComponent, SplitDecision, SplitValueStrategy, UnresolvedBranch,
-    UnresolvedReason, VariableZeroingCoverOutcome, VariableZeroingCoverResult,
+    NonzeroEncoding, PreprocessingFailure, ProjectedComponent, SplitDecision, SplitValueStrategy,
+    UnresolvedBranch, UnresolvedReason, VariableZeroingCoverOutcome, VariableZeroingCoverResult,
     VariableZeroingNodeResult, VariableZeroingOptions, VariableZeroingResult, ZeroingVariable,
     solve_by_zeroing,
 };
