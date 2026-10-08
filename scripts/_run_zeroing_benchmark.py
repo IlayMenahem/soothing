@@ -20,6 +20,7 @@ def main() -> int:
         "5000",
         "--max-runtime",
         "120000",
+        "--ideal-saturation",
         "--summary",
     ]
     stdout, stderr, wall, killed, returncode = run(argv, 125.0)

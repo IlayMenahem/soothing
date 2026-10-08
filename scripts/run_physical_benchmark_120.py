@@ -62,7 +62,16 @@ def run_algorithm(algorithm: str) -> dict[str, dict[str, object]]:
 
 
 def main() -> int:
-    results = {algorithm: run_algorithm(algorithm) for algorithm in HARNESSES}
+    """Run every harness, or only those named on the command line, keeping the
+    stored results of the others."""
+    selected = sys.argv[1:] or list(HARNESSES)
+    unknown = set(selected) - HARNESSES.keys()
+    if unknown:
+        raise SystemExit(f"unknown harness(es): {', '.join(sorted(unknown))}")
+    results: dict[str, dict[str, dict[str, object]]] = (
+        json.loads(OUTPUT.read_text(encoding="utf-8")) if OUTPUT.exists() else {}
+    )
+    results.update({algorithm: run_algorithm(algorithm) for algorithm in selected})
     OUTPUT.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     print(f"saved {OUTPUT}")
     return 0

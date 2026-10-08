@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Compare zeroing split values on the physical system.
 
-Runs ``variable_zeroing`` with the M4GB backend, a 5 s budget per branch and a
-600 s overall budget, once splitting on ``x = 1`` and once on a random value
+Runs ``variable_zeroing`` with the M4GB backend, ideal saturation, a 5 s budget
+per branch and a 600 s overall budget, once splitting on ``x = 1`` and once on a random value
 (seed 0), and stores both runs in ``results/split_value_comparison.json``.
 """
 
@@ -33,6 +33,7 @@ def run_split(split_args: list[str]) -> dict[str, object]:
         "5000",
         "--max-runtime",
         str(MAX_RUNTIME_MS),
+        "--ideal-saturation",
         *split_args,
         "--summary",
     ]

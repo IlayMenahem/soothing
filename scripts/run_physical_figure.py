@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run the variable-zeroing figure experiment on the physical system.
 
-Runs ``variable_zeroing`` with the M4GB backend, a 5 s budget per branch and a
-120 s overall budget, and stores the summary together with the raw TikZ tree
+Runs ``variable_zeroing`` with the M4GB backend, ideal saturation, a 5 s budget
+per branch and a 120 s overall budget, and stores the summary together with the raw TikZ tree
 in ``results/physical_system_m4gb_5s_figure_run.json``. The paper figure
 ``paper/figs/variable_zeroing_tree.tex`` is derived from that raw TikZ.
 """
@@ -45,6 +45,7 @@ def main() -> int:
             "5000",
             "--max-runtime",
             "120000",
+            "--ideal-saturation",
             "--summary",
             "--plot",
             str(plot),

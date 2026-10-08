@@ -156,6 +156,7 @@ def run_zeroing(
             str(ZEROING_BRANCH_TIMEOUT_MS),
             "--max-runtime",
             str(timeout * 1000),
+            "--ideal-saturation",
             "--summary",
         ],
         timeout + 2,
