@@ -52,6 +52,7 @@ open FactorBranching
 #print axioms FactorBranching.VY_eq_iUnion_refine
 #print axioms FactorBranching.zeroing_correct
 #print axioms FactorBranching.zeroing_complete
+#print axioms FactorBranching.zeroing_terminates
 #print axioms FactorBranching.contraction_zero_unsat
 #print axioms FactorBranching.separate_encoding
 #print axioms FactorBranching.product_encoding

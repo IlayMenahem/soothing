@@ -5,7 +5,7 @@ import FactorBranching.Vars
 
 Section "Recursive splitting": the exhaustive split, Lemma `lem:zero-nonzero-split`,
 Equation `eq:zeroing-refinement`, Theorem `thm:zeroing-correctness`,
-Corollary `cor:zeroing-completeness`, the branch contraction of
+Corollary `cor:zeroing-completeness`, Theorem `thm:zeroing-termination`, the branch contraction of
 Subsection `subsec:zeroing-branch-contraction`, and the two nonzero encodings of
 Subsection `subsec:nonzero-encoding`.
 
@@ -418,6 +418,96 @@ theorem zeroing_complete {P : Finset (MvPolynomial Y K)} (h0 : (0 : MvPolynomial
     solOf L st.S = V L (↑P : Set (MvPolynomial Y K)) := by
   rw [zeroing_correct R h0 hrun hW, hU]
   simp [solOf]
+
+/-! ### Termination (Theorem `thm:zeroing-termination`) -/
+
+section Termination
+
+/-- A split of a terminal branch of `(Q, Z, N)` uses a variable outside `Z ∪ N`, since
+`ChooseVariable` picks it from `vars(H) ∖ (Z ∪ N)`. -/
+def Outcome.Fresh {H : Finset (MvPolynomial Y K)} {N : Finset Y} (Z : Finset Y) :
+    Outcome L H N → Prop
+  | .split x _ _ _ => x ∉ Z ∧ x ∉ N
+  | _ => True
+
+/-- One iteration of the while loop as Algorithm `alg:ZeroingBranching` performs it: a `ZStep`
+whose split variables lie outside `Z ∪ N`. -/
+def ZStepFresh (st st' : ZState K Y) : Prop :=
+  ∃ b ∈ st.W, ∃ o : ∀ H : Finset (MvPolynomial Y K), Outcome L H b.2.2,
+    (∀ H, (o H).Fresh b.2.1) ∧
+    st' = ⟨st.S ∪ (R.refine b.1 b.2.2).biUnion (fun H => (o H).toS b.2.1),
+      st.U ∪ (R.refine b.1 b.2.2).biUnion (fun H => (o H).toU b.2.1),
+      st.W.erase b ∪ (R.refine b.1 b.2.2).biUnion (fun H => (o H).toW b.2.1)⟩
+
+/-- Theorem `thm:zeroing-correctness` covers these iterations. -/
+theorem ZStepFresh.zStep {st st' : ZState K Y} (hs : ZStepFresh R st st') : ZStep R st st' := by
+  obtain ⟨b, hb, o, -, h⟩ := hs
+  exact ⟨b, hb, o, h⟩
+
+/-- A multiset below one that is smaller in the Dershowitz–Manna order is smaller too. -/
+theorem isDershowitzMannaLT_of_le {α : Type*} [Preorder α] {M N P : Multiset α} (hle : M ≤ N)
+    (hlt : Multiset.IsDershowitzMannaLT N P) : Multiset.IsDershowitzMannaLT M P := by
+  obtain ⟨D, rfl⟩ := Multiset.le_iff_exists_add.mp hle
+  by_cases hD : D = 0
+  · simpa [hD] using hlt
+  · exact Multiset.IsDershowitzMannaLT.trans ⟨M, 0, D, hD, (add_zero M).symm, rfl, by simp⟩ hlt
+
+variable [Fintype Y]
+
+/-- `|Y ∖ (Z ∪ N)|`, the number of variables a pending branch `(Q, Z, N)` can still split on. -/
+def freeVars (b : ZBranch K Y) : ℕ :=
+  (b.2.1 ∪ b.2.2)ᶜ.card
+
+/-- One iteration decreases the multiset of `|Y ∖ (Z ∪ N)|` over the pending branches: it removes
+one pending branch and adds pending branches with one more decided variable. -/
+theorem ZStepFresh.freeVars_lt {st st' : ZState K Y} (hs : ZStepFresh R st st') :
+    Multiset.IsDershowitzMannaLT (st'.W.val.map freeVars) (st.W.val.map freeVars) := by
+  obtain ⟨b, hb, o, hfresh, rfl⟩ := hs
+  dsimp only
+  set C := (R.refine b.1 b.2.2).biUnion fun H => (o H).toW b.2.1
+  have hC : ∀ c ∈ C, freeVars c < freeVars b := by
+    intro c hc
+    obtain ⟨H, -, hcH⟩ := Finset.mem_biUnion.mp hc
+    have hf := hfresh H
+    generalize o H = oH at hcH hf
+    cases oH with
+    | solved | unsat | unresolved => simp [Outcome.toW] at hcH
+    | split x G _ _ =>
+      obtain ⟨hxZ, hxN⟩ := hf
+      have hlt : (insert x (b.2.1 ∪ b.2.2))ᶜ.card < (b.2.1 ∪ b.2.2)ᶜ.card :=
+        Finset.card_lt_card (Finset.compl_ssubset_compl.mpr
+          (Finset.ssubset_insert (Finset.notMem_union.mpr ⟨hxZ, hxN⟩)))
+      simp only [Outcome.toW, Finset.mem_insert, Finset.mem_singleton] at hcH
+      rcases hcH with rfl | rfl
+      · show (insert x b.2.1 ∪ b.2.2)ᶜ.card < (b.2.1 ∪ b.2.2)ᶜ.card
+        rw [Finset.insert_union]
+        exact hlt
+      · show (b.2.1 ∪ insert x b.2.2)ᶜ.card < (b.2.1 ∪ b.2.2)ᶜ.card
+        rw [Finset.union_insert]
+        exact hlt
+  have hW : st.W.val.map freeVars = (st.W.erase b).val.map freeVars + {freeVars b} := by
+    conv_lhs => rw [← Multiset.cons_erase (Finset.mem_val.mpr hb)]
+    rw [Multiset.map_cons, Finset.erase_val, ← Multiset.singleton_add, add_comm]
+  have hle : (st.W.erase b ∪ C).val.map freeVars ≤
+      (st.W.erase b).val.map freeVars + C.val.map freeVars := by
+    rw [← Multiset.map_add, Finset.union_val]
+    exact Multiset.map_le_map (Multiset.union_le_add _ _)
+  refine isDershowitzMannaLT_of_le hle ?_
+  rw [hW]
+  refine ⟨_, _, {freeVars b}, by simp, rfl, rfl, fun y hy =>
+    ⟨freeVars b, Multiset.mem_singleton_self _, ?_⟩⟩
+  obtain ⟨c, hc, rfl⟩ := Multiset.mem_map.mp hy
+  exact hC c (Finset.mem_val.mp hc)
+
+/-- **Theorem `thm:zeroing-termination` (Termination of recursive splitting).** With finitely many
+variables, Algorithm `alg:ZeroingBranching` makes finitely many iterations of its while loop,
+for every choice of solver results, saturations, timeouts, budget and splitting variables. -/
+theorem zeroing_terminates : WellFounded fun st' st : ZState K Y => ZStepFresh R st st' :=
+  Subrelation.wf (fun hs => ZStepFresh.freeVars_lt R hs)
+    (InvImage.wf (fun st : ZState K Y => st.W.val.map freeVars)
+      Multiset.wellFounded_isDershowitzMannaLT)
+
+end Termination
 
 /-! ### Branch contraction (Subsection `subsec:zeroing-branch-contraction`) -/
 

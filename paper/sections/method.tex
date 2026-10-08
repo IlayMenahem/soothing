@@ -92,10 +92,57 @@ For every finite $Q\subseteq R\setminus\{0\}$,
 \]
 \end{theorem}
 
+\begin{proof}
+Let $a\in V(Q)$. Every $q\in Q$ vanishes at $a$, so some factor in $C_q$
+does. The factors in $C(Q)$ that vanish at $a$ therefore form a hitting set,
+which contains a minimal one $H$, and $a\in V(H)$. Conversely, let $a\in V(H)$
+for some $H\in\mathcal H(Q)$. Every $q\in Q$ has a factor in $H$, which
+vanishes at $a$, so $a\in V(Q)$.
+\end{proof}
+
 \begin{theorem}[Termination of refinement]
 \label{thm:refine-termination}
 Algorithm~\ref{alg:Refine} terminates on every finite polynomial system.
 \end{theorem}
+
+\begin{proof}
+One round replaces each branch $Q$ by its children
+$\mathcal H(\widetilde Q)$, where $\widetilde Q=\Call{Interreduce}{Q}$,
+independently of the other branches. For a finite set $G$, write
+$M(G)=\langle\operatorname{LM}(g):g\in G\rangle$.
+
+We first show that every child $H$ of $Q$ is terminal or satisfies
+$M(\widetilde Q)\subsetneq M(\widetilde H)$. Every $q\in\widetilde Q$ is a
+multiple of some $h\in H$, so $\operatorname{LM}(h)\mid\operatorname{LM}(q)$
+and $M(\widetilde Q)\subseteq M(H)$. Suppose that equality holds, and let
+$h\in H$ divide $q\in\widetilde Q$. Since
+$\operatorname{LM}(h)\in M(\widetilde Q)$, some $q'\in\widetilde Q$ has
+$\operatorname{LM}(q')\mid\operatorname{LM}(h)\mid\operatorname{LM}(q)$.
+Since $\widetilde Q$ is interreduced, $q'=q$, so $q/h$ has leading
+monomial $1$, and $h=q$ because both are monic. Every
+element of $H$ is a factor of an element of $\widetilde Q$, and every element
+of $\widetilde Q$ has a factor in $H$, so $H=\widetilde Q$. Then $H$ is
+interreduced and consists of monic irreducible polynomials, so
+$\widetilde H=H$ and $\mathcal H(H)=\{H\}$, that is, $H$ is terminal.
+Otherwise $M(\widetilde Q)\subsetneq M(H)\subseteq M(\widetilde H)$, since
+interreduction does not shrink the leading-monomial ideal.
+
+Next, we show that the rounds started from $\{Q\}$ reach a fixed point. Since
+$R$ is Noetherian, it has no infinite strictly ascending chain of ideals, so
+we may assume this for every branch $H$ with
+$M(\widetilde Q)\subsetneq M(\widetilde H)$. A terminal $Q$ is a fixed point.
+Otherwise, each of the finitely many children $H$ of $Q$ is terminal or has
+$M(\widetilde Q)\subsetneq M(\widetilde H)$, so it reaches a fixed point after
+some $k_H$ rounds, and $\{Q\}$ reaches one after $1+\max_Hk_H$ rounds. Since
+rounds act on each branch separately, $W=\mathcal H(P)$ reaches a fixed point,
+and the loop stops.
+
+Finally, every branch of the final $W$ is terminal. Otherwise, choose a
+nonterminal $Q\in W$ whose $M(\widetilde Q)$ is minimal among the nonterminal
+branches of $W$. Since $W$ is a fixed point, $Q$ is a child of some $Q'\in W$.
+A terminal $Q'$ has only the child $Q'$, so $Q'$ is nonterminal, and
+$M(\widetilde Q')\subsetneq M(\widetilde Q)$ contradicts the choice of $Q$.
+\end{proof}
 
 \begin{lemma}[Refinement preserves solutions]
 \label{lem:recursive-refinement}
@@ -108,6 +155,18 @@ $\bigcup_{Q\in W}V(Q)$. Consequently,
 \]
 \end{lemma}
 
+\begin{proof}
+Interreduction keeps $V(Q)$, so Theorem~\ref{thm:branch-decomposition} gives
+$V(Q)=\bigcup_{H\in\mathcal H(\widetilde Q)}V(H)$ for every branch $Q$, with
+$\widetilde Q=\Call{Interreduce}{Q}$, and a round keeps the union. The optional $\Call{Prune}{}$ removes only branches
+whose solution sets lie in that of a kept branch. The loop starts from
+$W=\mathcal H(P)$, so Theorem~\ref{thm:branch-decomposition} and induction on
+the rounds give the first identity. By the Nullstellensatz,
+$\sqrt{\langle P\rangle}=I(V(P))$ and $\sqrt{\langle H\rangle}=I(V(H))$, and
+the vanishing ideal of a finite union is the intersection of the vanishing
+ideals, which gives the second.
+\end{proof}
+
 \begin{theorem}[Factor branching]
 \label{thm:branching-correctness}
 If $\mathcal B$ returns on every branch in $\mathcal L(P)$, then
@@ -119,10 +178,37 @@ Algorithm~\ref{alg:Branching} terminates, and
 \]
 \end{theorem}
 
+\begin{proof}
+By Theorem~\ref{thm:refine-termination}, $\Call{Refine}{P}$ returns the finite
+set $\mathcal L(P)$, so the algorithm makes finitely many solver calls, each of
+which returns. The branches that $\mathcal B$ certifies UNSAT have empty
+solution sets, and $\mathcal B$ represents every other branch exactly, so the
+first identity follows from Lemma~\ref{lem:recursive-refinement}, and the
+second follows from the first by the Nullstellensatz, as in the proof of
+Lemma~\ref{lem:recursive-refinement}.
+\end{proof}
+
 % Correctness
-\begin{theorem}[Prime branching]
+\begin{theorem}[Prime factor branching]
 \label{thm:prime-branching}
 If the branch solver $\mathcal B_{\min}$ returns a minimal prime decomposition,
-Algorithm~\ref{alg:Branching} returns exactly the minimal primes of
-$\langle P\rangle$.
+the primes returned by Algorithm~\ref{alg:Branching} that contain no other
+returned prime are exactly the minimal primes of $\langle P\rangle$.
 \end{theorem}
+
+\begin{proof}
+Let $\mathcal M$ be the set of returned primes. The minimal primes of
+$\langle H\rangle$ intersect to $\sqrt{\langle H\rangle}$, so
+$\bigcap_{\mathfrak p\in\mathcal M}\mathfrak p=\sqrt{\langle P\rangle}$ by
+Lemma~\ref{lem:recursive-refinement}. Let $\mathfrak q$ be a minimal prime of
+$\langle P\rangle$. It contains the finite intersection
+$\bigcap_{\mathfrak p\in\mathcal M}\mathfrak p$, hence some
+$\mathfrak p\in\mathcal M$~\cite[Prop.~1.11]{atiyah1969introduction}. Since
+$\mathfrak p$ contains $\langle P\rangle$, minimality gives
+$\mathfrak p=\mathfrak q$, and $\mathfrak q$ contains no other element of
+$\mathcal M$. Conversely, every $\mathfrak p\in\mathcal M$ contains
+$\sqrt{\langle P\rangle}$, the intersection of the minimal primes of
+$\langle P\rangle$, and hence one of them, which lies in $\mathcal M$. So an
+element of $\mathcal M$ that contains no other one is a minimal prime of
+$\langle P\rangle$.
+\end{proof}

@@ -49,6 +49,7 @@ lake env lean Audit.lean  # prints the axioms of every result
 | Equation `eq:zeroing-refinement` | `VY_eq_iUnion_refine` | `VariableZeroing.lean` |
 | Theorem `thm:zeroing-correctness` | `zeroing_correct` | `VariableZeroing.lean` |
 | Corollary `cor:zeroing-completeness` | `zeroing_complete` | `VariableZeroing.lean` |
+| Theorem `thm:zeroing-termination` | `zeroing_terminates` (loop iterations `ZStepFresh`, whose split variables lie outside `Z ∪ N`) | `VariableZeroing.lean` |
 | Branch contraction (§`subsec:zeroing-branch-contraction`) | `contraction_zero_unsat`, `contraction_nonzero_unsat` | `VariableZeroing.lean` |
 
 ## How the paper's objects are modelled

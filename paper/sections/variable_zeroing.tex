@@ -116,6 +116,20 @@ remain part of the solution-set representation.
     \label{fig:variable_zeroing_tree}
 \end{figure}
 
+For comparison, we repeat the experiment twice: once with the fixed side
+conditions $x=1$ and $x\neq1$, and once with each split independently drawing
+an integer $a$ uniformly from $\{-10,\ldots,10\}$ and using the side conditions
+$x=a$ and $x\neq a$, saturating the branch $x\neq a$ by $x-a$. Both runs use
+M4GB with a five-second limit per branch
+and a ten-minute wall-clock limit. Neither alternative finishes within ten
+minutes, and both searches reach depth 22, where every variable has been
+split. The run with $x=1$ ends with 24 unresolved branches after 73 splits,
+and the run with random values, seeded with $0$, ends with 29 after 89
+splits.
+
+On this system, zero/nonzero splits are therefore more effective than these
+affine splits.
+
 \subsection{Choice of variable for splitting}
 \label{subsec:zeroing-variable-choice}
 
@@ -143,7 +157,6 @@ $\mathrm{ChooseVariable}(Q,X)$ returns a variable $x\in X$ with the largest scor
 \label{subsec:zeroing-branch-contraction}
 
 Suppose that one child of a split on $x$ has no terminal branches (i.e., UNSAT) and the other has exactly one, $H$.
-With the notation $V_Y$ of Subsection~\ref{subsec:zeroing-theoretical-analysis},
 Lemma~\ref{lem:recursive-refinement} and Equation~\eqref{eq:zeroing-split} give
 \[
     V_Y(Q;Z,N)=
@@ -176,7 +189,7 @@ union of the sets $V_Y(Q_i;A\cup\{D_i\})$.
 
 For variable zeroing, the conditions $x=0$ and $x\neq0$ cover all values of
 $x$. Lemma~\ref{lem:zero-nonzero-split} is a set-theoretic form of the
-decomposition $V(I)=V(I+\langle f\rangle)\cup V(I:f^\infty)$~\cite[Ch.~4, \S4]{cox2015ideals}.
+decomposition $V(I)=V(I+\langle f\rangle)\cup V(I:f^\infty)$~\cite[Ch.~4, \S4]{cox2015ideals}, whose ideal form is Lemma~\ref{lem:saturation-split}.
 
 \begin{lemma}
 \label{lem:zero-nonzero-split}
@@ -189,6 +202,18 @@ $Q_0=H|_{x=0}$, and let $Q_1=\Call{Saturate}{H,N\cup\{x\}}$. Then
 \end{equation}
 \end{lemma}
 
+\begin{proof}
+Every point has $a_x=0$ or $a_x\neq0$, so by the covering argument above it
+suffices to show that $V_Y(Q_0;Z\cup\{x\},N)$ and $V_Y(Q_1;Z,N\cup\{x\})$
+consist of the points of $V_Y(H;Z,N)$ with $a_x=0$ and with $a_x\neq0$,
+respectively. At a point with $a_x=0$, each $q|_{x=0}$ takes the value of
+$q$, which gives the first set. The
+identity
+$V\bigl(\Call{Saturate}{H,N\cup\{x\}}\bigr)\setminus V(u_{N\cup\{x\}})
+=V(H)\setminus V(u_{N\cup\{x\}})$ of
+Subsection~\ref{subsec:zeroing-branching} gives the second.
+\end{proof}
+
 Let $\mathcal L(Q,N)$ be the terminal branches returned by
 $\Call{Refine}{Q,N}$. Lemma~\ref{lem:recursive-refinement}, applied in the ring
 of $Q$, and the two steps that use $N$ keep every point of
@@ -199,11 +224,6 @@ Since $V_Y(Q;Z,N)$ depends on $Q$ only through $V(Q)\setminus V(u_N)$,
 \label{eq:zeroing-refinement}
     V_Y(Q;Z,N)=\bigcup_{H\in\mathcal L(Q,N)}V_Y(H;Z,N).
 \end{equation}
-Each iteration of Algorithm~\ref{alg:ZeroingBranching} replaces a pending
-branch by its terminal branches, by Equation~\eqref{eq:zeroing-refinement},
-and each terminal branch is solved, certified UNSAT, recorded as unresolved,
-or split, by Equation~\eqref{eq:zeroing-split}. Hence the solved, unresolved
-and pending branches together always represent $V(P)$.
 
 \begin{theorem}[Correctness of recursive splitting]
 \label{thm:zeroing-correctness}
@@ -217,8 +237,64 @@ where a representation in $S$ stored with $(Z,N)$ for the branch $H$
 represents $V_Y(H;Z,N)$.
 \end{theorem}
 
+\begin{proof}
+The algorithm maintains
+\[
+    V(P)=\operatorname{Sol}(S)
+    \cup\bigcup_{(H,Z,N)\in U}V_Y(H;Z,N)
+    \cup\bigcup_{(Q,Z,N)\in W}V_Y(Q;Z,N),
+\]
+which holds initially, since $V_Y(P;\emptyset,\emptyset)=V(P)$. An iteration
+removes $(Q,Z,N)$ from $W$, and Equation~\eqref{eq:zeroing-refinement}
+replaces $V_Y(Q;Z,N)$ by the sets $V_Y(H;Z,N)$ of its terminal branches. The
+algorithm then represents $V_Y(H;Z,N)$ in $S$, finds it empty, records it in
+$U$, or replaces it by the sets of the two children, which have the same
+union by Lemma~\ref{lem:zero-nonzero-split}, or by the covering argument for
+other side conditions. So the invariant still holds, and when the algorithm
+returns, $W=\emptyset$.
+\end{proof}
+
 \begin{corollary}[Completeness of variable zeroing]
 \label{cor:zeroing-completeness}
 If $U=\emptyset$ in the output of Algorithm~\ref{alg:ZeroingBranching}, then
 $\operatorname{Sol}(S)=V(P)$.
 \end{corollary}
+
+\begin{proof}
+This is Theorem~\ref{thm:zeroing-correctness} with $U=\emptyset$.
+\end{proof}
+
+The \emph{split tree} of a run of Algorithm~\ref{alg:ZeroingBranching} has
+the terminal branches on which the algorithm runs $\mathcal B$ as its nodes.
+The children of a branch that the algorithm splits are the terminal branches
+of the two pending branches that the split creates. The leaves are the
+branches that the algorithm adds to $S$ or $U$.
+
+\begin{theorem}[Termination of recursive splitting]
+\label{thm:zeroing-termination}
+If $\mathcal B$ stops within the per-call timeout $\tau$ on every leaf of the
+split tree, Algorithm~\ref{alg:ZeroingBranching} terminates.
+\end{theorem}
+
+\begin{proof}
+Every iteration of the while loop is finite. The proof of
+Theorem~\ref{thm:refine-termination} applies to $\Call{Refine}{Q,N}$: its
+children are still hitting sets of factor sets, which have lost only
+variables of $N$, so a child that equals its interreduced parent is still
+terminal, and dropping a branch only removes children. So $\mathcal L(Q,N)$
+is finite. On a leaf $H\in\mathcal L(Q,N)$, the iteration makes at most one
+call of $\mathcal B$, which stops within $\tau$ by assumption. The algorithm
+splits any other $H$ because $\mathcal B$ did not return within $\tau$, and
+stops $\mathcal B$ there. The split then makes one restriction to $x=0$ and
+one call of $\Call{Saturate}{}$, which stops within $\tau$ as well, since it
+returns $H$ when \texttt{sat} does not finish.
+
+For a pending branch $(Q,Z,N)$, let $d=|Y\setminus(Z\cup N)|$ be the number
+of variables it can still split on. A split variable $x$ lies in
+$\operatorname{vars}(H)\setminus(Z\cup N)$, so both children of a split have
+$d$ one smaller than the pending branch whose iteration creates them. An
+iteration therefore removes one element from the multiset of the numbers $d$
+over $W$ and adds finitely many smaller ones. This multiset order is well
+founded~\cite{dershowitz1979proving}, so the loop makes finitely many
+iterations.
+\end{proof}
