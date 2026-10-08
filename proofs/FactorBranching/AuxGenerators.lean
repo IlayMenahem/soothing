@@ -3,10 +3,11 @@ import FactorBranching.VariableZeroing
 /-!
 # Auxiliary generators under refinement
 
-Lemma `lem:auxiliary-generators` (Section "Recursive splitting"): refinement keeps exactly one
-generator containing `s_x`, of the form `c (1 - s_x h_x)` with `h_x ≡ x` modulo the
-auxiliary-free generators `H'`; hence `π(V(H)) = {a ∈ V(H') : a_x ≠ 0, x ∈ N}` and
-`UpdateSaturation` loses no constraint.
+For a branch that carries the separate encoding of Subsection `subsec:nonzero-encoding`,
+refinement keeps exactly one generator containing `s_x`, of the form `c (1 - s_x h_x)` with
+`h_x ≡ x` modulo the auxiliary-free generators `H'`; hence
+`π(V(H)) = {a ∈ V(H') : a_x ≠ 0, x ∈ N}`. Algorithm `alg:ZeroingBranching` no longer refines
+such branches: it saturates instead, and Rabinowitsch generators occur only inside solver calls.
 
 The paper's proof has three steps, each formalized here for an arbitrary monomial order:
 * the leading monomial of `c (1 - s h)` contains `s` (`degree_auxGen_apply`), so it divides no
@@ -26,6 +27,17 @@ noncomputable section
 open scoped Classical MonomialOrder
 
 namespace FactorBranching
+
+/-- The ring `K[x_y, s_y : y ∈ Y]` of the separate encoding (`Sum.inl y` is `x_y`, `Sum.inr y`
+the auxiliary variable `s_y`). -/
+abbrev ZPoly (K : Type*) [Field K] (Y : Type*) := MvPolynomial (Y ⊕ Y) K
+
+theorem aeval_eq_of_vars {K : Type*} [Field K] {L : Type*} [Field L] [Algebra K L] {σ : Type*}
+    {f g : σ → L} {q : MvPolynomial σ K} (h : ∀ v ∈ q.vars, f v = g v) :
+    aeval f q = aeval g q :=
+  hom_congr_vars (f₁ := (aeval f : MvPolynomial σ K →ₐ[K] L).toRingHom)
+    (f₂ := (aeval g : MvPolynomial σ K →ₐ[K] L).toRingHom)
+    (by ext; simp) (fun i hi _ => by simpa using h i hi) rfl
 
 variable {K : Type*} [Field K] {σ : Type*}
 

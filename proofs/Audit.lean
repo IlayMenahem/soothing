@@ -35,9 +35,15 @@ open FactorBranching
 -- Section "Primary factor branching"
 #print axioms FactorBranching.exists_separator
 #print axioms FactorBranching.isolated_separator
+#print axioms FactorBranching.separatedComponents_unmixed
+#print axioms FactorBranching.eq_of_le_of_ringKrullDim_eq
 #print axioms FactorBranching.primaryBranching_spec
 -- Section "Recursive splitting"
 #print axioms FactorBranching.exhaustive_split
+#print axioms FactorBranching.mem_V_iff_of_isSaturation
+#print axioms FactorBranching.VY_saturate
+#print axioms FactorBranching.Refiner.toCondRefiner
+#print axioms FactorBranching.CondRefiner.dropVanishing
 #print axioms FactorBranching.projection_auxGen
 #print axioms FactorBranching.reduceTerm_auxGen
 #print axioms FactorBranching.irreducible_auxGen

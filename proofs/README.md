@@ -37,10 +37,14 @@ lake env lean Audit.lean  # prints the axioms of every result
 | Separators exist (§`subsec:primary-branching-framework`) | `exists_separator` | `PrimaryBranching.lean` |
 | Saturation keeps components, `J:u^∞ = ⋂_{u∉𝔭_j} 𝔮_j` | `saturation_finsetInf_primary` | `PrimaryBranching.lean` |
 | Lemma `lem:isolated-separator` | `isolated_separator` | `PrimaryBranching.lean` |
+| Isolated components by separators suffice when they intersect to `⟨P⟩` (§`subsec:primary-branching-framework`) | `separatedComponents_unmixed` | `PrimaryBranching.lean` |
+| Marking by containment and dimension (§`subsec:primary-branching-framework`) | `eq_of_le_of_ringKrullDim_eq` | `PrimaryBranching.lean` |
 | Theorem `thm:primary-branching` | `primaryBranching_spec` | `PrimaryBranching.lean` |
 | Nonzero encodings (§`subsec:nonzero-encoding`) | `separate_encoding`, `product_encoding` | `VariableZeroing.lean` |
-| Auxiliary generators survive refinement (§`sec:variable-zeroing`) | `projection_auxGen`, `degree_auxGen_apply`, `auxGen_reduces_none`, `auxGen_not_reduced_by_auxGen`, `reduceTerm_auxGen`, `irreducible_auxGen`, `mem_of_isHitting_auxGen` | `AuxGenerators.lean` |
+| Auxiliary generators survive refinement (separate encoding, §`subsec:nonzero-encoding`; no longer used by Algorithm `alg:ZeroingBranching`) | `projection_auxGen`, `degree_auxGen_apply`, `auxGen_reduces_none`, `auxGen_not_reduced_by_auxGen`, `reduceTerm_auxGen`, `irreducible_auxGen`, `mem_of_isHitting_auxGen` | `AuxGenerators.lean` |
 | Exhaustive split (§`subsec:zeroing-theoretical-analysis`) | `exhaustive_split` | `VariableZeroing.lean` |
+| `V(Saturate(H, N)) ∖ V(u_N) = V(H) ∖ V(u_N)` (§`subsec:zeroing-branching`) | `mem_V_iff_of_isSaturation`, `VY_saturate` | `VariableZeroing.lean` |
+| `Refine(Q, N)` keeps `V(Q) ∖ V(u_N)` (§`subsec:zeroing-branching`) | `Refiner.toCondRefiner`, `CondRefiner.dropVanishing` | `VariableZeroing.lean` |
 | Lemma `lem:zero-nonzero-split` | `zero_nonzero_split` | `VariableZeroing.lean` |
 | Equation `eq:zeroing-refinement` | `VY_eq_iUnion_refine` | `VariableZeroing.lean` |
 | Theorem `thm:zeroing-correctness` | `zeroing_correct` | `VariableZeroing.lean` |
@@ -76,14 +80,22 @@ that carries exactly what the paper assumes, and each theorem holds for every ad
   dimension of a component `q` is `ringKrullDim (R ⧸ √q)`. `TopPartSolver` returns the
   intersection of the components of maximal dimension. That this doesn't depend on which
   decomposition is chosen (uniqueness of isolated components) is part of its specification,
-  not proved here.
-- **Variable zeroing.** Every branch lives in one ring `K[x_y, s_y : y ∈ Y]`. A point is a full
-  `a : Y → L` with `a_z = 0` for `z ∈ Z`, which is equivalent to the paper's restriction to
-  `Y ∖ Z`. `H|_{x=0}` drops equations that become `0`. Each terminal branch's fate (solved,
-  certified UNSAT, unresolved, or split on some `x ∉ N`) is an arbitrary outcome, so the
-  correctness theorem covers every possible solver result, timeout, budget and variable choice.
-- **Auxiliary generators** (variable-zeroing section) are proved through its three proof steps (see the
-  module doc of `AuxGenerators.lean`) plus the projection identity. The reduction step assumes
+  not proved here. Algorithm `alg:PrimaryBranching` takes any system `Q` that Algorithm
+  `alg:IdealReduce` reaches from `P`, and returns each component of `𝓑_prim(Q)` paired with its
+  mark (`true` for isolated).
+- **Variable zeroing.** Every branch lives in the original ring `K[Y]`, without auxiliary
+  variables. A point is a full `a : Y → L` with `a_z = 0` for `z ∈ Z`, which is equivalent to
+  the paper's restriction to `Y ∖ Z`. `H|_{x=0}` drops equations that become `0`.
+  `Saturate(H, N)` is any `G` with `⟨H⟩ ⊆ ⟨G⟩` and `u_N^m g ∈ ⟨H⟩` for each `g ∈ G`
+  (`IsSaturation`): a basis of `⟨H⟩ : u_N^∞`, or `H` itself after a timeout
+  (`isSaturation_self`). `Refine(Q, N)` is a `CondRefiner`, specified by
+  `V(Q) ∖ V(u_N) = ⋃_{H} V(H) ∖ V(u_N)`; Algorithm `alg:Refine` satisfies it, and dropping
+  branches whose ideal contains a variable of `N` keeps it. Removing the variables of `N` from
+  the factor sets is not modelled. Each terminal branch's fate (solved, certified empty under
+  `N`, unresolved, or split on some `x`) is an arbitrary outcome, so the correctness theorem
+  covers every possible solver result, saturation, timeout, budget and variable choice.
+- **Auxiliary generators** (separate encoding) are proved through the three proof steps in the
+  module doc of `AuxGenerators.lean`, plus the projection identity. The reduction step assumes
   that the reducing generator is nonconstant. With a constant generator, `⟨H'⟩ = ⟨1⟩` and the
   branch is UNSAT, a case the paper leaves implicit.
 

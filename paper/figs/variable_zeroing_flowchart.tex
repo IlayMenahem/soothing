@@ -20,7 +20,7 @@
 \node[return box, right=12mm of next] (ret) {%
     \textcolor{violet}{\bfseries Return}\\$(S,U)$};
 \node[blue box, below=6mm of next] (run) {%
-    Run $\mathcal B$ for at most $\tau$ on each $H\in\Call{Refine}{Q}$ \\
+    Run $\mathcal B$ for at most $\tau$ on $(H,N)$, $H\in\Call{Refine}{Q,N}$ \\
     $V\gets\operatorname{vars}(H)\setminus(Z\cup N)$ \\
     solved: representation with $(Z,N)\to S$};
 \node[decision, below=9mm of run] (test) {%
@@ -32,7 +32,7 @@
 \node[blue box, below left=9mm and -22mm of choose] (zero) {%
     $(H|_{x=0},\;Z\cup\{x\},\;N)\to W$};
 \node[blue box, below right=9mm and -22mm of choose] (nonzero) {%
-    $(\Call{UpdateSaturation}{H,N\cup\{x\}},$\\$Z,\;N\cup\{x\})\to W$};
+    $(\Call{Saturate}{H,N\cup\{x\}},$\\$Z,\;N\cup\{x\})\to W$};
 
 \node[draw=black!50, dashed, rounded corners=6pt, inner sep=8pt,
     fit=(test) (keep) (choose) (zero) (nonzero)] (frame) {};

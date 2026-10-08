@@ -17,7 +17,7 @@ and Macaulay2 1.26.06~\cite{singular2025,macaulay2}.
 
 For Algorithm~\ref{alg:ZeroingBranching}, we test M4GB, F5, GVW, F4,
 and Singular as branch solvers and impose a
-three-second limit on each hitting-set computation.  We selected this cutoff by
+three-second limit on each hitting-set computation and each saturation.  We selected this cutoff by
 trying one, two, three, and five seconds on the hard gated systems.  Three
 seconds is the smallest tested value that lets Singular complete the Katsura-8
 residual (about 2.6 seconds); five seconds completes no additional hard system
@@ -309,7 +309,7 @@ gravity~\cite{vacca2010asymptotic}.
 
 For this larger system, every run, including the standalone baselines, has a
 120-second total limit.  Within it, variable zeroing uses a five-second limit per
-branch; factor branching places no further limit on a branch.
+branch and per saturation; factor branching places no further limit on a branch.
 
 \begin{table}[pos=htbp]
 \centering
@@ -320,17 +320,17 @@ branch; factor branching places no further limit on a branch.
 \hline
 Backend & Factor branching $T/F$ (s) & Factor branching result & Variable zeroing $T/F$ (s) & Variable zeroing result \\
 \hline
-M4GB & $timeout/0.003$ & partial: 6 SAT, 1 timeout & $24.710/0.432$ & complete: 13 splits \\
-F5 & $timeout/0.006$ & partial: 6 SAT, 1 timeout & $timeout/0.421$ & partial: 35 splits, 11 unresolved \\
-GVW & $timeout/0.006$ & partial: 6 SAT, 1 timeout & $timeout/0.490$ & partial: 35 splits, 11 unresolved \\
-F4 & $timeout/0.006$ & partial: 6 SAT, 1 timeout & $timeout/0.434$ & partial: 32 splits, 8 unresolved \\
-Singular & $timeout/0.013$ & partial: 6 SAT, 1 timeout & $17.791/0.434$ & complete: 7 splits \\
-\texttt{facstd} & $0.785/0.010$ & complete: 6 SAT, 1 UNSAT & $1.207/0.425$ & complete: 0 splits \\
+M4GB & $timeout/0.003$ & partial: 6 SAT, 1 timeout & $64.166/0.271$ & complete: 9 splits \\
+F5 & $timeout/0.006$ & partial: 6 SAT, 1 timeout & $timeout/0.272$ & partial: 17 splits, 5 unresolved \\
+GVW & $timeout/0.006$ & partial: 6 SAT, 1 timeout & $timeout/0.302$ & partial: 17 splits, 5 unresolved \\
+F4 & $timeout/0.006$ & partial: 6 SAT, 1 timeout & $timeout/0.266$ & partial: 16 splits, 6 unresolved \\
+Singular & $timeout/0.013$ & partial: 6 SAT, 1 timeout & $52.038/0.301$ & complete: 7 splits \\
+\texttt{facstd} & $0.785/0.010$ & complete: 6 SAT, 1 UNSAT & $1.088/0.275$ & complete: 0 splits \\
 \hline
 \end{tabular}%
 }
 \caption{Physical-system results with a 120-second total limit per run; variable
-zeroing also uses a 5-second limit per branch.  Both methods refine the
+zeroing also uses a 5-second limit per branch and per saturation.  Both methods refine the
 system into the same 7 terminal branches; the factor branching result column
 counts them by outcome.
 A split is one $x=0$ versus $x\neq0$ case split; an unresolved branch is one
@@ -351,4 +351,22 @@ backends already contain every solution.
 
 Variable zeroing also completes with M4GB and Singular, making completion more
 robust to backend choice on this system: three of six backends succeed, versus
-one with factor branching alone.
+one with factor branching alone.  Most of this time goes into saturations.  In
+the M4GB run, 8 of the 9 saturations reach the five-second limit, so these
+branches keep their unsaturated generators, and the remaining one returns
+$\langle1\rangle$.  If the branches instead keep the nonzero conditions as
+separate Rabinowitsch generators, the M4GB and Singular runs take 24.616 and
+17.816 seconds.  On this system, deciding that a branch is empty is cheaper
+than computing its saturation.
+
+For comparison, we repeat the M4GB run of variable zeroing twice with affine
+side conditions: once with the fixed side conditions $x=1$ and $x\neq1$, and
+once with each split independently drawing an integer $a$ uniformly from
+$\{-10,\ldots,10\}$ and using the side conditions $x=a$ and $x\neq a$,
+saturating the branch $x\neq a$ by $x-a$. Both runs use M4GB with a
+five-second limit per branch and a ten-minute wall-clock limit. Neither
+alternative finishes within ten minutes, and both searches reach depth 22,
+where every variable has been split. The run with $x=1$ ends with 24
+unresolved branches after 73 splits, and the run with random values, seeded
+with $0$, ends with 29 after 89 splits. On this system, splits into $x=0$ and
+$x\neq0$ are therefore more effective than these affine splits.
