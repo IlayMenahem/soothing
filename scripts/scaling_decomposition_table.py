@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
-"""Run the factor-branching variants of paper/sections/method_*.tex on the size-graded families.
+"""Table ``tab:scaling-decomposition`` and the Alg. IdealRefine paragraph.
 
-Every method of ``factor_variants.py`` answers one cell of (object, decomposition):
-the object is the ideal I or its radical sqrt I, and the decomposition is monolithic,
-a covering, or irreducible. Alg. Branching is the standard algorithm, and one Singular
-command per cell is the direct baseline. All methods run in the same harness: one
-Python process driving one Singular process, timed by wall clock. The systems come
-from ``benchmark_scaling.py``'s families; their conversion to Singular syntax is not
-timed. Within a family, a method that times out or fails at one size is not run at
-larger sizes, except Alg. PrimaryBranching when its isolated components finished
-before the embedded-component fallback timed out.
+Runs the factor-branching variants of paper/sections/method_*.tex. Every method of
+``factor_variants.py`` answers one cell of (object, decomposition): the object is the
+ideal I or its radical sqrt I, and the decomposition is monolithic, a covering, or
+irreducible. Alg. Branching is the standard algorithm, and one Singular command per
+cell is the direct baseline. All methods run in the same harness: one Python process
+driving one Singular process, timed by wall clock; the conversion to Singular syntax
+is not timed.
+
+``--systems scaling`` (default) runs every method on the families of
+``scaling_table.py``. Within a family, a method that times out or fails at one size
+is not run at larger sizes, except Alg. PrimaryBranching when its isolated components
+finished before the embedded-component fallback timed out. The facstd columns of the
+table come from ``scaling_table.py``.
+
+``--systems baseline`` runs Alg. IdealRefine against std on the 20 baseline systems.
+Both return a description of the ideal I itself that decides ideal membership: std a
+Gröbner basis of I, Alg. IdealRefine ideals with Gröbner bases whose intersection is
+I (Corollary ideal-membership). Where both finish, an untimed run checks that the
+leaves intersect to I.
 
 Examples:
 
-    python3 scripts/benchmark_axes.py --timeout 60 --output-dir /tmp/axes
-    python3 scripts/benchmark_axes.py --families box_qp --output-dir /tmp/axes
-    python3 scripts/benchmark_axes.py --report-only --output-dir /tmp/axes
+    python3 scripts/scaling_decomposition_table.py --timeout 60 --output-dir /tmp/axes
+    python3 scripts/scaling_decomposition_table.py --families box_qp --output-dir /tmp/axes
+    python3 scripts/scaling_decomposition_table.py --systems baseline --timeout 60 --output-dir /tmp/ideal_refine
+    python3 scripts/scaling_decomposition_table.py --report-only
 """
 
 from __future__ import annotations
@@ -29,12 +40,10 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "baselines"))
-from _common import load_system  # noqa: E402
-from benchmark_idos import RESULTS  # noqa: E402
-from benchmark_scaling import FACTOR_BRANCHING, FAMILIES  # noqa: E402
-from benchmark_scaling import RESULTS_FILE as SCALING_RESULTS  # noqa: E402
-from system_to_singular import _poly_to_singular  # noqa: E402
+from _harness import RESULTS, append_row, load_rows
+from _systems import generate_matrix, load_system, poly_to_singular
+from scaling_table import FACTOR_BRANCHING, FAMILIES
+from scaling_table import RESULTS_FILE as SCALING_RESULTS
 
 SCRIPT = Path(__file__).resolve().parent / "factor_variants.py"
 RESULTS_FILE = RESULTS / "axes_results.jsonl"
@@ -69,7 +78,7 @@ def convert(path: Path) -> Path:
             json.dumps(
                 {
                     "variables": [str(symbol) for symbol in symbols],
-                    "polynomials": [_poly_to_singular(polynomial) for polynomial in polynomials],
+                    "polynomials": [poly_to_singular(polynomial) for polynomial in polynomials],
                 }
             ),
             encoding="utf-8",
@@ -100,12 +109,6 @@ def run_method(method: str, system: Path, timeout: int) -> dict[str, object]:
     return {**json.loads(results[-1]), "wall_secs": wall}
 
 
-def load_rows(path: Path) -> list[dict[str, object]]:
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
-
-
 def finished(row: dict[str, object]) -> bool:
     return row["status"] == "ok"
 
@@ -121,7 +124,7 @@ def benchmark_family(family: str, output: Path, timeout: int) -> None:
     failed_at: dict[str, int] = {}
     for (size, label), row in sorted(done.items()):
         if gave_up(row):
-            failed_at.setdefault(str(label), int(size))
+            failed_at.setdefault(str(label), int(str(size)))
     for size in sizes:
         pending = [m for m in METHODS if failed_at.get(m, size) >= size and (size, m) not in done]
         if not pending:
@@ -131,9 +134,8 @@ def benchmark_family(family: str, output: Path, timeout: int) -> None:
         for method in pending:
             row = run_method(method, system, timeout)
             record = {"family": family, "size": size, "system": path.stem, "label": method, "timeout": timeout, **row}
-            with RESULTS_FILE.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record) + "\n")
-            print(f"{path.stem} {method} {row['status']} {float(row['wall_secs']):.3f}", flush=True)
+            append_row(RESULTS_FILE, record)
+            print(f"{path.stem} {method} {row['status']} {float(str(row['wall_secs'])):.3f}", flush=True)
             if gave_up(record):
                 failed_at[method] = min(failed_at.get(method, size), size)
 
@@ -253,11 +255,67 @@ def render_report() -> str:
     return "\n".join(lines)
 
 
+
+
+BASELINE_RESULTS_FILE = RESULTS / "ideal_refine_baseline_results.jsonl"
+BASELINE_REPORT_FILE = RESULTS / "ideal_refine_baseline_comparison.md"
+BASELINE_METHODS: tuple[str, ...] = ("ideal-refine", "direct-std")
+
+
+def benchmark_baseline(output: Path, timeout: int) -> None:
+    done = {(row["system"], row["label"]) for row in load_rows(BASELINE_RESULTS_FILE)}
+    for instance in generate_matrix(output):
+        path = output / Path(instance.path).name
+        system = convert(path)
+        for method in BASELINE_METHODS:
+            if (path.stem, method) in done:
+                continue
+            row = run_method(method, system, timeout)
+            record = {"system": path.stem, "label": method, "timeout": timeout, **row}
+            append_row(BASELINE_RESULTS_FILE, record)
+            print(f"{path.stem} {method} {row['status']} {float(str(row['wall_secs'])):.3f}", flush=True)
+        both = [r for r in load_rows(BASELINE_RESULTS_FILE) if r["system"] == path.stem and r["status"] == "ok"]
+        if len({r["label"] for r in both}) == len(BASELINE_METHODS) and (path.stem, "verify-ideal-refine") not in done:
+            row = run_method("verify-ideal-refine", system, 10 * timeout)
+            append_row(BASELINE_RESULTS_FILE, {"system": path.stem, "label": "verify-ideal-refine", **row})
+            print(f"{path.stem} verify {row.get('exact')}", flush=True)
+
+
+def baseline_cell(row: dict[str, object] | None) -> str:
+    if row is None:
+        return "—"
+    if row["status"] != "ok":
+        return "TO" if row["status"] == "timeout" else "err"
+    found = f"{row['leaves']} leaves" if row["label"] == "ideal-refine" else f"{row['basis_size']} gens"
+    return f"{float(str(row['wall_secs'])):.2f} ({found})"
+
+
+def render_baseline_report() -> str:
+    rows = load_rows(BASELINE_RESULTS_FILE)
+    systems = list(dict.fromkeys(str(row["system"]) for row in rows))
+    lines = [
+        "# Alg. IdealRefine vs std on the baseline systems",
+        "",
+        "Wall time in seconds and what each completed run found, in the harness of",
+        "`scripts/factor_variants.py`. TO = timeout. *exact*: the leaves intersect to I (untimed check).",
+        "",
+        "| system | IdealRefine | std | exact |",
+        "|---|---|---|---|",
+    ]
+    for system in systems:
+        by_label = {str(row["label"]): row for row in rows if row["system"] == system}
+        verify = by_label.get("verify-ideal-refine")
+        exact = "—" if verify is None or verify["status"] != "ok" else str(verify["exact"])
+        lines.append(f"| {system} | {baseline_cell(by_label.get('ideal-refine'))} | {baseline_cell(by_label.get('direct-std'))} | {exact} |")
+    return "\n".join(lines) + "\n"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--systems", choices=("scaling", "baseline"), default="scaling")
     parser.add_argument("--timeout", type=int, default=60)
-    parser.add_argument("--output-dir", type=Path, default=Path("/tmp/axes"))
-    parser.add_argument("--families", default="")
+    parser.add_argument("--output-dir", type=Path, default=Path("/tmp/scaling_decomposition"))
+    parser.add_argument("--families", default="", help="comma-separated scaling families")
     parser.add_argument("--report-only", action="store_true")
     return parser.parse_args()
 
@@ -270,10 +328,14 @@ def main() -> int:
         raise SystemExit(f"unknown families: {', '.join(sorted(unknown))}")
     if not args.report_only:
         args.output_dir.mkdir(parents=True, exist_ok=True)
-        for family in families:
-            benchmark_family(family, args.output_dir, args.timeout)
+        if args.systems == "baseline":
+            benchmark_baseline(args.output_dir, args.timeout)
+        else:
+            for family in families:
+                benchmark_family(family, args.output_dir, args.timeout)
     REPORT_FILE.write_text(render_report() + "\n", encoding="utf-8")
-    print(f"updated {REPORT_FILE}")
+    BASELINE_REPORT_FILE.write_text(render_baseline_report(), encoding="utf-8")
+    print(f"updated {REPORT_FILE} and {BASELINE_REPORT_FILE}")
     return 0
 
 

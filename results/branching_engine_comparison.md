@@ -33,7 +33,7 @@ dimension. `P a/b` denotes a partial run,
 ## Reproduction
 
 ```sh
-python3 scripts/benchmark_branching.py --algorithm branching --no-build --jobs 1
+python3 scripts/baseline_table.py --part branching --no-build --jobs 1
 ```
 
 The script generates the benchmark systems in a temporary directory.

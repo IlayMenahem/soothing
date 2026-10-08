@@ -14,7 +14,7 @@ degrevlex with the variables in name order.
 The output is checked: P lies in <Q>, the components intersect to <Q>, the isolated radicals are
 exactly the minimal primes, and no component is redundant. The exit status is 1 if a check fails.
 
-Usage: run_physical_primary_decomposition.py [REPORT.md]
+Usage: physical_primary_decomposition.py [REPORT.md]
 Default report: results/physical_system_primary_decomposition.md.
 """
 
@@ -26,11 +26,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import factor_variants as fv
+from _systems import load_system, poly_to_singular
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts" / "baselines"))
-from _common import load_system
-from system_to_singular import _poly_to_singular
 
 SYSTEM = ROOT / "systems" / "system.txt"
 REPORT = ROOT / "results" / "physical_system_primary_decomposition.md"
@@ -107,7 +105,7 @@ def load(path: Path) -> PhysicalSystem:
     return PhysicalSystem(
         variables=variables,
         parameters=[str(s) for s in symbols if str(s) == "pi"],
-        polynomials=[_poly_to_singular(p) for p in polynomials],
+        polynomials=[poly_to_singular(p) for p in polynomials],
         min_fill=[variables[i] for i in min_fill_order(len(variables), supports)],
     )
 
@@ -234,7 +232,7 @@ def report(
             "coefficients in Q(pi))."
         ),
         (
-            "Computed with Alg. PrimaryBranching by `scripts/run_physical_primary_decomposition.py`: "
+            "Computed with Alg. PrimaryBranching by `scripts/physical_primary_decomposition.py`: "
             f"Alg. IdealReduce turns the {len(system.polynomials)} equations into {len(reduced)} generators "
             f"in {rounds} rounds ({secs['reduce']:.1f} s), Alg. Branching with `minAssGTZ` finds the "
             f"{len(primes)} minimal primes ({secs['primes']:.1f} s), and Singular `primdecSY` decomposes the "

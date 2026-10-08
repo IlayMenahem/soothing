@@ -29,7 +29,7 @@ A size marked † has at least one run recorded under a noted machine condition 
 |---|---|---|---|---|---|
 | 3 | 13 | 0.04 (branching-f5) | 0.01 (f5-grevlex) | 0.1x | 0 |
 | 4 | 43 | 0.14 (branching-gvw) | 0.26 (singular-facstd) | 1.9x | 1 |
-| 5 | 148 | 1.38 (branching-singular-gb) | 34.79 (homotopy-jl) | 25.2x | 1 |
+| 5 | 148 | 1.38 (branching-singular-gb) | TO | only FB | 1 |
 | 6 |  | TO | TO | — |  |
 
 ## nash_degenerate
@@ -38,7 +38,7 @@ A size marked † has at least one run recorded under a noted machine condition 
 |---|---|---|---|---|---|
 | 3 | 13 | 0.04 (branching-m4gb) | 0.01 (gvw-grevlex) | 0.1x | 1 |
 | 4 | 28 | 0.09 (branching-f5) | 0.20 (singular-facstd) | 2.4x | 1 |
-| 5 | 84 | 0.71 (branching-singular-gb) | 34.84 (homotopy-jl) | 48.8x | 1 |
+| 5 | 84 | 0.71 (branching-singular-gb) | TO | only FB | 1 |
 | 6 |  | TO | TO | — |  |
 
 ## box_qp
@@ -59,6 +59,6 @@ A size marked † has at least one run recorded under a noted machine condition 
 | 6 | 58 | 0.19 (branching-m4gb) | 0.01 (f5-grevlex) | 0.0x | 0 |
 | 8 | 240 | 0.81 (branching-symbolica) | 0.46 (singular-facstd) | 0.6x | 0 |
 | 10 | 984 | 3.00 (branching-gvw) | 6.43 (singular-facstd) | 2.1x | 0 |
-| 12 | 4044 | 13.15 (branching-f5) | 54.45 (homotopy-jl) | 4.1x | 0 |
+| 12 | 4044 | 13.15 (branching-f5) | TO | only FB | 0 |
 | 14 |  | TO | TO | — |  |
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Grow each size-graded family until every method times out.
+"""Table ``tab:scaling-classes``: grow each size-graded family until every method times out.
 
 Families: reduced cyclic n-roots from SymbolicData (``Singular.rcyclic_n``)
-and the application generators of ``benchmark_applications.py`` (Nash
+and the generators of ``_systems.py`` (Nash
 equilibria of binary games, box-QP faces, Lotka--Volterra supports).
 
 Runs within a family are sequential; separate families can run in parallel. Within
@@ -12,23 +12,28 @@ alone both pay their process startup.
 
 Examples:
 
-    python3 scripts/benchmark_scaling.py --timeout 60 --output-dir /tmp/scaling
-    python3 scripts/benchmark_scaling.py --families box_qp --output-dir /tmp/scaling
-    python3 scripts/benchmark_scaling.py --report-only --output-dir /tmp/scaling
+    python3 scripts/scaling_table.py --timeout 60 --output-dir /tmp/scaling
+    python3 scripts/scaling_table.py --families box_qp --output-dir /tmp/scaling
+    python3 scripts/scaling_table.py --report-only --output-dir /tmp/scaling
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from benchmark_applications import box_qp, build, lotka_volterra, nash_game
-from benchmark_branching import run_branching
-from benchmark_idos import RESULTS, run_direct
-from benchmark_natural import run_standalone, symbolicdata_system
+from _harness import (
+    RESULTS,
+    append_row,
+    build,
+    load_rows,
+    run_branching,
+    run_direct,
+    run_external,
+)
+from _systems import box_qp, lotka_volterra, nash_game, symbolicdata_system
 
 RESULTS_FILE = RESULTS / "scaling_results.jsonl"
 REPORT_FILE = RESULTS / "scaling_comparison.md"
@@ -59,10 +64,10 @@ SystemMaker = Callable[[Path, int], Path]
 
 
 def rcyclic(output: Path, size: int) -> Path:
-    record = symbolicdata_system(output, f"Singular.rcyclic_{size}.xml")
-    if record is None:
+    path = symbolicdata_system(output, f"Singular.rcyclic_{size}.xml")
+    if path is None:
         raise SystemExit(f"SymbolicData has no Singular.rcyclic_{size}")
-    return Path(str(record["path"]))
+    return path
 
 
 def from_instance(output: Path, instance_path: str) -> Path:
@@ -99,27 +104,21 @@ def run_method(method: str, path: Path, timeout: int) -> dict[str, object]:
         return run_branching(path, [], timeout, method.removeprefix("branching-"))
     if method.endswith("-grevlex"):
         return run_direct(path, method.removesuffix("-grevlex"), timeout)
-    return run_standalone(method, path, timeout)
+    return run_external(method, path, timeout)
 
 
 def finished(row: dict[str, object]) -> bool:
     return row["status"] == "ok" and row.get("complete", True) is not False
 
 
-def load_rows() -> list[dict[str, object]]:
-    if not RESULTS_FILE.exists():
-        return []
-    return [json.loads(line) for line in RESULTS_FILE.read_text(encoding="utf-8").splitlines() if line]
-
-
 def benchmark_family(family: str, output: Path, timeout: int, condition: str | None) -> None:
     make, sizes, baselines = FAMILIES[family]
-    done = {(row["size"], row["label"]): row for row in load_rows() if row["family"] == family}
+    done = {(row["size"], row["label"]): row for row in load_rows(RESULTS_FILE) if row["family"] == family}
     # The smallest size at which each method timed out or failed; it is not run above it.
     failed_at: dict[str, int] = {}
     for (size, label), row in sorted(done.items()):
         if not finished(row):
-            failed_at.setdefault(label, size)
+            failed_at.setdefault(str(label), int(str(size)))
     tag: dict[str, str] = {} if condition is None else {"condition": condition}
     methods = (*FACTOR_BRANCHING, *baselines)
     for size in sizes:
@@ -131,15 +130,14 @@ def benchmark_family(family: str, output: Path, timeout: int, condition: str | N
             row = run_method(method, path, timeout)
             row.pop("error", None)
             record = {"family": family, "size": size, "system": path.stem, "label": method, "timeout": timeout, **tag, **row}
-            with RESULTS_FILE.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record) + "\n")
+            append_row(RESULTS_FILE, record)
             print(f"{path.stem} {method} {row['status']} {row['wall_secs']:.3f}", flush=True)
             if not finished(row):
                 failed_at[method] = min(failed_at.get(method, size), size)
 
 
 def best(rows: list[dict[str, object]], labels: tuple[str, ...]) -> tuple[float, str] | None:
-    times = [(float(row["wall_secs"]), str(row["label"])) for row in rows if row["label"] in labels and finished(row)]
+    times = [(float(str(row["wall_secs"])), str(row["label"])) for row in rows if row["label"] in labels and finished(row)]
     return min(times) if times else None
 
 
@@ -153,7 +151,7 @@ def cell(entry: tuple[float, str] | None) -> str:
 
 
 def render_report() -> str:
-    rows = load_rows()
+    rows = load_rows(RESULTS_FILE)
     lines = [
         "# Scaling of factor branching on size-graded families",
         "",
@@ -161,8 +159,8 @@ def render_report() -> str:
         "runs are sequential; families may run in parallel (`--families`), one driver each.",
         "A method that times out or fails at one size is not run at larger sizes.",
         "*Dimensions* lists the distinct largest dimensions reported by completed runs.",
-        "A size marked † has at least one run recorded under a noted machine condition"
-        " (the `condition` field of its rows); treat its times as unreliable.",
+        ("A size marked † has at least one run recorded under a noted machine condition"
+         " (the `condition` field of its rows); treat its times as unreliable."),
         "",
     ]
     for family, (_, sizes, baselines) in FAMILIES.items():
@@ -181,7 +179,7 @@ def render_report() -> str:
                 continue
             ours = best(size_rows, FACTOR_BRANCHING)
             theirs = best(size_rows, baselines)
-            branches = sorted({row["total"] for row in size_rows if row["label"] in FACTOR_BRANCHING and "total" in row})
+            branches = sorted({int(str(row["total"])) for row in size_rows if row["label"] in FACTOR_BRANCHING and "total" in row})
             dimensions = sorted({str(dimension(row)) for row in size_rows if finished(row) and dimension(row) is not None})
             ratio = (
                 f"{theirs[0] / ours[0]:.1f}x" if ours and theirs else "only FB" if ours else "only baseline" if theirs else "—"
@@ -213,7 +211,7 @@ def main() -> int:
         raise SystemExit(f"unknown families: {', '.join(sorted(unknown))}")
     if not args.report_only:
         if not args.no_build:
-            build()
+            build("sig_groebner", "branching")
         args.output_dir.mkdir(parents=True, exist_ok=True)
         for family in families:
             benchmark_family(family, args.output_dir, args.timeout, args.condition)

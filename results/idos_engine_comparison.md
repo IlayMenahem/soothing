@@ -1,8 +1,8 @@
 # IDOS and baseline benchmark matrix
 
 This report consolidates the tuned size sweeps and every algorithm exposed by
-[`scripts/benchmark_idos.py`](../scripts/benchmark_idos.py) and
-[`scripts/baselines/`](../scripts/baselines/). The selected systems avoid the
+[`scripts/baseline_table.py`](../scripts/baseline_table.py) and the baseline CLI of
+[`scripts/_harness.py`](../scripts/_harness.py). The selected systems avoid the
 trivial `Gr(2,4)` and first-cover-only gated tests: a completed IDOS result must
 visit every required cover, including the nonlinear residual cover.
 This Markdown matrix is the canonical result store: each `(system, algorithm)`
@@ -110,6 +110,8 @@ dimension. These measurements used a 60-second timeout.
 | `signed_distance_cycle_n8` | 0.012/0.646 | 0.006/0.014 | 0.004/0.010 | 0.003/0.024 | 0.001/0.333 | 0.002/0.570 |
 | `signed_distance_cycle_n10` | 0.125/0.130 | 0.216/0.221 | 0.107/0.112 | 0.018/0.024 | 0.014/0.194 | 0.040/0.518 |
 | `signed_distance_cycle_n12` | 3.259/3.266 | 20.038/20.044 | 8.679/8.685 | 0.436/0.443 | 0.338/0.512 | 0.990/1.293 |
+| `signed_distance_cycle_n14` | TO 60.000/60.011 | TO 60.000/60.014 | TO 60.000/60.018 | TO 60.000/60.660 | 7.421/7.607 | 33.164/26.358 |
+| `signed_distance_cycle_n16` | TO 60.000/60.013 | TO 60.000/60.661 | TO 60.000/60.618 | TO 60.000/60.018 | TO 60.000/60.180 | TO 60.000/60.194 |
 | `overlapping_random_multiples_n4_p6_k2_seed31415` | 0.994/1.000 | 24.859/24.865 | 0.467/0.472 | 0.423/0.429 | TO 60.000/60.208 | TO 60.000/60.210 |
 | `overlapping_random_multiples_n6_p8_k3_seed31415` | TO 60.000/60.027 | TO 60.000/60.035 | TO 60.000/60.074 | TO 60.000/60.019 | TO 60.000/61.441 | TO 60.000/61.362 |
 | `overlapping_random_multiples_n8_p10_k3_seed31415` | TO 60.000/60.092 | TO 60.000/60.095 | TO 60.000/60.101 | TO 60.000/60.050 | TO 60.000/62.000 | TO 60.000/62.000 |
@@ -137,6 +139,8 @@ These methods report maximum component dimension when they complete.
 | `signed_distance_cycle_n8` | 0.019/0.190; d=1 | 0.125/0.320; d=1 | 1.120/1.020; d=1 | 26.413/32.410; d=1 |
 | `signed_distance_cycle_n10` | 0.250/0.430; d=1 | 0.462/0.667; d=1 | 5.377/3.224; d=1 | 27.690/29.944; d=1 |
 | `signed_distance_cycle_n12` | 4.616/4.800; d=1 | 2.767/3.056; d=1 | 65.359/25.223; d=1 | 34.575/36.880; d=1 |
+| `signed_distance_cycle_n14` | TO 60.000/60.181 | 29.894/30.820; d=1 | TO 60.000/60.201 | TO 60.000/60.357 |
+| `signed_distance_cycle_n16` | TO 60.000/60.180 | TO 60.000/60.180 | TO 60.000/60.195 | TO 60.000/60.273 |
 | `overlapping_random_multiples_n4_p6_k2_seed31415` | 0.045/0.265; d=2 | TO 60.000/60.216 | TO 60.000/60.218 | 27.652/30.069; d=2 |
 | `overlapping_random_multiples_n6_p8_k3_seed31415` | TO 60.000/61.357 | TO 60.000/61.358 | TO 60.000/61.364 | TO 60.000/61.397 |
 | `overlapping_random_multiples_n8_p10_k3_seed31415` | TO 60.000/62.000 | TO 60.000/62.000 | TO 60.000/62.000 | TO 60.000/62.000 |
@@ -185,7 +189,7 @@ These methods report maximum component dimension when they complete.
 ## Reproduction
 
 ```sh
-python3 scripts/benchmark_idos.py --no-build --timeout 60 --jobs 1 --rerun-all
+python3 scripts/baseline_table.py --part baselines --no-build --timeout 60 --jobs 1 --rerun-all
 ```
 
 The benchmark generates all 20 systems once and writes only this report.
