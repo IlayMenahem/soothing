@@ -5,13 +5,13 @@ Parts, each a resumable Markdown matrix of system x method in ``results/``:
 
     baselines     the nine standalone methods: M4GB, F5, GVW and F4 in grevlex,
                   Singular and Macaulay2 lex bases, facstd, primdecGTZ and
-                  Macaulay2 decompose (``idos_engine_comparison.md``)
-    branching     Alg. Branching with five backends (``branching_engine_comparison.md``)
+                  Macaulay2 decompose (``baselines.md``)
+    branching     Alg. Branching with five backends (``branching.md``)
     zeroing       Alg. ZeroingBranching with five backends and 3 s per branch
-                  (``zeroing_engine_comparison.md``)
+                  (``zeroing.md``)
     cutoff-sweep  Alg. ZeroingBranching with F4 on the gated systems at 1, 2, 3 and
                   5 s per branch, the choice of the 3 s limit in the setup
-                  (``zeroing_f4_cutoff_sweep.json``)
+                  (``zeroing_cutoff_sweep.json``)
 
 Only cells marked NR run, unless ``--rerun-all``. ``--report-only`` prints the rows
 of ``tab:baseline-comparison`` and ``tab:appendix-zeroing`` from the stored results.
@@ -66,11 +66,11 @@ METHODS: dict[str, tuple[str, ...]] = {
     "zeroing": tuple(f"zeroing-{engine}" for engine in ENGINES),
 }
 MATRICES: dict[str, Path] = {
-    "baselines": RESULTS / "idos_engine_comparison.md",
-    "branching": RESULTS / "branching_engine_comparison.md",
-    "zeroing": RESULTS / "zeroing_engine_comparison.md",
+    "baselines": RESULTS / "baselines.md",
+    "branching": RESULTS / "branching.md",
+    "zeroing": RESULTS / "zeroing.md",
 }
-SWEEP_FILE = RESULTS / "zeroing_f4_cutoff_sweep.json"
+SWEEP_FILE = RESULTS / "zeroing_cutoff_sweep.json"
 SWEEP_BRANCH_TIMEOUTS_MS: tuple[int, ...] = (1000, 2000, 3000, 5000)
 SWEEP_ENGINE = "symbolica"
 PARTS: tuple[str, ...] = (*METHODS, "cutoff-sweep")

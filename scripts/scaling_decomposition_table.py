@@ -46,8 +46,8 @@ from scaling_table import FACTOR_BRANCHING, FAMILIES
 from scaling_table import RESULTS_FILE as SCALING_RESULTS
 
 SCRIPT = Path(__file__).resolve().parent / "factor_variants.py"
-RESULTS_FILE = RESULTS / "axes_results.jsonl"
-REPORT_FILE = RESULTS / "axes_comparison.md"
+RESULTS_FILE = RESULTS / "decomposition.jsonl"
+REPORT_FILE = RESULTS / "decomposition.md"
 # (cell, factor-branching method, direct Singular method or "" when Singular has none)
 CELLS: tuple[tuple[str, str, str], ...] = (
     ("sqrt I, covering", "branching", "direct-facstd"),
@@ -217,7 +217,7 @@ def render_report() -> str:
         f"Wall time in seconds with a {timeout}-second limit, and what each completed run found.",
         "Every method runs in the same harness (`scripts/factor_variants.py`): one Python process",
         "driving one Singular 4.4.1 process. *Rust Alg. Branching* is the fastest recorded backend",
-        "from `scaling_results.jsonl`. Cells, as (object, decomposition):",
+        "from `scaling.jsonl`. Cells, as (object, decomposition):",
         "",
         *(f"- ({name}): {TITLES[ours]}" + (f" vs {TITLES[direct]}" if direct else "") for name, ours, direct in CELLS),
         "",
@@ -257,8 +257,8 @@ def render_report() -> str:
 
 
 
-BASELINE_RESULTS_FILE = RESULTS / "ideal_refine_baseline_results.jsonl"
-BASELINE_REPORT_FILE = RESULTS / "ideal_refine_baseline_comparison.md"
+BASELINE_RESULTS_FILE = RESULTS / "ideal_refine.jsonl"
+BASELINE_REPORT_FILE = RESULTS / "ideal_refine.md"
 BASELINE_METHODS: tuple[str, ...] = ("ideal-refine", "direct-std")
 
 

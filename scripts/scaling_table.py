@@ -35,8 +35,8 @@ from _harness import (
 )
 from _systems import box_qp, lotka_volterra, nash_game, symbolicdata_system
 
-RESULTS_FILE = RESULTS / "scaling_results.jsonl"
-REPORT_FILE = RESULTS / "scaling_comparison.md"
+RESULTS_FILE = RESULTS / "scaling.jsonl"
+REPORT_FILE = RESULTS / "scaling.md"
 BRANCH_ENGINES: tuple[str, ...] = (
     "m4gb",
     "f5",

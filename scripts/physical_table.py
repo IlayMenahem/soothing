@@ -10,7 +10,7 @@ Harnesses, run sequentially so the timings are comparable:
                 F5, GVW and F4 in grevlex, Singular and Macaulay2 lex bases,
                 facstd, primdecGTZ and Macaulay2 decompose
 
-The raw results go to ``results/physical_system_120s_results.json``, one key per
+The raw results go to ``results/physical.json``, one key per
 harness. Naming harnesses reruns only those and keeps the stored results of the
 others. ``--report-only`` prints the rows of the table and the baseline outcomes.
 
@@ -37,7 +37,7 @@ from _harness import (
     run_external,
 )
 
-OUTPUT = RESULTS / "physical_system_120s_results.json"
+OUTPUT = RESULTS / "physical.json"
 TOTAL_MS = 120_000
 PER_BRANCH_MS = 5_000
 OUTER_TIMEOUT_SECS = 125.0

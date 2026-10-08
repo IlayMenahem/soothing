@@ -15,7 +15,7 @@ The output is checked: P lies in <Q>, the components intersect to <Q>, the isola
 exactly the minimal primes, and no component is redundant. The exit status is 1 if a check fails.
 
 Usage: physical_primary_decomposition.py [REPORT.md]
-Default report: results/physical_system_primary_decomposition.md.
+Default report: results/physical_primary.md.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from _systems import load_system, poly_to_singular
 ROOT = Path(__file__).resolve().parent.parent
 
 SYSTEM = ROOT / "systems" / "system.txt"
-REPORT = ROOT / "results" / "physical_system_primary_decomposition.md"
+REPORT = ROOT / "results" / "physical_primary.md"
 # The two families of minimal primes, each named by a polynomial that lies in all of its primes.
 FAMILIES: dict[str, str] = {"R": "kappah^2-192*pi^2", "D": "mh"}
 

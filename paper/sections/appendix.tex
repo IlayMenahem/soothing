@@ -55,7 +55,8 @@ Square affine $(10,5)$ & $0.940$ & $0.975$ & $0.927$ & $0.920$ & $2.909$ \\
 Table~\ref{tab:appendix-zeroing} gives, for each system, the fastest
 completed variable zeroing configuration; where no configuration completes, it
 gives the partial run with the fewest unresolved branches.
-Every backend receives three seconds per branch and a 60-second outer budget.
+Every backend receives three seconds per branch and per saturation and a
+60-second outer budget.
 Here $N$ is the number of recursion nodes,
 $E$ the number of hitting-set evaluations, $O/S$ the numbers of per-branch timeouts
 and variable zeroing splits, and $C/U$ the numbers of returned components and unresolved
@@ -74,26 +75,26 @@ branch in seconds.}
 \hline
 System & Backend & $T/F$ & $N$ & $E$ & $O/S$ & $C/U$ & Result \\
 \hline
-Signed distance, $n=12$ & F5 & $3.000$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
-Signed distance, $n=14$ & GVW & $3.000$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
-Signed distance, $n=16$ & GVW & $3.000$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
-Overlapping $(4,6,2)$ & F5 & $0.051/0.037$ & 1 & 4 & $0/0$ & $4/0$ & complete \\
-Overlapping $(6,8,3)$ & F5 & $0.274/0.127$ & 1 & 16 & $0/0$ & $16/0$ & complete \\
-Overlapping $(8,10,3)$ & Singular & $2.931/0.258$ & 1 & 28 & $0/0$ & $28/0$ & complete \\
-Positive affine $(8,6,4)$ & M4GB & $0.642/0.435$ & 1 & 63 & $0/0$ & $63/0$ & complete \\
-Positive affine $(10,8,5)$ & M4GB & $2.408/1.608$ & 1 & 239 & $0/0$ & $239/0$ & complete \\
-Positive affine $(12,10,6)$ & M4GB & $3.001$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
-Gated Cyclic-5 & M4GB & $0.030/0.021$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated Cyclic-6 & Singular & $0.059/0.026$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated Cyclic-7 & Singular & $15.531/0.026$ & 15 & 10 & $5/7$ & $1/1$ & partial \\
-Gated Katsura-6 & Singular & $0.063/0.027$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated Katsura-7 & Singular & $0.295/0.025$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated Katsura-8 & Singular & $2.599/0.027$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated dense, $n=5$ & Singular & $0.049/0.033$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated dense, $n=6$ & Singular & $0.552/0.023$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
-Gated dense, $n=7$ & F4 & $60.041/0.020$ & 12 & 8 & $7/6$ & $1/7$ & partial \\
-Square affine $(8,4)$ & M4GB & $1.532/1.029$ & 1 & 178 & $0/0$ & $178/0$ & complete \\
-Square affine $(10,5)$ & F4 & $2.659/1.778$ & 1 & 309 & $0/0$ & $309/0$ & complete \\
+Signed distance, $n=12$ & M4GB & $3.001$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
+Signed distance, $n=14$ & M4GB & $3.005$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
+Signed distance, $n=16$ & GVW & $3.022$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
+Overlapping $(4,6,2)$ & F5 & $0.045/0.033$ & 1 & 4 & $0/0$ & $4/0$ & complete \\
+Overlapping $(6,8,3)$ & F5 & $0.280/0.120$ & 1 & 16 & $0/0$ & $16/0$ & complete \\
+Overlapping $(8,10,3)$ & Singular & $3.015/0.259$ & 1 & 28 & $0/0$ & $28/0$ & complete \\
+Positive affine $(8,6,4)$ & F4 & $0.635/0.430$ & 1 & 63 & $0/0$ & $63/0$ & complete \\
+Positive affine $(10,8,5)$ & M4GB & $2.406/1.620$ & 1 & 239 & $0/0$ & $239/0$ & complete \\
+Positive affine $(12,10,6)$ & F5 & $3.002$/-- & 1 & 0 & $0/0$ & $0/1$ & partial \\
+Gated Cyclic-5 & F5 & $0.030/0.021$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Cyclic-6 & Singular & $0.064/0.028$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Cyclic-7 & F4 & $36.422/0.020$ & 15 & 10 & $5/7$ & $1/1$ & partial \\
+Gated Katsura-6 & Singular & $0.066/0.026$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Katsura-7 & Singular & $0.296/0.026$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated Katsura-8 & Singular & $2.505/0.031$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated dense, $n=5$ & Singular & $0.041/0.026$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated dense, $n=6$ & Singular & $0.541/0.026$ & 1 & 2 & $0/0$ & $2/0$ & complete \\
+Gated dense, $n=7$ & F4 & $60.020/0.021$ & 9 & 6 & $5/5$ & $1/6$ & partial \\
+Square affine $(8,4)$ & F5 & $1.514/1.013$ & 1 & 178 & $0/0$ & $178/0$ & complete \\
+Square affine $(10,5)$ & F4 & $2.646/1.764$ & 1 & 309 & $0/0$ & $309/0$ & complete \\
 \hline
 \end{tabular}
 \end{table}

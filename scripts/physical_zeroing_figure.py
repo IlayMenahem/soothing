@@ -3,7 +3,7 @@
 
 Runs ``variable_zeroing`` with the M4GB backend, ideal saturation, a 5 s budget
 per branch and a 120 s overall budget, and stores the summary together with the raw TikZ tree
-in ``results/physical_system_m4gb_5s_figure_run.json``. The paper figure
+in ``results/physical_zeroing_figure.json``. The paper figure
 ``paper/figs/variable_zeroing_tree.tex`` is then derived from that raw TikZ with the
 plot-only changes of the current figure: a source header, "no hitting sets" in place
 of "no covers", the SAT/UNSAT legend, and no unused macros.
@@ -26,7 +26,7 @@ from pathlib import Path
 from _harness import BINARIES, PHYSICAL_SYSTEM, REPO, RESULTS, build, run
 
 BINARY = BINARIES["variable_zeroing"]
-OUTPUT = RESULTS / "physical_system_m4gb_5s_figure_run.json"
+OUTPUT = RESULTS / "physical_zeroing_figure.json"
 FIGURE = REPO / "paper" / "figs" / "variable_zeroing_tree.tex"
 OUTER_TIMEOUT_SECS = 125.0
 
@@ -88,7 +88,7 @@ def derive_figure(raw: str, old_figure: str) -> str:
     first_line, *rest = raw.splitlines()
     figure_lines = [
         first_line,
-        "% Source: results/physical_system_m4gb_5s_figure_run.json",
+        "% Source: results/physical_zeroing_figure.json",
         "% Plot-only changes: omit unused macros; label outcomes SAT/UNSAT.",
         *(
             legend if "Cover outcome:" in line else line.replace(r"\vzNoCovers\ no covers}", r"\vzNoCovers\ no hitting sets}")
