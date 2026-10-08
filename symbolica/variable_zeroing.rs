@@ -101,8 +101,10 @@ pub enum NonzeroEncoding {
     /// One equation `1 - s*(x_1-a_1)*...*(x_n-a_n) = 0` for all conditions.
     SharedProduct,
     /// The saturation `⟨H⟩ : (∏ (x_i-a_i))^∞`, computed by Singular within the
-    /// per-cover timeout; on timeout or error the branch falls back to
-    /// [`NonzeroEncoding::Separate`].
+    /// per-cover timeout; on timeout or error the branch keeps the
+    /// unsaturated generators. Branches have no auxiliary variable: the
+    /// decisions `x_i != a_i` are refinement side conditions, and only the
+    /// branch solver's input carries them as separate Rabinowitsch equations.
     Saturation,
 }
 
@@ -330,8 +332,8 @@ pub struct VariableZeroingStats {
     pub saturations: usize,
     /// Saturations equal to the unit ideal.
     pub saturation_units: usize,
-    /// Saturations that timed out or failed and fell back to the separate
-    /// Rabinowitsch encoding.
+    /// Saturations that timed out or failed, so that the inequality branch
+    /// keeps the unsaturated generators.
     pub saturation_fallbacks: usize,
     /// Covers skipped because a solved component contains their zero set.
     pub pruned_covers: usize,
@@ -556,6 +558,25 @@ impl<'a> Solver<'a> {
                 .map(PolyExtLex::make_monic)
                 .collect(),
             _ => Vec::new(),
+        }
+    }
+
+    /// The system the branch solver receives for `candidate`. A saturated
+    /// branch keeps its inequality decisions outside its generators, so the
+    /// solver receives them as separate Rabinowitsch equations; the
+    /// Rabinowitsch encodings already contain them.
+    fn solver_input(
+        &self,
+        candidate: &[PolyExtLex],
+        conditions: &BranchConditions,
+    ) -> Result<Vec<PolyExtLex>, String> {
+        match self.options.nonzero_encoding {
+            NonzeroEncoding::Saturation
+                if !conditions.unequal.is_empty() && !candidate.is_empty() =>
+            {
+                with_rabinowitsch_equations(candidate.to_vec(), &conditions.unequal, true)
+            }
+            _ => Ok(candidate.to_vec()),
         }
     }
 
@@ -794,8 +815,12 @@ impl<'a> Solver<'a> {
             }
             _ => self.options.timeout,
         };
+        let solver_input = self.solver_input(&candidate, node.conditions)?;
+        let nvars = solver_input
+            .first()
+            .map_or(node.node_nvars, PolyExtLex::nvars);
         let outcome = (self.evaluator)(
-            candidate.clone(),
+            solver_input,
             self.within_budget(limit),
             self.options.gb_backend,
         );
@@ -809,11 +834,17 @@ impl<'a> Solver<'a> {
         };
         match outcome {
             Outcome::Consistent(basis) => {
-                self.record_consistent_components(vec![basis], node, cover_index, cover_elapsed);
+                self.record_consistent_components(
+                    vec![basis],
+                    node,
+                    nvars,
+                    cover_index,
+                    cover_elapsed,
+                );
                 evaluated(VariableZeroingCoverOutcome::Consistent)
             }
             Outcome::ConsistentComponents(bases) => {
-                self.record_consistent_components(bases, node, cover_index, cover_elapsed);
+                self.record_consistent_components(bases, node, nvars, cover_index, cover_elapsed);
                 evaluated(VariableZeroingCoverOutcome::Consistent)
             }
             Outcome::Inconsistent => {
@@ -879,10 +910,13 @@ impl<'a> Solver<'a> {
         }
     }
 
+    /// Record solved components; `nvars` is the size of the solver input's
+    /// ring, auxiliary variables included.
     fn record_consistent_components(
         &self,
         bases: Vec<ComputedBasis>,
         node: &NodeContext<'_>,
+        nvars: usize,
         cover_index: usize,
         elapsed: Duration,
     ) {
@@ -900,7 +934,7 @@ impl<'a> Solver<'a> {
         let components = bases.into_iter().map(|basis| ProjectedComponent {
             node_id: node.node_id,
             decisions: node.decisions.to_vec(),
-            dimension: solution_dimension(&basis.elements, node.node_nvars),
+            dimension: solution_dimension(&basis.elements, nvars),
             basis,
             conditions: node.conditions.clone(),
         });
@@ -945,7 +979,7 @@ impl<'a> Solver<'a> {
         let unequal_branch = match self.options.nonzero_encoding {
             NonzeroEncoding::Saturation => self
                 .saturated_branch(&candidate, &unequal_conditions.unequal)
-                .unwrap_or(rabinowitsch_branch),
+                .unwrap_or_else(|| candidate.clone()),
             NonzeroEncoding::Separate | NonzeroEncoding::SharedProduct => rabinowitsch_branch,
         };
 
@@ -1044,13 +1078,16 @@ impl<'a> Solver<'a> {
             }
             Saturation::Timeout => {
                 self.state().stats.saturation_fallbacks += 1;
-                (None, "timed out; using Rabinowitsch equations".to_string())
+                (
+                    None,
+                    "timed out; keeping the unsaturated generators".to_string(),
+                )
             }
             Saturation::Error(error) => {
                 self.state().stats.saturation_fallbacks += 1;
                 (
                     None,
-                    format!("failed ({error}); using Rabinowitsch equations"),
+                    format!("failed ({error}); keeping the unsaturated generators"),
                 )
             }
         };
@@ -1213,6 +1250,20 @@ fn split_on_variable(
                 )
         })
         .collect();
+    Ok((
+        equal_branch,
+        with_rabinowitsch_equations(candidate, inequality_conditions, saturate_each_variable)?,
+    ))
+}
+
+/// The Rabinowitsch-free generators of `candidate` together with Rabinowitsch
+/// equations for `inequality_conditions`: one per condition, or one for
+/// their product.
+fn with_rabinowitsch_equations(
+    candidate: Vec<PolyExtLex>,
+    inequality_conditions: &[(PolyVariable, i64)],
+    saturate_each_variable: bool,
+) -> Result<Vec<PolyExtLex>, String> {
     let mut unequal_branch: Vec<_> = candidate
         .into_iter()
         .filter(|polynomial| !uses_temporary_variable(polynomial))
@@ -1249,7 +1300,7 @@ fn split_on_variable(
         }
         unequal_branch.push(template.one() - product);
     }
-    Ok((equal_branch, unequal_branch))
+    Ok(unequal_branch)
 }
 
 /// The polynomial `x - a` in the ring of `template`.
@@ -1909,6 +1960,39 @@ mod tests {
         assert_eq!(unconditioned.len(), 2);
         assert_eq!(conditioned.len(), 1);
         assert_eq!(conditioned[0].len(), 2);
+    }
+
+    #[test]
+    fn saturated_branches_give_the_solver_rabinowitsch_equations() {
+        let (loaded, polynomials) = load("{x*y - x == 0, x*z == 0}");
+        let x = variable(&loaded, "x");
+        let options = VariableZeroingOptions {
+            nonzero_encoding: NonzeroEncoding::Saturation,
+            ..VariableZeroingOptions::default()
+        };
+        let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
+        let solver = Solver::new(&options, &always_timeout);
+        let x_nonzero = BranchConditions {
+            equal: Vec::new(),
+            unequal: vec![(x, 0)],
+        };
+
+        let conditioned = solver
+            .solver_input(&polynomials, &x_nonzero)
+            .expect("solver input");
+        let unconditioned = solver
+            .solver_input(&polynomials, &BranchConditions::default())
+            .expect("solver input");
+
+        assert_eq!(conditioned.len(), polynomials.len() + 1);
+        assert_eq!(
+            conditioned
+                .iter()
+                .filter(|polynomial| uses_temporary_variable(polynomial))
+                .count(),
+            1
+        );
+        assert_eq!(unconditioned, polynomials);
     }
 
     #[test]
