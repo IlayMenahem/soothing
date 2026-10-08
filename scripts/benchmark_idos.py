@@ -566,12 +566,6 @@ EXTERNAL_METHODS = (
         "system_to_macaulay2.py",
         ["--task", "decompose"],
     ),
-    (
-        "homotopy-jl",
-        "homotopy",
-        "system_to_homotopy_jl.py",
-        [],
-    ),
 )
 
 
@@ -613,7 +607,6 @@ DECOMPOSITION_METHODS = {
     "singular-facstd",
     "singular-primdecGTZ",
     "m2-decompose",
-    "homotopy-jl",
 }
 
 MATRIX_REQUIRED_COVERS = {

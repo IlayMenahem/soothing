@@ -15,7 +15,7 @@ the best completed method per class as a Markdown table.
 Examples:
 
     python3 scripts/benchmark_applications.py --jobs 4
-    python3 scripts/benchmark_applications.py --only branching-f5,homotopy-jl
+    python3 scripts/benchmark_applications.py --only branching-f5,singular-facstd
     python3 scripts/benchmark_applications.py --report-only
 """
 
@@ -76,7 +76,6 @@ METHOD_CLASSES: dict[str, tuple[str, ...]] = {
         "m2-gb-lex",
     ),
     "decomposition": ("singular-facstd", "singular-primdecGTZ", "m2-decompose"),
-    "numerical": ("homotopy-jl",),
 }
 
 
@@ -376,7 +375,7 @@ def render_report(instances: list[Instance]) -> str:
             "# Application systems",
             "",
             "Best completed method per class; factor branching and variable zeroing "
-            "give T/F in seconds, HomotopyContinuation.jl and decompositions give the "
+            "give T/F in seconds, decompositions give the "
             "component count in parentheses.",
             "",
             *table,

@@ -1,6 +1,6 @@
 """Shared helpers for baseline driver scripts.
 
-Each baseline driver (Singular / Macaulay2 / HomotopyContinuation.jl) loads a
+Each baseline driver (Singular / Macaulay2) loads a
 Mathematica-style polynomial system from a `.txt` file, translates it into the
 syntax of its target tool, runs the tool as a subprocess with a wall-clock
 timeout, and prints a single JSON line in the unified ``BaselineResult`` shape
@@ -39,8 +39,6 @@ class BaselineResult:
     basis_len: int | None = None
     num_components: int | None = None
     max_dim: int | None = None
-    num_solutions: int | None = None
-    dim_estimate: int | None = None
     error: str | None = None
     tool_stdout_tail: str | None = None
     extra: dict[str, object] = field(default_factory=dict)
@@ -57,7 +55,7 @@ class BaselineResult:
 _CONSTANT_REPLACEMENTS: tuple[tuple[sp.Basic, sp.Symbol], ...] = (
     # ``mathematica_to_sympy`` maps Mathematica's Pi/E/I to SymPy's *constants*
     # (sp.pi, sp.E, sp.I). Those aren't returned by ``free_symbols``, so external
-    # CAS drivers (Singular, M2, Julia) silently get a ring that's missing them
+    # CAS drivers (Singular, M2) silently get a ring that's missing them
     # while the polynomial bodies still contain ``pi^2`` etc.
     # Convert them to plain symbols so they're explicitly declared as ring vars.
     (sp.pi, sp.Symbol("pi")),

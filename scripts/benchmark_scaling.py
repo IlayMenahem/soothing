@@ -27,7 +27,7 @@ from pathlib import Path
 
 from benchmark_applications import box_qp, build, lotka_volterra, nash_game
 from benchmark_branching import run_branching
-from benchmark_idos import RESULTS, run_direct, run_external
+from benchmark_idos import RESULTS, run_direct
 from benchmark_natural import run_standalone, symbolicdata_system
 
 RESULTS_FILE = RESULTS / "scaling_results.jsonl"
@@ -43,7 +43,7 @@ BRANCH_ENGINES: tuple[str, ...] = (
     "m2-decompose",
 )
 FACTOR_BRANCHING: tuple[str, ...] = tuple(f"branching-{engine}" for engine in BRANCH_ENGINES)
-SYMBOLIC_BASELINES: tuple[str, ...] = (
+BASELINES: tuple[str, ...] = (
     "m4gb-grevlex",
     "f5-grevlex",
     "gvw-grevlex",
@@ -54,8 +54,6 @@ SYMBOLIC_BASELINES: tuple[str, ...] = (
     "m2-gb-lex",
     "m2-decompose",
 )
-# Path-tracking counts isolated solutions, so it only answers zero-dimensional systems.
-NUMERICAL_BASELINES: tuple[str, ...] = ("homotopy-jl",)
 
 SystemMaker = Callable[[Path, int], Path]
 
@@ -72,26 +70,26 @@ def from_instance(output: Path, instance_path: str) -> Path:
 
 
 FAMILIES: dict[str, tuple[SystemMaker, range, tuple[str, ...]]] = {
-    "rcyclic": (rcyclic, range(8, 20), SYMBOLIC_BASELINES),
+    "rcyclic": (rcyclic, range(8, 20), BASELINES),
     "nash_generic": (
         lambda output, n: from_instance(output, nash_game(output, n, 1000 + n, 9).path),
         range(3, 9),
-        SYMBOLIC_BASELINES + NUMERICAL_BASELINES,
+        BASELINES,
     ),
     "nash_degenerate": (
         lambda output, n: from_instance(output, nash_game(output, n, 2000 + n, 1).path),
         range(3, 9),
-        SYMBOLIC_BASELINES + NUMERICAL_BASELINES,
+        BASELINES,
     ),
     "box_qp": (
         lambda output, n: from_instance(output, box_qp(output, n, 3000 + n, 0.5).path),
         range(4, 13),
-        SYMBOLIC_BASELINES + NUMERICAL_BASELINES,
+        BASELINES,
     ),
     "lotka_volterra": (
         lambda output, n: from_instance(output, lotka_volterra(output, n, 4000 + n, 0.4).path),
         range(6, 21, 2),
-        SYMBOLIC_BASELINES + NUMERICAL_BASELINES,
+        BASELINES,
     ),
 }
 
@@ -101,8 +99,6 @@ def run_method(method: str, path: Path, timeout: int) -> dict[str, object]:
         return run_branching(path, [], timeout, method.removeprefix("branching-"))
     if method.endswith("-grevlex"):
         return run_direct(path, method.removesuffix("-grevlex"), timeout)
-    if method == "homotopy-jl":
-        return run_external(path, timeout, {method})[0]
     return run_standalone(method, path, timeout)
 
 
