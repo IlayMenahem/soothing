@@ -3,7 +3,7 @@ import FactorBranching.VariableZeroing
 /-!
 # Auxiliary generators under refinement
 
-For a branch that carries the separate encoding of Subsection `subsec:nonzero-encoding`,
+For a branch that carries the Rabinowitsch generators of Subsection `subsec:zeroing-branching`,
 refinement keeps exactly one generator containing `s_x`, of the form `c (1 - s_x h_x)` with
 `h_x ≡ x` modulo the auxiliary-free generators `H'`; hence
 `π(V(H)) = {a ∈ V(H') : a_x ≠ 0, x ∈ N}`. Algorithm `alg:ZeroingBranching` no longer refines

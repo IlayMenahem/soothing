@@ -87,10 +87,12 @@ a hitting set containing $y\in N$ has no point with $y\neq0$. It also drops a
 branch once some $y\in N$ reduces to zero modulo its generators. Neither step
 removes a point of $V(Q)\setminus V(u_N)$. The branch solver receives $(H,N)$
 and either represents $V(H)\setminus V(u_N)$ or certifies that it is empty.
-Our Gr\"obner-basis solvers add the separate Rabinowitsch generators
-$\sigma_y$, $y\in N$, of Subsection~\ref{subsec:nonzero-encoding}, and
-project the solutions onto the original variables. Auxiliary variables
-therefore appear only inside solver calls. The zero and nonzero decisions
+Our Gr\"obner-basis solvers add, for each $y\in N$, an auxiliary variable
+$s_y$ and the Rabinowitsch generator
+$1-s_y y$~\cite{rabinowitsch1930nullstellensatz}, and project the solutions
+onto the original variables. Since $s_ya_y=1$ has a solution $s_y$ exactly
+when $a_y\neq0$, the projection is $V(H)\setminus V(u_N)$. Auxiliary
+variables therefore appear only inside solver calls. The zero and nonzero decisions
 remain part of the solution-set representation.
 
 \begin{figure}[pos=htbp]
@@ -272,8 +274,7 @@ branches that the algorithm adds to $S$ or $U$.
 
 \begin{theorem}[Termination of recursive splitting]
 \label{thm:zeroing-termination}
-If $\mathcal B$ stops within the per-call timeout $\tau$ on every leaf of the
-split tree, Algorithm~\ref{alg:ZeroingBranching} terminates.
+Algorithm~\ref{alg:ZeroingBranching} terminates.
 \end{theorem}
 
 \begin{proof}
@@ -283,7 +284,7 @@ children are still hitting sets of factor sets, which have lost only
 variables of $N$, so a child that equals its interreduced parent is still
 terminal, and dropping a branch only removes children. So $\mathcal L(Q,N)$
 is finite. On a leaf $H\in\mathcal L(Q,N)$, the iteration makes at most one
-call of $\mathcal B$, which stops within $\tau$ by assumption. The algorithm
+call of $\mathcal B$, which stops within $\tau$. The algorithm
 splits any other $H$ because $\mathcal B$ did not return within $\tau$, and
 stops $\mathcal B$ there. The split then makes one restriction to $x=0$ and
 one call of $\Call{Saturate}{}$, which stops within $\tau$ as well, since it
@@ -297,4 +298,42 @@ iteration therefore removes one element from the multiset of the numbers $d$
 over $W$ and adds finitely many smaller ones. This multiset order is well
 founded~\cite{dershowitz1979proving}, so the loop makes finitely many
 iterations.
+\end{proof}
+
+% Simplicity: the zero child loses a variable and monomials, the nonzero child components
+Theorem~\ref{thm:refine-simpler} also applies to $\Call{Refine}{Q,N}$, whose
+factor sets have lost only variables of $N$. Both children of a split are
+simpler than the split branch as well. The child with $x=0$ has one variable
+and some monomials fewer, and the child with $x\neq0$ keeps only the
+primary components that lie in no hyperplane $y=0$ with $y\in N\cup\{x\}$.
+
+\begin{theorem}[Split branches are simpler]
+\label{thm:zeroing-simpler}
+Let Algorithm~\ref{alg:ZeroingBranching} split a branch $H$ of $(Q,Z,N)$ on
+$x$ into $Q_0=H|_{x=0}$ and $Q_1=\Call{Saturate}{H,N\cup\{x\}}$. Then $Q_0$
+has one variable fewer, and its monomials form a proper sub-multiset of those
+of $H$. If the saturation finishes and
+$\langle H\rangle=\mathfrak q_1\cap\cdots\cap\mathfrak q_t$ is a minimal
+primary decomposition with $\mathfrak p_j=\sqrt{\mathfrak q_j}$, then
+\[
+  \langle Q_1\rangle=\bigcap\bigl\{\mathfrak q_j:
+  \mathfrak p_j\cap(N\cup\{x\})=\emptyset\bigr\}.
+\]
+\end{theorem}
+
+\begin{proof}
+The generators of $H$ lie in $K[Y\setminus Z]$, so those of $Q_0$ lie in
+$K[Y\setminus(Z\cup\{x\})]$. Restricting to $x=0$ deletes the terms that
+contain $x$ and keeps the others, and elements that restrict to $0$ or to the
+same polynomial only remove monomials. So the monomials of $Q_0$ form a
+sub-multiset of those of $H$. It is proper, since $x\in\operatorname{vars}(H)$,
+so some term of $H$ contains $x$.
+
+If the saturation finishes, then
+$\langle Q_1\rangle=\langle H\rangle:u^\infty$ with $u=u_{N\cup\{x\}}$.
+Since $\mathfrak p_j$ is prime,
+$u\notin\mathfrak p_j$ if and only if $\mathfrak p_j$ contains no variable of
+$N\cup\{x\}$, and the identity
+$\langle H\rangle:u^\infty=\bigcap_{u\notin\mathfrak p_j}\mathfrak q_j$ of
+Subsection~\ref{subsec:decompositions} gives the formula.
 \end{proof}

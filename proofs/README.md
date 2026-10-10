@@ -40,8 +40,9 @@ lake env lean Audit.lean  # prints the axioms of every result
 | Isolated components by separators suffice when they intersect to `⟨P⟩` (§`subsec:primary-branching-framework`) | `separatedComponents_unmixed` | `PrimaryBranching.lean` |
 | Marking by containment and dimension (§`subsec:primary-branching-framework`) | `eq_of_le_of_ringKrullDim_eq` | `PrimaryBranching.lean` |
 | Theorem `thm:primary-branching` | `primaryBranching_spec` | `PrimaryBranching.lean` |
-| Nonzero encodings (§`subsec:nonzero-encoding`) | `separate_encoding`, `product_encoding` | `VariableZeroing.lean` |
-| Auxiliary generators survive refinement (separate encoding, §`subsec:nonzero-encoding`; no longer used by Algorithm `alg:ZeroingBranching`) | `projection_auxGen`, `degree_auxGen_apply`, `auxGen_reduces_none`, `auxGen_not_reduced_by_auxGen`, `reduceTerm_auxGen`, `irreducible_auxGen`, `mem_of_isHitting_auxGen` | `AuxGenerators.lean` |
+| Rabinowitsch encoding of the nonzero conditions (§`subsec:zeroing-branching`) | `separate_encoding` | `VariableZeroing.lean` |
+| Product encoding `1 - s ∏_{x ∈ N} x` (no longer in the paper) | `product_encoding` | `VariableZeroing.lean` |
+| Auxiliary generators survive refinement (Rabinowitsch encoding, §`subsec:zeroing-branching`; no longer used by Algorithm `alg:ZeroingBranching`) | `projection_auxGen`, `degree_auxGen_apply`, `auxGen_reduces_none`, `auxGen_not_reduced_by_auxGen`, `reduceTerm_auxGen`, `irreducible_auxGen`, `mem_of_isHitting_auxGen` | `AuxGenerators.lean` |
 | Exhaustive split (§`subsec:zeroing-theoretical-analysis`) | `exhaustive_split` | `VariableZeroing.lean` |
 | `V(Saturate(H, N)) ∖ V(u_N) = V(H) ∖ V(u_N)` (§`subsec:zeroing-branching`) | `mem_V_iff_of_isSaturation`, `VY_saturate` | `VariableZeroing.lean` |
 | `Refine(Q, N)` keeps `V(Q) ∖ V(u_N)` (§`subsec:zeroing-branching`) | `Refiner.toCondRefiner`, `CondRefiner.dropVanishing` | `VariableZeroing.lean` |

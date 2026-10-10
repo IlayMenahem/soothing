@@ -51,6 +51,7 @@ So the decision on whether to interreduce first depends on $P$.
 Let $\mathcal L(P)$ denote the terminal branches returned by
 Algorithm~\ref{alg:Refine} on $P$.
 For each $H\in\mathcal L(P)$, the branch solver must either describe $V(H)$ exactly or certify that $V(H)=\emptyset$.
+We assume that every solver in this paper terminates and returns a correct output.
 
 \begin{algorithm}[htbp]
 \caption{Factor branching}
@@ -144,6 +145,38 @@ A terminal $Q'$ has only the child $Q'$, so $Q'$ is nonterminal, and
 $M(\widetilde Q')\subsetneq M(\widetilde Q)$ contradicts the choice of $Q$.
 \end{proof}
 
+% Simplicity: a child keeps at most one irreducible factor of each parent generator
+Each child keeps at most one irreducible factor of each generator of its
+parent, which makes it a smaller and simpler system in the following sense.
+
+\begin{theorem}[Refined branches are simpler]
+\label{thm:refine-simpler}
+Let $H\in\mathcal H(\widetilde Q)$ with $H\neq\widetilde Q$, where
+$\widetilde Q=\Call{Interreduce}{Q}$. Each element of $H$ divides a different
+element of $\widetilde Q$. The leading monomials of $H$ are smaller than those
+of $\widetilde Q$ in the multiset extension of $\prec$, yet generate a
+strictly larger monomial ideal.
+\end{theorem}
+
+\begin{proof}
+Let $h\in H$. Since $H$ is a minimal hitting set, $H\setminus\{h\}$ is not
+one, so some $q\in\widetilde Q$ has $C_q\cap H=\{h\}$. Let $\iota(h)$ be such
+a $q$. Then $h\mid\iota(h)$, and $\iota$ is injective, since
+$C_{\iota(h)}\cap H=\{h\}$ determines $h$. If $h\neq\iota(h)$, then
+$\iota(h)/h$ is not constant, since both polynomials are monic, so
+$\operatorname{LM}(h)\prec\operatorname{LM}(h)\operatorname{LM}(\iota(h)/h)
+=\operatorname{LM}(\iota(h))$, since $1\prec v$ for every monomial
+$v\neq1$~\cite[Ch.~2, \S4]{cox2015ideals}. The multiset of
+the leading monomials of $H$ arises from that of $\widetilde Q$ by replacing
+$\operatorname{LM}(\iota(h))$ with $\operatorname{LM}(h)$ for every $h\in H$
+and deleting $\operatorname{LM}(q)$ for every
+$q\in\widetilde Q\setminus\iota(H)$. Since $H\neq\widetilde Q$, some $h$ has
+$h\neq\iota(h)$, or some $q$ lies outside $\iota(H)$, so the multiset
+decreases strictly. Finally, with $M$ as in the proof of
+Theorem~\ref{thm:refine-termination}, that proof shows that
+$M(\widetilde Q)\subseteq M(H)$, with equality only if $H=\widetilde Q$.
+\end{proof}
+
 \begin{lemma}[Refinement preserves solutions]
 \label{lem:recursive-refinement}
 Every round of Algorithm~\ref{alg:Refine} preserves
@@ -169,7 +202,6 @@ ideals, which gives the second.
 
 \begin{theorem}[Factor branching]
 \label{thm:branching-correctness}
-If $\mathcal B$ returns on every branch in $\mathcal L(P)$, then
 Algorithm~\ref{alg:Branching} terminates, and
 \[
     V(P)=\bigcup_{H\in S}V(H)
@@ -188,27 +220,62 @@ second follows from the first by the Nullstellensatz, as in the proof of
 Lemma~\ref{lem:recursive-refinement}.
 \end{proof}
 
+\subsection{Minimal prime decomposition}
+\label{subsec:minimal-prime-decomposition}
+
+Let $\mathcal B_{\min}$ be a branch solver which returns a minimal prime decomposition. If we run Algorithm~\ref{alg:Branching} with $\mathcal B_{\min}$ as a branch solver and apply the following postprocessing, we get a minimal prime decomposition of $\langle P\rangle$.
+
+% Postprocessing: keep the returned primes that contain no other
+The output $S$ is then the set of primes that $\mathcal B_{\min}$ returns on
+the branches in $\mathcal L(P)$, and the postprocessing keeps its minimal
+elements under inclusion in two steps.
+\begin{enumerate}
+    \item Represent each prime by its reduced Gr\"obner basis. Equal primes
+    have the same reduced Gr\"obner basis, so this merges the copies of a
+    prime that several branches return.
+    \item Remove every $\mathfrak p\in S$ that contains another
+    element $\mathfrak p'$ of $S$. The inclusion
+    $\mathfrak p'\subseteq\mathfrak p$ holds exactly when every generator of
+    $\mathfrak p'$ reduces to zero modulo the Gr\"obner basis of $\mathfrak p$.
+\end{enumerate}
+A prime that strictly contains $\mathfrak p'$ has smaller dimension than
+$\mathfrak p'$, so the second step tests $\mathfrak p'\subseteq\mathfrak p$
+only when $\mathfrak p'$ has the larger dimension.
+
 % Correctness
 \begin{theorem}[Prime factor branching]
 \label{thm:prime-branching}
-If the branch solver $\mathcal B_{\min}$ returns a minimal prime decomposition,
-the primes returned by Algorithm~\ref{alg:Branching} that contain no other
-returned prime are exactly the minimal primes of $\langle P\rangle$.
+With the branch solver $\mathcal B_{\min}$, the output
+$S$ of Algorithm~\ref{alg:Branching} after the postprocessing is the minimal
+primes of $\langle P\rangle$.
 \end{theorem}
 
 \begin{proof}
-Let $\mathcal M$ be the set of returned primes. The minimal primes of
-$\langle H\rangle$ intersect to $\sqrt{\langle H\rangle}$, so
-$\bigcap_{\mathfrak p\in\mathcal M}\mathfrak p=\sqrt{\langle P\rangle}$ by
-Lemma~\ref{lem:recursive-refinement}. Let $\mathfrak q$ be a minimal prime of
-$\langle P\rangle$. It contains the finite intersection
-$\bigcap_{\mathfrak p\in\mathcal M}\mathfrak p$, hence some
-$\mathfrak p\in\mathcal M$~\cite[Prop.~1.11]{atiyah1969introduction}. Since
-$\mathfrak p$ contains $\langle P\rangle$, minimality gives
-$\mathfrak p=\mathfrak q$, and $\mathfrak q$ contains no other element of
-$\mathcal M$. Conversely, every $\mathfrak p\in\mathcal M$ contains
-$\sqrt{\langle P\rangle}$, the intersection of the minimal primes of
-$\langle P\rangle$, and hence one of them, which lies in $\mathcal M$. So an
-element of $\mathcal M$ that contains no other one is a minimal prime of
-$\langle P\rangle$.
+By Theorem~\ref{thm:refine-termination}, $\mathcal L(P)$ is finite, so
+$S$ is finite. On each $H\in\mathcal L(P)$, $\mathcal B_{\min}$
+returns the minimal primes of $\langle H\rangle$, which intersect to
+$\sqrt{\langle H\rangle}$, so Lemma~\ref{lem:recursive-refinement} gives
+\[
+    \bigcap_{\mathfrak p\in S}\mathfrak p
+    =\bigcap_{H\in\mathcal L(P)}\sqrt{\langle H\rangle}
+    =\sqrt{\langle P\rangle}.
+\]
+In particular, every $\mathfrak p\in S$ contains $\langle P\rangle$.
+
+Let $\mathfrak q$ be a minimal prime of $\langle P\rangle$. Every
+$\mathfrak p\in S$ with $\mathfrak p\subseteq\mathfrak q$ is a prime
+containing $\langle P\rangle$, so $\mathfrak p=\mathfrak q$ by the minimality
+of $\mathfrak q$. Such a $\mathfrak p$ exists, because a prime that contains a
+finite intersection of ideals contains one of
+them~\cite[Prop.~1.11]{atiyah1969introduction}, and $\mathfrak q$ contains
+$\bigcap_{\mathfrak p\in S}\mathfrak p$. Hence
+$\mathfrak q\in S$, no other element of $S$ lies in
+$\mathfrak q$, and $\mathfrak q$ is a minimal element of $S$.
+
+Conversely, let $\mathfrak p$ be a minimal element of $S$. It contains
+$\sqrt{\langle P\rangle}$, the intersection of the finitely many minimal
+primes of $\langle P\rangle$, so by the same proposition it contains one of
+them, $\mathfrak q$. By the previous paragraph $\mathfrak q\in S$, and
+the minimality of $\mathfrak p$ in $S$ gives
+$\mathfrak p=\mathfrak q$.
 \end{proof}

@@ -167,62 +167,10 @@ Everything below is open. Proposed wording is given where it helps.
 13. The outline comment `% [IdealReduce: no factor lies in every SAT branch
     here; with skipped checks it matches std]` has no text under it.
 
-## 3. Sections 4–5 (`method_ideal_covering.tex`, `method_primary.tex`)
-
-1. **An imprecise statement.** "The residual ideal lies on $V(u_H)$ for every
-   $H$, that is, where branches meet" is not right in general. Take
-   $Q=\{x^2,xy\}$: it is interreduced, its only minimal hitting set is $\{x\}$,
-   $u_H=y$, the saturation is $\langle x\rangle$ with $s=1$, and the residual
-   is $\langle x^2,y\rangle$. That residual is the embedded point at the
-   origin, which lies on only one branch. Suggest "that is, where some factor
-   outside each $H$ vanishes".
-2. **An unclear "so".** In "An $H$-part that is a multiple of another can be
-   dropped, so the residual products stay in factored form, and only their
-   $H$-parts reach the solver", the second clause does not follow from the
-   first. Split it into two sentences, each stating its own fact.
-3. **Vague.** "It removes the exponent from the branches and moves it into a
-   residual ideal, where the solver certifies it." Say what is certified:
-   "…, and the saturation solver certifies the exponent $s$ with
-   $u_H^sS\subseteq J$."
-4. $u_H$ is defined for $H\in\mathcal H(P)$, but Algorithm 5 uses
-   $H\in\mathcal H(P\cup U)$. The justification, $C(P\cup U)=C(P)$, comes two
-   paragraphs later. Define $u_H$ for the current generators, or move that
-   remark up.
-5. **The termination argument for Algorithm 4 leaves out a premise.** "Every
-   power $h^{a_h}$ that a round adds is a proper divisor of a generator, so
-   its leading monomial is new" needs $Q$ to be interreduced and monic.
-   Otherwise $\operatorname{LM}(h^{a_h})$ could already lie in
-   $\langle\operatorname{LM}(Q)\rangle$. Say so.
-6. **Symbols are reused for different things:**
-   - $N$: the nonzero variables (Sections 2.5 and 6), and the new members in
-     Algorithm 4 and Figure 3.
-   - $s$: the auxiliary variable (Equation 2), the saturation exponent
-     (Algorithm 5), and the separator $s_i$ (Section 5).
-   - $S$: the solution set (Algorithms 3 and 7), a saturation (Algorithm 5),
-     and the leaves $S_1,\ldots,S_r$.
-7. **Method names drift.** The introduction says "prime factor branching",
-   Theorem 4 says "Prime branching" and Table 4 says "Prime". Section 5 is
-   "Primary factor branching", but Theorem 6 is "Primary branching". Section
-   5's opening uses "prime factor branching", a name that only the
-   introduction defines.
-8. Nakayama's lemma, in the zero-dimensional paragraph, has no citation.
-   Atiyah–Macdonald is already in the bibliography.
-9. "It replaces products by powers of their factors, so
-   $\mathcal B_{\mathrm{prim}}$ decomposes the same ideal from a smaller
-   input" overstates. The experiments report that Algorithm 4 stops after one
-   round on every size-graded system, so there the input is only
-   interreduced. "Smaller" holds for the physical system (29 → 19
-   generators). Say "can decompose … from a smaller input".
-
-## 4. Figures
+## 3. Figures
 
 1. **Figure 1 is missing two methods.** The caption says "Crosses mark the
    methods of this paper", but ideal reduction (Algorithm 4, cell one piece ×
    $I$) and variable zeroing (Algorithm 7, cell cover × $\sqrt I$) have no
    cross. Labels such as "Algorithm 5" force a lookup; use method names. The
    saturated red hatching could be gray.
-
-## 5. Small items
-
-- Preliminaries 2.5: the first display ends with "." but the sentence
-  continues with "and the product encoding satisfies". Use ",".

@@ -6,7 +6,9 @@
 
 We implemented Algorithm~\ref{alg:Branching} in Rust 1.98.1 and used
 Symbolica 3.0.1 for polynomial arithmetic over the
-rationals~\cite{ruijl2023symbolica}. In all experiments, we solve the branches
+rationals~\cite{ruijl2023symbolica}. Refinement applies the pruning of
+Subsection~\ref{subsec:branching-framework}, and the branch solver processes the terminal
+branches fewest generators first. In all experiments, we solve the branches
 with a Gr\"obner-basis computation. The available implementations are M4GB,
 F5, GVW, F4, and Singular 4.4.1~\cite{makarim2017m4gb,faugere2002f5,
 gao2016gvw,faugere1999f4,singular2025}.
@@ -31,7 +33,8 @@ For factor branching and variable zeroing, $T$ is end-to-end wall time and $F$ i
 time to first SAT branch, measured from the start of the
 minimal-hitting-set search.  Factorization and input processing are therefore included in
 $T$ but not in $F$.
-The complete measurements are stored in the appendix.
+The complete measurements are in the \texttt{results} directory of the
+repository listed under Data availability.
 
 \subsection{Baseline systems}
 \label{subsec:baseline-systems}
@@ -159,62 +162,58 @@ Subsection~\ref{subsec:experimental-setup} with four differences.  Factor
 branching entries give $T$ only.  The direct class adds Singular's \texttt{std}
 in degrevlex (Singular dp) and omits standalone F4, which remains a factor
 branching backend.  A method that times out at one size is not run at larger
-sizes.  Runs within a family are sequential, but some families ran
-concurrently, with at most five jobs on the 14 cores.  We also compare with
-HomotopyContinuation.jl (HC.jl)~\cite{breiding2018homotopy}, which takes at
-least 26 seconds on every system, mostly for Julia start-up and compilation.
+sizes.
 
 \begin{table}[pos=htbp]
 \centering
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{l l l l l}
+\begin{tabular}{l l l l}
 \hline
 System & Best factor branching $T$ & Best direct GB & Best decomposition & HC.jl \\
 \hline
-rcyclic-8 & F4 $0.019$ & \textbf{GVW} $\mathbf{0.008}$ & facstd $0.425$ & --- \\
-rcyclic-10 & \textbf{F4} $\mathbf{0.018}$ & M4GB $0.041$ & timeout & --- \\
-rcyclic-12 & \textbf{F4} $\mathbf{0.021}$ & M4GB $0.198$ & timeout & --- \\
-rcyclic-14 & \textbf{F4} $\mathbf{0.029}$ & Singular dp $0.676$ & timeout & --- \\
-rcyclic-16 & \textbf{Singular} $\mathbf{0.062}$ & Singular dp $7.154$ & timeout & --- \\
-rcyclic-17 & \textbf{Singular} $\mathbf{0.091}$ & M2 $19.76$ & timeout & --- \\
-rcyclic-18 & \textbf{Singular} $\mathbf{0.093}$ & M2 $34.60$ & timeout & --- \\
-rcyclic-19 & \textbf{Singular} $\mathbf{0.113}$ & timeout & timeout & --- \\
+rcyclic-8 & F4 $0.019$ & \textbf{GVW} $\mathbf{0.008}$ & facstd $0.425$ \\
+rcyclic-10 & \textbf{F4} $\mathbf{0.018}$ & M4GB $0.041$ & timeout \\
+rcyclic-12 & \textbf{F4} $\mathbf{0.021}$ & M4GB $0.198$ & timeout \\
+rcyclic-14 & \textbf{F4} $\mathbf{0.029}$ & Singular dp $0.676$ & timeout \\
+rcyclic-16 & \textbf{Singular} $\mathbf{0.062}$ & Singular dp $7.154$ & timeout \\
+rcyclic-17 & \textbf{Singular} $\mathbf{0.091}$ & M2 $19.76$ & timeout \\
+rcyclic-18 & \textbf{Singular} $\mathbf{0.093}$ & M2 $34.60$ & timeout \\
+rcyclic-19 & \textbf{Singular} $\mathbf{0.113}$ & timeout & timeout \\
 \hline
-Nash generic, $n=3$ & F5 $0.044$ & \textbf{F5} $\mathbf{0.006}$ & facstd $0.197$ & $29.45$ \\
-Nash generic, $n=4$ & \textbf{GVW} $\mathbf{0.136}$ & Singular dp $0.262$ & facstd $0.262$ & $28.97$ \\
-Nash generic, $n=5$ & \textbf{Singular} $\mathbf{1.382}$ & timeout & timeout & $34.79$ \\
-Nash generic, $n=6$ & timeout & timeout & timeout & timeout \\
+Nash generic, $n=3$ & F5 $0.044$ & \textbf{F5} $\mathbf{0.006}$ & facstd $0.197$ \\
+Nash generic, $n=4$ & \textbf{GVW} $\mathbf{0.136}$ & Singular dp $0.262$ & facstd $0.262$ \\
+Nash generic, $n=5$ & \textbf{Singular} $\mathbf{1.382}$ & timeout & timeout \\
+Nash generic, $n=6$ & timeout & timeout & timeout \\
 \hline
-Nash degenerate, $n=3$ & M4GB $0.043$ & \textbf{GVW} $\mathbf{0.005}$ & facstd $0.179$ & $30.29$ \\
-Nash degenerate, $n=4$ & \textbf{F5} $\mathbf{0.086}$ & Singular lex $0.215$ & facstd $0.203$ & $29.43$ \\
-Nash degenerate, $n=5$ & \textbf{Singular} $\mathbf{0.714}$ & timeout & timeout & $34.84$ \\
-Nash degenerate, $n=6$ & timeout & timeout & timeout & timeout \\
+Nash degenerate, $n=3$ & M4GB $0.043$ & \textbf{GVW} $\mathbf{0.005}$ & facstd $0.179$ \\
+Nash degenerate, $n=4$ & \textbf{F5} $\mathbf{0.086}$ & Singular lex $0.215$ & facstd $0.203$ \\
+Nash degenerate, $n=5$ & \textbf{Singular} $\mathbf{0.714}$ & timeout & timeout \\
+Nash degenerate, $n=6$ & timeout & timeout & timeout \\
 \hline
-Box-QP, $n=4$ & F4 $0.237$ & \textbf{F5} $\mathbf{0.005}$ & facstd $0.179$ & $26.66$ \\
-Box-QP, $n=5$ & F5 $0.700$ & \textbf{Singular dp} $\mathbf{0.216}$ & facstd $0.297$ & $31.49$ \\
-Box-QP, $n=6$ & M4GB $2.174$ & \textbf{F5} $\mathbf{0.033}$ & primdec $0.939$ & $31.76$ \\
-Box-QP, $n=7$ & \textbf{F5} $\mathbf{6.494}$ & timeout & facstd $12.63$ & $40.43$ \\
-Box-QP, $n=8$ & \textbf{F5} $\mathbf{20.42}$ & timeout & timeout & timeout \\
-Box-QP, $n=9$ & timeout & timeout & timeout & timeout \\
+Box-QP, $n=4$ & F4 $0.237$ & \textbf{F5} $\mathbf{0.005}$ & facstd $0.179$ \\
+Box-QP, $n=5$ & F5 $0.700$ & \textbf{Singular dp} $\mathbf{0.216}$ & facstd $0.297$ \\
+Box-QP, $n=6$ & M4GB $2.174$ & \textbf{F5} $\mathbf{0.033}$ & primdec $0.939$ \\
+Box-QP, $n=7$ & \textbf{F5} $\mathbf{6.494}$ & timeout & facstd $12.63$ \\
+Box-QP, $n=8$ & \textbf{F5} $\mathbf{20.42}$ & timeout & timeout \\
+Box-QP, $n=9$ & timeout & timeout & timeout \\
 \hline
-Lotka--Volterra, $n=6$ & M4GB $0.191$ & \textbf{F5} $\mathbf{0.006}$ & facstd $0.216$ & $30.18$ \\
-Lotka--Volterra, $n=8$ & F4 $0.809$ & Singular dp $0.701$ & \textbf{facstd} $\mathbf{0.464}$ & $30.79$ \\
-Lotka--Volterra, $n=10$ & \textbf{GVW} $\mathbf{3.002}$ & timeout & facstd $6.432$ & $35.40$ \\
-Lotka--Volterra, $n=12$ & \textbf{F5} $\mathbf{13.15}$ & timeout & timeout & $54.45$ \\
-Lotka--Volterra, $n=14$ & timeout & timeout & timeout & timeout \\
+Lotka--Volterra, $n=6$ & M4GB $0.191$ & \textbf{F5} $\mathbf{0.006}$ & facstd $0.216$ \\
+Lotka--Volterra, $n=8$ & F4 $0.809$ & Singular dp $0.701$ & \textbf{facstd} $\mathbf{0.464}$ \\
+Lotka--Volterra, $n=10$ & \textbf{GVW} $\mathbf{3.002}$ & timeout & facstd $6.432$ \\
+Lotka--Volterra, $n=12$ & \textbf{F5} $\mathbf{13.15}$ & timeout & timeout \\
+Lotka--Volterra, $n=14$ & timeout & timeout & timeout \\
 \hline
-\#systems solved & $27$ & $20$ & $13$ & $14$ \\
-\#fastest (ties counted) & $18$ & $8$ & $1$ & $0$ \\
+\#systems solved & $27$ & $20$ & $13$ \\
+\#fastest (ties counted) & $18$ & $8$ & $1$ \\
 \hline
 \end{tabular}%
 }
 \caption{Best completed results across solver classes on the size-graded
 families, with a 60-second limit.  For rcyclic, only selected sizes are shown;
-the summary rows count all 31 systems, rcyclic-8 to rcyclic-19 included.
-HC.jl was not run on the positive-dimensional rcyclic systems.  All times are
-in seconds.}
+the summary rows count all 31 systems, rcyclic-8 to rcyclic-19 included.  All
+times are in seconds.}
 \label{tab:scaling-classes}
 \end{table}
 
@@ -282,7 +281,7 @@ are in seconds.}
 \label{tab:scaling-decomposition}
 \end{table}
 
-% [Which backend benefits: facstd yes, primdec partly, M2 only when branches are few]
+% [Which backend benefits: facstd on rcyclic and on the largest systems]
 Factor branching with \texttt{facstd} completes every rcyclic system in under
 $0.3$ seconds, whereas \texttt{facstd} alone times out from rcyclic-10.
 It also completes the largest Nash and Lotka--Volterra systems that factor
@@ -320,11 +319,11 @@ branch and per saturation; factor branching places no further limit on a branch.
 \hline
 Backend & Factor branching $T/F$ (s) & Factor branching result & Variable zeroing $T/F$ (s) & Variable zeroing result \\
 \hline
-M4GB & $timeout/0.003$ & partial: 6 SAT, 1 timeout & $64.166/0.271$ & complete: 9 splits \\
-F5 & $timeout/0.006$ & partial: 6 SAT, 1 timeout & $timeout/0.272$ & partial: 17 splits, 5 unresolved \\
-GVW & $timeout/0.006$ & partial: 6 SAT, 1 timeout & $timeout/0.302$ & partial: 17 splits, 5 unresolved \\
-F4 & $timeout/0.006$ & partial: 6 SAT, 1 timeout & $timeout/0.266$ & partial: 16 splits, 6 unresolved \\
-Singular & $timeout/0.013$ & partial: 6 SAT, 1 timeout & $52.038/0.301$ & complete: 7 splits \\
+M4GB & timeout$/0.003$ & partial: 6 SAT, 1 timeout & $64.166/0.271$ & complete: 9 splits \\
+F5 & timeout$/0.006$ & partial: 6 SAT, 1 timeout & timeout$/0.272$ & partial: 17 splits, 5 unresolved \\
+GVW & timeout$/0.006$ & partial: 6 SAT, 1 timeout & timeout$/0.302$ & partial: 17 splits, 5 unresolved \\
+F4 & timeout$/0.006$ & partial: 6 SAT, 1 timeout & timeout$/0.266$ & partial: 16 splits, 6 unresolved \\
+Singular & timeout$/0.013$ & partial: 6 SAT, 1 timeout & $52.038/0.301$ & complete: 7 splits \\
 \texttt{facstd} & $0.785/0.010$ & complete: 6 SAT, 1 UNSAT & $1.088/0.275$ & complete: 0 splits \\
 \hline
 \end{tabular}%

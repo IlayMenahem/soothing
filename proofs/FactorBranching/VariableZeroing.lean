@@ -6,8 +6,8 @@ import FactorBranching.Vars
 Section "Recursive splitting": the exhaustive split, Lemma `lem:zero-nonzero-split`,
 Equation `eq:zeroing-refinement`, Theorem `thm:zeroing-correctness`,
 Corollary `cor:zeroing-completeness`, Theorem `thm:zeroing-termination`, the branch contraction of
-Subsection `subsec:zeroing-branch-contraction`, and the two nonzero encodings of
-Subsection `subsec:nonzero-encoding`.
+Subsection `subsec:zeroing-branch-contraction`, and two nonzero encodings, of which
+Subsection `subsec:zeroing-branching` uses the separate (Rabinowitsch) one.
 
 Branches live in the original ring `K[Y]`: the `x_z` with `z ∈ Z` have been substituted by `0`,
 and the variables of `N` are side conditions, not equations, so no branch has an auxiliary
@@ -531,7 +531,7 @@ theorem contraction_nonzero_unsat {H G H' : Finset (MvPolynomial Y K)} {Z N : Fi
     VY_eq_iUnion_refine R hG0, hone]
   simp
 
-/-! ### Nonzero encodings (Subsection `subsec:nonzero-encoding`)
+/-! ### Nonzero encodings (Subsection `subsec:zeroing-branching`)
 
 The branch solver receives the nonzero conditions of a branch and may encode them with
 auxiliary variables; these identities show that both encodings describe `V(Q) ∖ V(u_N)`. -/
