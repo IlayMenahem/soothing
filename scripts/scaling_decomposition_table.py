@@ -7,15 +7,18 @@ ideal I or its radical sqrt I, and the decomposition is monolithic, a covering, 
 irreducible. Alg. Branching is the standard algorithm, and one Singular command per
 cell is the direct baseline. All methods run in the same harness: one Python process
 driving one Singular process, timed by wall clock; the conversion to Singular syntax
-is not timed.
+is not timed. Runs proceed concurrently through ``_harness.run``, each holding a solver
+slot shared with every other experiment script; waiting for a slot is not timed either.
 
 ``--systems scaling`` (default) runs every method on the families of
-``scaling_table.py``. Within a family, a method that times out or fails at one size
-is not run at larger sizes, except Alg. PrimaryBranching when its isolated components
+``scaling_table.py``, the families concurrently. Within a family the sizes run in
+order and the methods of one size concurrently; a method that times out or fails at
+one size is not run at larger sizes, except Alg. PrimaryBranching when its isolated components
 finished before the embedded-component fallback timed out. The facstd columns of the
 table come from ``scaling_table.py``.
 
-``--systems baseline`` runs Alg. IdealRefine against std on the 20 baseline systems.
+``--systems baseline`` runs Alg. IdealRefine against std on the 20 baseline systems,
+the systems concurrently.
 Both return a description of the ideal I itself that decides ideal membership: std a
 Gröbner basis of I, Alg. IdealRefine ideals with Gröbner bases whose intersection is
 I (Corollary ideal-membership). Where both finish, an untimed run checks that the
@@ -33,14 +36,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import signal
-import subprocess
 import sys
-import time
+from functools import partial
 from pathlib import Path
 
-from _harness import RESULTS, append_row, load_rows
+from _harness import RESULTS, append_row, concurrently, load_rows, run
 from _systems import generate_matrix, load_system, poly_to_singular
 from scaling_table import FACTOR_BRANCHING, FAMILIES
 from scaling_table import RESULTS_FILE as SCALING_RESULTS
@@ -87,22 +87,10 @@ def convert(path: Path) -> Path:
 
 
 def run_method(method: str, system: Path, timeout: int) -> dict[str, object]:
-    started = time.monotonic()
-    process = subprocess.Popen(
-        [sys.executable, str(SCRIPT), method, str(system)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        start_new_session=True,
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        stdout, _ = process.communicate()
+    stdout, stderr, wall, killed, _ = run([sys.executable, str(SCRIPT), method, str(system)], timeout)
+    if killed:
         partial = [json.loads(line.removeprefix("PARTIAL ")) for line in stdout.splitlines() if line.startswith("PARTIAL ")]
         return {"status": "timeout", "wall_secs": float(timeout), **({"partial": partial[-1]} if partial else {})}
-    wall = time.monotonic() - started
     results = [line for line in stdout.splitlines() if line.startswith("{")]
     if not results:
         return {"status": "error", "wall_secs": wall, "error": stderr[-500:]}
@@ -118,6 +106,15 @@ def gave_up(row: dict[str, object]) -> bool:
     return not finished(row) and not (row["label"] == "primary" and "partial" in row)
 
 
+def measure(family: str, size: int, name: str, system: Path, timeout: int, method: str) -> dict[str, object]:
+    """Run one method on one system of a family and store its row."""
+    row = run_method(method, system, timeout)
+    record = {"family": family, "size": size, "system": name, "label": method, "timeout": timeout, **row}
+    append_row(RESULTS_FILE, record)
+    print(f"{name} {method} {row['status']} {float(str(row['wall_secs'])):.3f}", flush=True)
+    return record
+
+
 def benchmark_family(family: str, output: Path, timeout: int) -> None:
     make, sizes, _ = FAMILIES[family]
     done = {(row["size"], row["label"]): row for row in load_rows(RESULTS_FILE) if row["family"] == family}
@@ -131,13 +128,9 @@ def benchmark_family(family: str, output: Path, timeout: int) -> None:
             continue
         path = make(output, size)
         system = convert(path)
-        for method in pending:
-            row = run_method(method, system, timeout)
-            record = {"family": family, "size": size, "system": path.stem, "label": method, "timeout": timeout, **row}
-            append_row(RESULTS_FILE, record)
-            print(f"{path.stem} {method} {row['status']} {float(str(row['wall_secs'])):.3f}", flush=True)
+        for record in concurrently(partial(measure, family, size, path.stem, system, timeout), pending):
             if gave_up(record):
-                failed_at[method] = min(failed_at.get(method, size), size)
+                failed_at[str(record["label"])] = min(failed_at.get(str(record["label"]), size), size)
 
 
 def outcome(row: dict[str, object]) -> str:
@@ -262,23 +255,31 @@ BASELINE_REPORT_FILE = RESULTS / "ideal_refine.md"
 BASELINE_METHODS: tuple[str, ...] = ("ideal-refine", "direct-std")
 
 
+def benchmark_baseline_system(
+    output: Path, timeout: int, done: set[tuple[str, str]], instance_path: str
+) -> None:
+    """Both methods on one baseline system, then, where both finished, the untimed exactness check."""
+    path = output / Path(instance_path).name
+    system = convert(path)
+    for method in BASELINE_METHODS:
+        if (path.stem, method) in done:
+            continue
+        row = run_method(method, system, timeout)
+        record = {"system": path.stem, "label": method, "timeout": timeout, **row}
+        append_row(BASELINE_RESULTS_FILE, record)
+        print(f"{path.stem} {method} {row['status']} {float(str(row['wall_secs'])):.3f}", flush=True)
+    both = [r for r in load_rows(BASELINE_RESULTS_FILE) if r["system"] == path.stem and r["status"] == "ok"]
+    if len({r["label"] for r in both}) == len(BASELINE_METHODS) and (path.stem, "verify-ideal-refine") not in done:
+        row = run_method("verify-ideal-refine", system, 10 * timeout)
+        append_row(BASELINE_RESULTS_FILE, {"system": path.stem, "label": "verify-ideal-refine", **row})
+        print(f"{path.stem} verify {row.get('exact')}", flush=True)
+
+
 def benchmark_baseline(output: Path, timeout: int) -> None:
-    done = {(row["system"], row["label"]) for row in load_rows(BASELINE_RESULTS_FILE)}
-    for instance in generate_matrix(output):
-        path = output / Path(instance.path).name
-        system = convert(path)
-        for method in BASELINE_METHODS:
-            if (path.stem, method) in done:
-                continue
-            row = run_method(method, system, timeout)
-            record = {"system": path.stem, "label": method, "timeout": timeout, **row}
-            append_row(BASELINE_RESULTS_FILE, record)
-            print(f"{path.stem} {method} {row['status']} {float(str(row['wall_secs'])):.3f}", flush=True)
-        both = [r for r in load_rows(BASELINE_RESULTS_FILE) if r["system"] == path.stem and r["status"] == "ok"]
-        if len({r["label"] for r in both}) == len(BASELINE_METHODS) and (path.stem, "verify-ideal-refine") not in done:
-            row = run_method("verify-ideal-refine", system, 10 * timeout)
-            append_row(BASELINE_RESULTS_FILE, {"system": path.stem, "label": "verify-ideal-refine", **row})
-            print(f"{path.stem} verify {row.get('exact')}", flush=True)
+    """Every baseline system concurrently."""
+    done = {(str(row["system"]), str(row["label"])) for row in load_rows(BASELINE_RESULTS_FILE)}
+    instances = [instance.path for instance in generate_matrix(output)]
+    concurrently(partial(benchmark_baseline_system, output, timeout, done), instances)
 
 
 def baseline_cell(row: dict[str, object] | None) -> str:
@@ -331,8 +332,7 @@ def main() -> int:
         if args.systems == "baseline":
             benchmark_baseline(args.output_dir, args.timeout)
         else:
-            for family in families:
-                benchmark_family(family, args.output_dir, args.timeout)
+            concurrently(lambda family: benchmark_family(family, args.output_dir, args.timeout), families)
     REPORT_FILE.write_text(render_report() + "\n", encoding="utf-8")
     BASELINE_REPORT_FILE.write_text(render_baseline_report(), encoding="utf-8")
     print(f"updated {REPORT_FILE} and {BASELINE_REPORT_FILE}")

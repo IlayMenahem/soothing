@@ -13,13 +13,15 @@ Parts, each a resumable Markdown matrix of system x method in ``results/``:
                   5 s per branch, the choice of the 3 s limit in the setup
                   (``zeroing_cutoff_sweep.json``)
 
-Only cells marked NR run, unless ``--rerun-all``. ``--report-only`` prints the rows
+Cells run concurrently, ``--jobs`` at a time (default: ``_harness.solver_slots()``), each
+holding a solver slot shared with every other experiment script, so parts can also run
+side by side. Only cells marked NR run, unless ``--rerun-all``. ``--report-only`` prints the rows
 of ``tab:baseline-comparison`` and ``tab:appendix-zeroing`` from the stored results.
 The systems are generated in a temporary directory unless ``--output-dir`` is given.
 
 Examples:
 
-    python3 scripts/baseline_table.py --part baselines --jobs 1
+    python3 scripts/baseline_table.py --part baselines
     python3 scripts/baseline_table.py --part branching --only branching-symbolica
     python3 scripts/baseline_table.py --part cutoff-sweep
     python3 scripts/baseline_table.py --generate-only --output-dir systems/benchmarks
@@ -46,7 +48,7 @@ from _harness import (
     run_direct,
     run_external,
     run_zeroing,
-    subprocess_limit,
+    solver_slots,
 )
 from _systems import MATRIX_REQUIRED_COVERS, Instance, generate_matrix
 
@@ -165,7 +167,7 @@ def initial_report(part: str, instances: list[Instance], timeout: int) -> list[s
         "## Reproduction",
         "",
         "```sh",
-        f"python3 scripts/baseline_table.py --part {part} --no-build --jobs 1",
+        f"python3 scripts/baseline_table.py --part {part} --no-build",
         "```",
         "",
         "The script generates the benchmark systems in a temporary directory.",
@@ -505,7 +507,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--part", choices=PARTS)
     parser.add_argument("--timeout", type=int, default=60, help="seconds per run")
-    parser.add_argument("--jobs", type=int, default=1)
+    parser.add_argument("--jobs", type=int, default=solver_slots(), help="concurrent runs; default: the solver slots")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--generate-only", action="store_true")
@@ -523,9 +525,9 @@ def parse_args() -> argparse.Namespace:
         parser.error("--timeout must be at least 1")
     if args.jobs < 1:
         parser.error("--jobs must be at least 1")
-    limit = subprocess_limit()
+    limit = solver_slots()
     if args.jobs > limit:
-        print(f"capping --jobs from {args.jobs} to {limit} (available CPUs minus two)", file=sys.stderr)
+        print(f"capping --jobs from {args.jobs} to {limit}, the solver slots", file=sys.stderr)
         args.jobs = limit
     if args.generate_only and args.output_dir is None:
         parser.error("--generate-only requires --output-dir so generated systems persist")

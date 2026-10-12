@@ -11,17 +11,33 @@
   runs the tool and prints one JSON line, so its wall time includes the Python
   start-up and the conversion, as for the Rust binaries.
 * ``load_rows`` and ``append_row`` keep the resumable JSON-lines result files.
+* ``solver_slot`` lets experiment scripts run concurrently within a resource budget:
+  every solver run, in any script, holds one of ``solver_slots()`` slots
+  (``RESOURCE_SHARE`` of the cores) and starts only while the running experiments
+  together use less than ``RESOURCE_SHARE`` of the physical memory. Their use is the
+  physical footprint of every run and its descendants, which counts swapped and
+  compressed memory too. When they exceed that share, ``run`` stops the most recently
+  started of several runs and starts it again once there is room, so only completed
+  attempts are timed. ``concurrently`` starts independent runs at once and leaves the
+  pacing to the slots.
+* ``physical_system`` writes the physical system: ``systems/system.txt``
+  without its last equation ``kappah*rRabKappah = 1``, the Rabinowitsch
+  encoding of ``kappah != 0``. The experiments impose ``kappah != 0`` by
+  saturation instead, passing ``PHYSICAL_NONZERO`` to every solver.
 
-Baseline usage:
+Baseline usage (``--nonzero X`` saturates by ``X`` before the task, inside its time):
 
-    python3 scripts/_harness.py singular SYSTEM.txt --task gb|gb-dp|facstd|decompose --timeout-secs N
-    python3 scripts/_harness.py macaulay2 SYSTEM.txt --task gb|decompose --timeout-secs N
+    python3 scripts/_harness.py singular SYSTEM.txt --task gb|gb-dp|facstd|decompose --timeout-secs N [--nonzero X]
+    python3 scripts/_harness.py macaulay2 SYSTEM.txt --task gb|decompose --timeout-secs N [--nonzero X]
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import ctypes
+import ctypes.util
+import fcntl
 import json
 import os
 import re
@@ -29,23 +45,34 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
+import threading
 import time
+from collections.abc import Callable, Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import TextIO
 
 import sympy as sp
 
-from _systems import load_system, poly_to_singular
+from _systems import load_system, mathematica_rules, poly_to_singular
 
 REPO = Path(__file__).resolve().parent.parent
 SYMBOLICA = REPO / "symbolica"
 RESULTS = REPO / "results"
-PHYSICAL_SYSTEM = REPO / "systems" / "system.txt"
+PHYSICAL_SOURCE = REPO / "systems" / "system.txt"
+PHYSICAL_SYSTEM = RESULTS / "physical_system.txt"
+PHYSICAL_RABINOWITSCH_RULE = "0 -> rRabKappah*kappah - 1"
+PHYSICAL_NONZERO: tuple[str, ...] = ("kappah",)
 BINARIES: dict[str, Path] = {
     name: SYMBOLICA / "target" / "release" / name
     for name in ("sig_groebner", "branching", "variable_zeroing")
 }
 ZEROING_BRANCH_TIMEOUT_MS = 3000
+RESOURCE_SHARE = 0.33
+SLOT_DIRECTORY = Path(tempfile.gettempdir()) / "soothing_solver_slots"
+APPEND_LOCK = threading.Lock()
 # Standalone baseline label -> (tool, task arguments of the baseline CLI below).
 EXTERNAL: dict[str, tuple[str, list[str]]] = {
     "singular-gb-dp": ("singular", ["--task", "gb-dp"]),
@@ -57,11 +84,37 @@ EXTERNAL: dict[str, tuple[str, list[str]]] = {
 }
 
 
-def subprocess_limit() -> int:
-    """Maximum concurrent child processes, leaving two CPUs responsive."""
-    affinity = getattr(os, "sched_getaffinity", None)
-    cores = len(affinity(0)) if affinity is not None else (os.cpu_count() or 1)
-    return max(1, cores - 2)
+def physical_system() -> Path:
+    """Write ``PHYSICAL_SYSTEM``, the source system without its last equation, and return its path.
+
+    The dropped equation must be ``PHYSICAL_RABINOWITSCH_RULE``, whose condition ``kappah != 0``
+    the experiments impose by saturation."""
+    rules = mathematica_rules(PHYSICAL_SOURCE.read_text(encoding="utf-8"))
+    dropped = " ".join(rules[-1].split())
+    if dropped != PHYSICAL_RABINOWITSCH_RULE:
+        raise ValueError(f"the last equation of {PHYSICAL_SOURCE} is {dropped!r}, not {PHYSICAL_RABINOWITSCH_RULE!r}")
+    PHYSICAL_SYSTEM.write_text(",\n".join(rules[:-1]) + "\n", encoding="utf-8")
+    return PHYSICAL_SYSTEM
+
+
+def nonzero_arguments(nonzero: tuple[str, ...]) -> list[str]:
+    """The ``--nonzero`` option of the Rust binaries and the baseline CLI."""
+    return ["--nonzero", ",".join(nonzero)] if nonzero else []
+
+
+def solver_slots() -> int:
+    """The number of solver runs that may run at once across all experiment processes."""
+    return max(1, int((os.cpu_count() or 1) * RESOURCE_SHARE))
+
+
+def concurrently[Item, Result](function: Callable[[Item], Result], items: Iterable[Item]) -> list[Result]:
+    """``function`` on every item at once, in threads, with the results in item order; the solver
+    slots bound how many runs proceed. An exception of any call is raised once all have ended."""
+    pending = list(items)
+    if len(pending) <= 1:
+        return [function(item) for item in pending]
+    with ThreadPoolExecutor(max_workers=len(pending)) as executor:
+        return list(executor.map(function, pending))
 
 
 FINISHED_RE = re.compile(
@@ -101,25 +154,181 @@ def kill_group(group: int) -> None:
                 os.kill(int(member), signal.SIGKILL)
 
 
-def run(
-    argv: list[str], timeout: float, cwd: Path | None = None
-) -> tuple[str, str, float, bool, int]:
-    start = time.perf_counter()
-    process = subprocess.Popen(
-        argv,
-        cwd=cwd,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-        return stdout, stderr, time.perf_counter() - start, False, process.returncode
-    except subprocess.TimeoutExpired:
-        kill_group(process.pid)
-        stdout, stderr = process.communicate()
-        return stdout, stderr, timeout, True, -signal.SIGKILL
+class RusageInfo(ctypes.Structure):
+    """``struct rusage_info_v0`` of macOS ``proc_pid_rusage``."""
+
+    _fields_ = [("uuid", ctypes.c_uint8 * 16)] + [
+        (name, ctypes.c_uint64)
+        for name in (
+            "user_time", "system_time", "pkg_idle_wkups", "interrupt_wkups", "pageins",
+            "wired_size", "resident_size", "phys_footprint", "proc_start_abstime", "proc_exit_abstime",
+        )
+    ]
+
+
+LIBSYSTEM = ctypes.CDLL(ctypes.util.find_library("System"))
+
+
+def footprint(pid: int) -> int:
+    """The physical footprint of a process in bytes: resident, compressed and swapped memory it is
+    charged for, as Activity Monitor reports. A process that has exited counts zero."""
+    info = RusageInfo()
+    return info.phys_footprint if LIBSYSTEM.proc_pid_rusage(pid, 0, ctypes.byref(info)) == 0 else 0
+
+
+def descendants(roots: list[int]) -> set[int]:
+    """The processes in the trees rooted at ``roots``, the roots included."""
+    table = subprocess.run(["ps", "-A", "-o", "pid=,ppid="], capture_output=True, text=True, check=True).stdout
+    children: dict[int, list[int]] = {}
+    for pid, parent in (map(int, line.split()) for line in table.splitlines() if line.strip()):
+        children.setdefault(parent, []).append(pid)
+    found: set[int] = set()
+    pending = list(roots)
+    while pending:
+        pid = pending.pop()
+        if pid not in found:
+            found.add(pid)
+            pending.extend(children.get(pid, []))
+    return found
+
+
+@dataclass(frozen=True)
+class SlotRecord:
+    """The run in a held slot: its root process and its start, in seconds since the epoch."""
+
+    root: int
+    started: float
+
+
+def recorded_run(path: Path) -> SlotRecord | None:
+    """The run recorded in a slot file while its slot is held."""
+    with path.open("r", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            fields = handle.read().split()
+            return SlotRecord(int(fields[0]), float(fields[1])) if len(fields) == 2 else None
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        return None
+
+
+def running_records() -> list[SlotRecord]:
+    return [record for record in map(recorded_run, SLOT_DIRECTORY.glob("slot*")) if record is not None]
+
+
+def experiments_footprint(records: list[SlotRecord]) -> int:
+    """The bytes the recorded runs and all their descendants use."""
+    return sum(map(footprint, descendants([record.root for record in records])))
+
+
+def memory_budget() -> float:
+    return RESOURCE_SHARE * os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+
+
+def has_headroom(needed: int) -> bool:
+    """Whether a run that needs ``needed`` bytes fits beside the running experiments; with none
+    running, any run fits."""
+    records = running_records()
+    return not records or experiments_footprint(records) + needed < memory_budget()
+
+
+def evicted(root: int) -> bool:
+    """Whether the run rooted at ``root`` must make room: the experiments exceed the memory budget
+    and it is the most recently started of several runs."""
+    records = running_records()
+    if len(records) < 2 or experiments_footprint(records) <= memory_budget():
+        return False
+    return max(records, key=lambda record: record.started).root == root
+
+
+@dataclass(frozen=True)
+class SolverSlot:
+    """A held solver slot. ``track`` records the root process of its run, which makes the run's
+    memory count toward the budget."""
+
+    handle: TextIO
+
+    def track(self, pid: int) -> None:
+        self.handle.truncate(0)
+        self.handle.write(f"{pid} {time.time()}")
+        self.handle.flush()
+
+
+@contextlib.contextmanager
+def solver_slot(needed: int = 0) -> Iterator[SolverSlot]:
+    """Hold one of the solver slots shared by all experiment processes of this user, taken once
+    the running experiments leave ``needed`` bytes of the memory budget. A slot is a file lock,
+    so a crashed process frees it; the file is opened without truncation, so waiting never
+    erases a holder's record."""
+    SLOT_DIRECTORY.mkdir(exist_ok=True)
+    while True:
+        if has_headroom(needed):
+            for index in range(solver_slots()):
+                handle = (SLOT_DIRECTORY / f"slot{index}").open("a", encoding="utf-8")
+                try:
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    handle.close()
+                    continue
+                try:
+                    handle.truncate(0)
+                    yield SolverSlot(handle)
+                finally:
+                    handle.truncate(0)
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+                    handle.close()
+                return
+        time.sleep(1.0)
+
+
+RunOutcome = tuple[str, str, float, bool, int]
+
+
+def run_attempt(argv: list[str], timeout: float, cwd: Path | None, needed: int) -> RunOutcome | int:
+    """One attempt in a solver slot that leaves ``needed`` bytes, checked every second: the
+    outcome, or the bytes the run used when it was stopped to bring the experiments back within
+    the memory budget."""
+    with solver_slot(needed) as slot:
+        start = time.perf_counter()
+        process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        slot.track(process.pid)
+        while True:
+            remaining = start + timeout - time.perf_counter()
+            try:
+                stdout, stderr = process.communicate(timeout=min(1.0, max(remaining, 0.0)))
+                return stdout, stderr, time.perf_counter() - start, False, process.returncode
+            except subprocess.TimeoutExpired:
+                if remaining <= 0:
+                    kill_group(process.pid)
+                    stdout, stderr = process.communicate()
+                    return stdout, stderr, timeout, True, -signal.SIGKILL
+                if evicted(process.pid):
+                    used = experiments_footprint([SlotRecord(process.pid, start)])
+                    kill_group(process.pid)
+                    process.communicate()
+                    return used
+
+
+def run(argv: list[str], timeout: float, cwd: Path | None = None) -> RunOutcome:
+    """Run ``argv`` in a solver slot, as (stdout, stderr, seconds, timed out, return code). A run
+    stopped for memory starts again once the budget has room for what it used; only the
+    completed attempt is timed, and waiting for a slot is not."""
+    needed = 0
+    while isinstance(outcome := run_attempt(argv, timeout, cwd, needed), int):
+        needed = max(needed, outcome)
+        print(
+            f"memory budget exceeded; restarting {Path(argv[0]).name} once {needed / 2**30:.1f} GB fit",
+            file=sys.stderr,
+            flush=True,
+        )
+    return outcome
 
 
 
@@ -175,7 +384,7 @@ def solver_args_with_engine(solver_args: list[str], engine: str) -> list[str]:
     return args
 
 
-def run_direct(path: Path, algorithm: str, timeout: int) -> dict[str, object]:
+def run_direct(path: Path, algorithm: str, timeout: int, nonzero: tuple[str, ...] = ()) -> dict[str, object]:
     label = f"{algorithm}-grevlex"
     stdout, stderr, wall, killed, returncode = run(
         [
@@ -188,6 +397,7 @@ def run_direct(path: Path, algorithm: str, timeout: int) -> dict[str, object]:
             "--timeout-secs",
             str(timeout),
             "--summary",
+            *nonzero_arguments(nonzero),
         ],
         timeout + 2,
     )
@@ -351,10 +561,19 @@ def run_zeroing(
     }
 
 
-def run_external(label: str, path: Path, timeout: int) -> dict[str, object]:
+def run_external(label: str, path: Path, timeout: int, nonzero: tuple[str, ...] = ()) -> dict[str, object]:
     tool, extra = EXTERNAL[label]
     stdout, _, wall, killed, _ = run(
-        [sys.executable, str(Path(__file__).resolve()), tool, str(path), *extra, "--timeout-secs", str(timeout)],
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            tool,
+            str(path),
+            *extra,
+            "--timeout-secs",
+            str(timeout),
+            *nonzero_arguments(nonzero),
+        ],
         timeout + 2,
     )
     row = parse_baseline(stdout, label, wall, killed)
@@ -370,7 +589,8 @@ def load_rows(path: Path) -> list[dict[str, object]]:
 
 
 def append_row(path: Path, record: dict[str, object]) -> None:
-    with path.open("a", encoding="utf-8") as handle:
+    """Append one JSON line; threads of one process never interleave their lines."""
+    with APPEND_LOCK, path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record) + "\n")
 
 
@@ -443,7 +663,7 @@ SINGULAR_LABELS: dict[str, str] = {
 }
 
 
-def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str) -> str:
+def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str, nonzero: list[str]) -> str:
     # The Rust loader recognizes Mathematica's \[Pi] as the
     # coefficient ``pi`` and excludes it from the polynomial variable order.
     # Match that interpretation for facstd with the transcendental coefficient
@@ -463,7 +683,6 @@ def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str
     if task in {"gb", "gb-dp"}:
         body = (
             'option(redSB);\n'
-            'int t0 = rtimer;\n'
             'ideal G = std(I);\n'
             'int dt = rtimer - t0;\n'
             'print("SOLVE_MS " + string(dt));\n'
@@ -471,7 +690,6 @@ def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str
         )
     elif task == "facstd":
         body = (
-            'int t0 = rtimer;\n'
             'ideal FI = interred(I);\n'
             'list F = facstd(FI);\n'
             'int dt = rtimer - t0;\n'
@@ -489,8 +707,6 @@ def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str
         )
     elif task == "decompose":
         body = (
-            'LIB "primdec.lib";\n'
-            'int t0 = rtimer;\n'
             'list pd = primdecGTZ(I);\n'
             'int dt = rtimer - t0;\n'
             'print("SOLVE_MS " + string(dt));\n'
@@ -505,12 +721,24 @@ def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str
         )
     else:
         raise ValueError(f"unknown task: {task}")
+    libraries = ['LIB "primdec.lib";\n'] if task == "decompose" else []
+    libraries += ['LIB "elim.lib";\n'] if nonzero else []
+    # Singular 4.4 returns the saturation itself, older versions a list (ideal, exponent).
+    saturation = (
+        f"def S = sat(I, ideal({'*'.join(nonzero)}));\n"
+        'if (typeof(S) == "list") { I = S[1]; } else { I = S; }\n'
+        if nonzero
+        else ""
+    )
     return (
         # rtimer ticks per second; default is 1 (whole seconds) — bump to 1000
         # so SOLVE_MS is in milliseconds, matching the other baselines.
         'system("--ticks-per-sec", 1000);\n'
-        f"ring R = {coefficients}, ({ring_vars}), {ordering};\n"
+        + "".join(libraries)
+        + f"ring R = {coefficients}, ({ring_vars}), {ordering};\n"
         f"ideal I = {ideal_body};\n"
+        "int t0 = rtimer;\n"
+        f"{saturation}"
         f"{body}"
         f'print("DONE");\n'
         f"exit;\n"
@@ -541,18 +769,20 @@ def _poly_to_m2(poly: sp.Basic, rename: dict[str, str]) -> str:
     return text
 
 
-def _m2_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str) -> str:
+def _m2_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str, nonzero: list[str]) -> str:
     # M2 predefines several lower-case identifiers as mathematical constants
     # (e, pi, ii), and "_" is its indexed-variable operator. Use positional
     # alphanumeric names so both collisions and accidental indexing are impossible.
     rename = {str(symbol): f"v{index}" for index, symbol in enumerate(symbols)}
     ring_vars = ",".join(rename[str(s)] for s in symbols)
     ideal_body = ",\n  ".join(_poly_to_m2(p, rename) for p in polys)
+    saturation = f"I = saturate(I, {'*'.join(rename[name] for name in nonzero)});\n" if nonzero else ""
     # cpuTime() returns floating-point seconds; ``currentTime()`` is integer-second
     # Unix epoch and rounds to 0 for fast operations.
     if task == "gb":
         body = (
             'startTime = cpuTime();\n'
+            f'{saturation}'
             'G = gens gb I;\n'
             'dt = cpuTime() - startTime;\n'
             '<< "SOLVE_MS " << floor(dt * 1000) << "\\n";\n'
@@ -562,6 +792,7 @@ def _m2_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str) -> s
         body = (
             'needsPackage "PrimaryDecomposition";\n'
             'startTime = cpuTime();\n'
+            f'{saturation}'
             'comps = decompose I;\n'
             'dt = cpuTime() - startTime;\n'
             '<< "SOLVE_MS " << floor(dt * 1000) << "\\n";\n'
@@ -598,7 +829,12 @@ def singular_main(args: argparse.Namespace) -> int:
         BaselineResult(baseline=label, status="ok", elapsed_secs=0.0, basis_len=0).emit()
         return 0
 
-    program = _singular_program(polys, symbols, args.task)
+    missing = sorted(set(args.nonzero) - {str(s) for s in symbols})
+    if missing:
+        BaselineResult(baseline=label, status="error", error=f"--nonzero: no variable {', '.join(missing)}").emit()
+        return 0
+
+    program = _singular_program(polys, symbols, args.task, args.nonzero)
 
     try:
         rc, out, err, wall = run_subprocess(
@@ -651,7 +887,12 @@ def macaulay2_main(args: argparse.Namespace) -> int:
         BaselineResult(baseline=label, status="ok", elapsed_secs=0.0, basis_len=0).emit()
         return 0
 
-    program = _m2_program(polys, symbols, args.task)
+    missing = sorted(set(args.nonzero) - {str(s) for s in symbols})
+    if missing:
+        BaselineResult(baseline=label, status="error", error=f"--nonzero: no variable {', '.join(missing)}").emit()
+        return 0
+
+    program = _m2_program(polys, symbols, args.task, args.nonzero)
 
     try:
         rc, out, err, wall = run_subprocess(
@@ -703,6 +944,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("system_path", type=Path)
     parser.add_argument("--task", required=True)
     parser.add_argument("--timeout-secs", type=float, default=120.0)
+    parser.add_argument(
+        "--nonzero",
+        type=lambda names: names.split(","),
+        default=[],
+        help="comma-separated variables assumed nonzero; the tool saturates by their product first",
+    )
     args = parser.parse_args()
     tasks = SINGULAR_LABELS if args.tool == "singular" else MACAULAY2_LABELS
     if args.task not in tasks:

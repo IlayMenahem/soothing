@@ -304,11 +304,17 @@ The system is an order-five approximation constraining graviton couplings in
 asymptotic-safety models to remain consistent with quantum field theory
 (QFT)~\cite{rafiezinedine2018simplifying,vacca2010asymptotic}. Solving this
 system helps determine admissible fixed-point structures in quantum
-gravity~\cite{vacca2010asymptotic}.
+gravity~\cite{vacca2010asymptotic}. It has 28 equations in 21 variables, and
+its coefficients involve $\pi$. One coupling, $\kappa_h$, must be nonzero.
+Factor branching, variable zeroing, and the Singular and Macaulay2 baselines
+impose this by saturating by $\kappa_h$; the standalone M4GB, F5, GVW, and F4
+runs, which cannot saturate, add the Rabinowitsch generator $1-s\kappa_h$.
 
 For this larger system, every run, including the standalone baselines, has a
 120-second total limit.  Within it, variable zeroing uses a five-second limit per
-branch and per saturation; factor branching places no further limit on a branch.
+branch and per saturation; factor branching gives its saturation of the system
+five seconds and places no further limit on a branch.  Both methods keep
+$\kappa_h$ as a nonzero side condition during refinement.
 
 \begin{table}[pos=htbp]
 \centering
@@ -319,19 +325,19 @@ branch and per saturation; factor branching places no further limit on a branch.
 \hline
 Backend & Factor branching $T/F$ (s) & Factor branching result & Variable zeroing $T/F$ (s) & Variable zeroing result \\
 \hline
-M4GB & timeout$/0.003$ & partial: 6 SAT, 1 timeout & $64.166/0.271$ & complete: 9 splits \\
-F5 & timeout$/0.006$ & partial: 6 SAT, 1 timeout & timeout$/0.272$ & partial: 17 splits, 5 unresolved \\
-GVW & timeout$/0.006$ & partial: 6 SAT, 1 timeout & timeout$/0.302$ & partial: 17 splits, 5 unresolved \\
-F4 & timeout$/0.006$ & partial: 6 SAT, 1 timeout & timeout$/0.266$ & partial: 16 splits, 6 unresolved \\
-Singular & timeout$/0.013$ & partial: 6 SAT, 1 timeout & $52.038/0.301$ & complete: 7 splits \\
-\texttt{facstd} & $0.785/0.010$ & complete: 6 SAT, 1 UNSAT & $1.088/0.275$ & complete: 0 splits \\
+M4GB & $0.796/0.770$ & complete: 10 SAT, 0 UNSAT & $2.096/2.036$ & complete: 0 splits \\
+F5 & $0.788/0.763$ & complete: 10 SAT, 0 UNSAT & $2.070/2.005$ & complete: 0 splits \\
+GVW & $0.786/0.755$ & complete: 10 SAT, 0 UNSAT & $2.049/2.004$ & complete: 0 splits \\
+F4 & $0.781/0.755$ & complete: 10 SAT, 0 UNSAT & $2.053/2.006$ & complete: 0 splits \\
+Singular & $0.844/0.762$ & complete: 10 SAT, 0 UNSAT & $2.108/2.010$ & complete: 0 splits \\
+\texttt{facstd} & $0.857/0.764$ & complete: 10 SAT, 0 UNSAT & $2.177/2.048$ & complete: 0 splits \\
 \hline
 \end{tabular}%
 }
 \caption{Physical-system results with a 120-second total limit per run; variable
-zeroing also uses a 5-second limit per branch and per saturation.  Both methods refine the
-system into the same 7 terminal branches; the factor branching result column
-counts them by outcome.
+zeroing also uses a 5-second limit per branch and per saturation.  Factor
+branching refines the saturated system into 10 terminal branches, which its
+result column counts by outcome; its $T$ and $F$ include the saturation.
 A split is one $x=0$ versus $x\neq0$ case split; an unresolved branch is one
 still open when the total limit expires.  The nine standalone baselines, including
 standalone \texttt{facstd}, all time out and are omitted.}
@@ -341,31 +347,34 @@ standalone \texttt{facstd}, all time out and are omitted.}
 All nine standalone baselines time out after 120 seconds on the physical system:
 M4GB, F5, GVW, and F4 in grevlex order, Singular and Macaulay2 lex Gr\"obner
 bases, Singular \texttt{facstd} and \texttt{primdecGTZ}, and Macaulay2
-\texttt{decompose}.  Factor branching with
-\texttt{facstd} completes in 0.785 seconds.  Every backend solves the same 6
-of the 7 terminal branches as SAT within 0.07 seconds in total, and times out on
-the last one.  Only \texttt{facstd} shows that this branch is UNSAT, so
-only in hindsight do we know that the 6 SAT branches found by the other
-backends already contain every solution.
+\texttt{decompose}.  Factor branching completes with every backend in 0.78 to
+0.86 seconds.  The saturation by $\kappa_h$ takes about 0.75 seconds of this time;
+afterwards every backend shows all 10 terminal branches SAT within 0.11
+seconds.
 
-Variable zeroing also completes with M4GB and Singular, making completion more
-robust to backend choice on this system: three of six backends succeed, versus
-one with factor branching alone.  Most of this time goes into saturations.  In
-the M4GB run, 8 of the 9 saturations reach the five-second limit, so these
-branches keep their unsaturated generators, and the remaining one returns
-$\langle1\rangle$.  If the branches instead keep the nonzero conditions as
-separate Rabinowitsch generators, the M4GB and Singular runs take 24.616 and
-17.816 seconds.  On this system, deciding that a branch is empty is cheaper
-than computing its saturation.
+Variable zeroing also completes with every backend, in 2.05 to 2.18 seconds and
+without a split: the saturation of the system by $\kappa_h$ finishes within its
+five-second limit, and every one of the resulting 13 terminal branches is SAT.
 
-For comparison, we repeat the M4GB run of variable zeroing twice with affine
-side conditions: once with the fixed side conditions $x=1$ and $x\neq1$, and
-once with each split independently drawing an integer $a$ uniformly from
-$\{-10,\ldots,10\}$ and using the side conditions $x=a$ and $x\neq a$,
-saturating the branch $x\neq a$ by $x-a$. Both runs use M4GB with a
-five-second limit per branch and a ten-minute wall-clock limit. Neither
-alternative finishes within ten minutes, and both searches reach depth 22,
-where every variable has been split. The run with $x=1$ ends with 24
-unresolved branches after 73 splits, and the run with random values, seeded
-with $0$, ends with 29 after 89 splits. On this system, splits into $x=0$ and
-$x\neq0$ are therefore more effective than these affine splits.
+% [PrimaryBranching: the primary decomposition of the physical system]
+Without a time limit and without the optional separators,
+Algorithm~\ref{alg:PrimaryBranching} returns a minimal
+primary decomposition of the physical system over $\mathbb Q(\pi)$.
+Algorithm~\ref{alg:IdealReduce}, with $\kappa_h$ kept nonzero, reduces the 28
+equations to 18 generators in three rounds and 0.6 seconds, whose saturation by
+$\kappa_h$ has 56 generators.  Algorithm~\ref{alg:Branching} with
+\texttt{minAssGTZ} finds the six minimal primes in 0.2 seconds, and
+\texttt{primdecSY}~\cite{shimoyama1996localization} decomposes the saturation
+in 213 seconds.  On the unreduced system, \texttt{primdecSY} did not finish in
+30 minutes when $\kappa_h\neq0$ was encoded by a Rabinowitsch generator.  Six of the ten components are isolated, in two
+families of dimensions 13, 12, and 8.  In one family they are prime.  In the
+other, each component arises from its radical by replacing one generator, a
+variable, by its square, which doubles the degree.  Each family also has two
+embedded components, one of dimension 10 inside its 12-dimensional component
+and one of dimension 8 inside its 13-dimensional component.  A Gr\"obner basis
+of the saturation confirms that the components intersect to
+$\langle P\rangle:\kappa_h^\infty$.  Every step uses lex order with the variables ordered by a
+min-fill heuristic on the supports of the equations.  With the variables in
+alphabetical order, Algorithm~\ref{alg:IdealReduce} stops at 27 generators,
+because the factorizing Gr\"obner basis of the largest hitting set does not
+finish within 120 seconds.

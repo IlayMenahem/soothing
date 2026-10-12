@@ -5,9 +5,11 @@
 //! [--max-runtime MS] [--gb BACKEND]
 //! [--saturate-each-variable|--shared-product-saturation|--ideal-saturation]
 //! [--prune] [--leaf-timeout MS] [--jobs N]
-//! [--split-value INTEGER|random] [--random-seed N] [--summary]
-//! [--plot OUT.tex]` (default path: `systems/system.txt`; default
-//! Gröbner backend: Singular).
+//! [--split-value INTEGER|random] [--random-seed N] [--nonzero NAME[,NAME...]]
+//! [--summary] [--plot OUT.tex]` (default path: `systems/system.txt`; default
+//! Gröbner backend: Singular). `--nonzero` restricts the solutions to those
+//! where the named variables do not vanish, by saturation; it needs
+//! `--ideal-saturation`.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
@@ -19,6 +21,7 @@ use symbolica::license::LicenseManager;
 use symbolica::poly::PolyVariable;
 
 use polynomial_cdcl::gb_search::GbBackend;
+use polynomial_cdcl::nonzero::nonzero_variables;
 use polynomial_cdcl::{
     NonzeroEncoding, PreprocessingFailure, SplitValueStrategy, VariableZeroingCoverOutcome,
     VariableZeroingNodeResult, VariableZeroingOptions, ZeroingVariable,
@@ -38,6 +41,7 @@ struct CliOptions {
     prune_by_solutions: bool,
     split_value_strategy: SplitValueStrategy,
     random_seed: u64,
+    nonzero: Vec<String>,
     summary: bool,
     plot: Option<PathBuf>,
 }
@@ -60,6 +64,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
     let mut prune_by_solutions = false;
     let mut split_value_strategy = SplitValueStrategy::Fixed(0);
     let mut random_seed = 0;
+    let mut nonzero = Vec::new();
     let mut summary = false;
     let mut plot = None;
     let mut args = args.into_iter();
@@ -111,6 +116,12 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
                     .parse()
                     .map_err(|error| format!("invalid --random-seed: {error}"))?;
             }
+            "--nonzero" => {
+                let names = args
+                    .next()
+                    .ok_or_else(|| "--nonzero requires variable names".to_string())?;
+                nonzero.extend(names.split(',').map(str::to_string));
+            }
             "--summary" => summary = true,
             "--plot" => {
                 plot =
@@ -134,6 +145,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<CliOptions, Stri
         prune_by_solutions,
         split_value_strategy,
         random_seed,
+        nonzero,
         summary,
         plot,
     })
@@ -154,6 +166,8 @@ fn main() {
         .unwrap_or_else(|error| die(format!("load error: {error}"), 1));
     let polynomials = polynomials_from_loaded(&loaded, &Q)
         .unwrap_or_else(|error| die(format!("polynomial conversion: {error}"), 1));
+    let nonzero = nonzero_variables(&loaded, &cli.nonzero)
+        .unwrap_or_else(|error| die(format!("--nonzero: {error}"), 2));
 
     let variables: Vec<ZeroingVariable> = loaded
         .var_names
@@ -172,7 +186,7 @@ fn main() {
         load_started.elapsed()
     );
     println!(
-        "Recursive branching: {}ms/cover, leaf timeout {}, {} job(s), {} backend, nonzero encoding {}, pruning by solutions {}, split values {}, max runtime {}",
+        "Recursive branching: {}ms/cover, leaf timeout {}, {} job(s), {} backend, nonzero encoding {}, pruning by solutions {}, split values {}, max runtime {}, nonzero variables {}",
         cli.timeout_ms,
         cli.leaf_timeout_ms
             .map_or_else(|| "per cover".to_string(), |value| format!("{value}ms")),
@@ -185,7 +199,12 @@ fn main() {
             SplitValueStrategy::Random => format!("random in [-10,10] (seed {})", cli.random_seed),
         },
         cli.max_runtime_ms
-            .map_or_else(|| "unlimited".to_string(), |value| format!("{value}ms"))
+            .map_or_else(|| "unlimited".to_string(), |value| format!("{value}ms")),
+        if cli.nonzero.is_empty() {
+            "none".to_string()
+        } else {
+            cli.nonzero.join(",")
+        }
     );
 
     let options = VariableZeroingOptions {
@@ -200,7 +219,7 @@ fn main() {
         random_seed: cli.random_seed,
         verbose: !cli.summary,
     };
-    let result = solve_by_zeroing(polynomials, variables, &options)
+    let result = solve_by_zeroing(polynomials, variables, &nonzero, &options)
         .unwrap_or_else(|error| die(format!("variable-zeroing error: {error}"), 1));
 
     if let Some(path) = &cli.plot {
@@ -340,15 +359,19 @@ fn render_tikz_plot(
     let mut positions = HashMap::new();
     for row in rows.values() {
         let mut raw_positions = Vec::with_capacity(row.len());
-        let mut x = 0.0;
-        let mut previous_node = None;
+        let mut right_edge: Option<(usize, f64)> = None;
         for &(node_id, cover_index) in row {
-            if previous_node.is_some_and(|previous| previous != node_id) {
-                x += 0.8;
-            }
-            raw_positions.push((node_id, cover_index, x));
-            x += 2.2;
-            previous_node = Some(node_id);
+            let width = member_width(nodes_by_id[&node_id], cover_index);
+            let left = right_edge.map_or(0.0, |(previous, edge)| {
+                edge + MEMBER_GAP_CM
+                    + if previous == node_id {
+                        0.0
+                    } else {
+                        GROUP_GAP_CM
+                    }
+            });
+            raw_positions.push((node_id, cover_index, left + width / 2.0));
+            right_edge = Some((node_id, left + width));
         }
         let center = raw_positions
             .first()
@@ -372,7 +395,7 @@ fn render_tikz_plot(
 
 \begin{tikzpicture}[
   font=\small,
-  cover/.style={draw=blue!65!black,fill=blue!3,rounded corners=2pt,line width=0.65pt,minimum width=13mm,minimum height=7mm,inner sep=2pt,align=center},
+  cover/.style={draw=blue!65!black,fill=blue!3,rounded corners=2pt,line width=0.65pt,minimum width=10mm,minimum height=7mm,inner sep=2pt,align=center},
   timeout cover/.style={cover,draw=orange!85!black,fill=yellow!12,minimum width=18mm,minimum height=10mm},
   contracted cover/.style={cover,draw=violet!75!black,fill=violet!5,minimum width=18mm,minimum height=10mm},
   error cover/.style={cover,draw=red!75!black,fill=red!5,minimum width=18mm,minimum height=10mm},
@@ -515,6 +538,31 @@ fn render_tikz_plot(
     Ok(output)
 }
 
+/// Horizontal space between neighbouring boxes of one node, and extra space between nodes.
+const MEMBER_GAP_CM: f64 = 0.3;
+const GROUP_GAP_CM: f64 = 0.8;
+
+/// The width in cm of a plotted box: a cover of `node`, or with `None` the box standing for the
+/// node's unchecked covers, its missing covers, or its failed preprocessing. The widths follow
+/// the node styles of [`render_tikz_plot`]; an empty branch is sized for its label.
+fn member_width(node: &VariableZeroingNodeResult, cover_index: Option<usize>) -> f64 {
+    let wide = 1.8;
+    match cover_index {
+        Some(index) => {
+            node.checks
+                .iter()
+                .find(|check| check.cover_index == index)
+                .map_or(1.0, |check| match check.outcome {
+                    VariableZeroingCoverOutcome::Timeout
+                    | VariableZeroingCoverOutcome::Contracted => wide,
+                    _ => 1.0,
+                })
+        }
+        None if node.preprocessing_failure.is_some() => wide,
+        None => 2.6,
+    }
+}
+
 fn group_center(
     node: &VariableZeroingNodeResult,
     positions: &HashMap<(usize, Option<usize>), f64>,
@@ -523,11 +571,13 @@ fn group_center(
     members.iter().map(|key| positions[key]).sum::<f64>() / members.len() as f64
 }
 
+/// Draw the edges from a node's group point to its boxes as a comb: along the group's
+/// horizontal line, then straight down to each box.
 fn draw_group_fan(output: &mut String, node: &VariableZeroingNodeResult) {
     for check in &node.checks {
         writeln!(
             output,
-            "\\draw[branch] (group-{}) -- ({}.north);",
+            "\\draw[branch] (group-{}) -| ({}.north);",
             node.node_id,
             cover_node_name(node.node_id, check.cover_index)
         )
@@ -536,7 +586,7 @@ fn draw_group_fan(output: &mut String, node: &VariableZeroingNodeResult) {
     if node.checks.len() < node.covers || node.covers == 0 {
         writeln!(
             output,
-            "\\draw[branch] (group-{}) -- (pending-{}.north);",
+            "\\draw[branch] (group-{}) -| (pending-{}.north);",
             node.node_id, node.node_id
         )
         .unwrap();

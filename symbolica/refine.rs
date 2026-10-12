@@ -20,7 +20,7 @@
 //! only discard points that an earlier branch keeps, so the terminal zero sets
 //! still cover `V(P)`; the solver never sees them.
 
-use crate::cover::{build_factor_index, decode_cover, minimal_covers, ordered_cover_masks};
+use crate::cover::{BitSet, build_factor_index, decode_cover, minimal_covers, ordered_cover_masks};
 use crate::factor_prep::{PolyExtLex, interreduce_polys, try_factor_groups_from_polys};
 
 /// Counters describing one refinement run.
@@ -71,7 +71,7 @@ pub trait RefineOps {
 }
 
 /// Runs both operations in the calling process, without a deadline.
-struct InProcess;
+pub struct InProcess;
 
 impl RefineOps for InProcess {
     type Error = String;
@@ -86,17 +86,19 @@ impl RefineOps for InProcess {
 }
 
 /// For each cover, in order, the factors `f` such that some earlier cover
-/// exceeds it by exactly `f`, as a bitmask over the same factor universe.
-fn sibling_conditions(covers: &[u64]) -> Vec<u64> {
+/// exceeds it by exactly `f`, as a bitset over the same factor universe.
+fn sibling_conditions(covers: &[BitSet]) -> Vec<BitSet> {
     covers
         .iter()
         .enumerate()
-        .map(|(index, &cover)| {
+        .map(|(index, cover)| {
             covers[..index]
                 .iter()
-                .map(|&earlier| earlier & !cover)
-                .filter(|extra| extra.count_ones() == 1)
-                .fold(0u64, |conditions, extra| conditions | extra)
+                .map(|earlier| earlier.difference(cover))
+                .filter(|extra| extra.len() == 1)
+                .fold(BitSet::default(), |conditions, extra| {
+                    conditions.union(&extra)
+                })
         })
         .collect()
 }
@@ -111,15 +113,15 @@ struct Branch {
 /// conditions together with its own sibling conditions.
 fn branches_of_covers(
     factors: &[PolyExtLex],
-    covers: &[u64],
+    covers: &[BitSet],
     parent_conditions: &[PolyExtLex],
 ) -> Vec<Branch> {
     covers
         .iter()
         .zip(sibling_conditions(covers))
-        .map(|(&cover, conditions)| Branch {
+        .map(|(cover, conditions)| Branch {
             generators: decode_cover(factors, cover),
-            conditions: union(parent_conditions, decode_cover(factors, conditions)),
+            conditions: union(parent_conditions, decode_cover(factors, &conditions)),
         })
         .collect()
 }
@@ -136,7 +138,7 @@ fn union(left: &[PolyExtLex], right: Vec<PolyExtLex>) -> Vec<PolyExtLex> {
 }
 
 /// Each factor group less the factors assumed nonzero.
-pub(crate) fn without_conditions(groups: FactorGroups, conditions: &[PolyExtLex]) -> FactorGroups {
+pub fn without_conditions(groups: FactorGroups, conditions: &[PolyExtLex]) -> FactorGroups {
     groups
         .into_iter()
         .map(|group| {
@@ -155,12 +157,7 @@ fn factor_cover_candidates<O: RefineOps>(
 ) -> Result<Vec<Branch>, O::Error> {
     let groups = without_conditions(ops.factor(polynomials)?, conditions);
     let (factors, index_groups) = build_factor_index(&groups);
-    let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
-        O::Error::from(format!(
-            "too many distinct factors ({}); the cover enumerator supports at most 63",
-            factors.len()
-        ))
-    })?;
+    let covers = minimal_covers(&index_groups);
     Ok(branches_of_covers(
         &factors,
         &ordered_cover_masks(&covers),
@@ -258,20 +255,19 @@ fn refine_cover_with<O: RefineOps>(
     Ok(())
 }
 
-/// The variables of each generator's leading monomial, as a bitmask; `None`
-/// when the ring has more than 64 variables.
-fn leading_supports(branch: &[PolyExtLex]) -> Option<Vec<u64>> {
+/// The variables of each generator's leading monomial, as a bitset.
+fn leading_supports(branch: &[PolyExtLex]) -> Vec<BitSet> {
     branch
         .iter()
         .map(|polynomial| {
-            (polynomial.nvars() <= 64).then(|| {
+            BitSet::from_indices(
                 polynomial
                     .max_exp()
                     .iter()
                     .enumerate()
                     .filter(|&(_, &exponent)| exponent > 0)
-                    .fold(0u64, |mask, (variable, _)| mask | (1u64 << variable))
-            })
+                    .map(|(variable, _)| variable),
+            )
         })
         .collect()
 }
@@ -279,19 +275,19 @@ fn leading_supports(branch: &[PolyExtLex]) -> Option<Vec<u64>> {
 /// A terminal branch with the leading-monomial supports of its generators.
 struct PruneCandidate {
     branch: TerminalBranch,
-    leading_supports: Option<Vec<u64>>,
+    leading_supports: Vec<BitSet>,
 }
 
 /// A necessary condition for every generator of `other` to reduce to zero
 /// modulo `branch`: each leading monomial of `other` must be divisible by one
 /// of `branch`, so in particular contain all its variables.
 fn may_be_contained(branch: &PruneCandidate, other: &PruneCandidate) -> bool {
-    match (&branch.leading_supports, &other.leading_supports) {
-        (Some(divisors), Some(monomials)) => monomials
+    other.leading_supports.iter().all(|monomial| {
+        branch
+            .leading_supports
             .iter()
-            .all(|&monomial| divisors.iter().any(|&divisor| divisor & !monomial == 0)),
-        _ => true,
-    }
+            .any(|divisor| divisor.is_subset(monomial))
+    })
 }
 
 /// Whether every generator of `other` reduces to zero modulo `branch`, which
@@ -342,7 +338,7 @@ fn prune_contained(branches: Vec<TerminalBranch>) -> Vec<Vec<PolyExtLex>> {
 /// increasing number of generators. Factorization runs in-process.
 pub fn refine_covers(
     factors: &[PolyExtLex],
-    covers: &[u64],
+    covers: &[BitSet],
 ) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), String> {
     refine_covers_with(factors, covers, &mut InProcess)
 }
@@ -351,7 +347,7 @@ pub fn refine_covers(
 /// an isolated worker under a deadline.
 pub fn refine_covers_with<O: RefineOps>(
     factors: &[PolyExtLex],
-    covers: &[u64],
+    covers: &[BitSet],
     ops: &mut O,
 ) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), O::Error> {
     refine_covers_under_conditions(factors, covers, &[], ops)
@@ -364,7 +360,7 @@ pub fn refine_covers_with<O: RefineOps>(
 /// the factor sets that produced `covers`.
 pub fn refine_covers_under_conditions<O: RefineOps>(
     factors: &[PolyExtLex],
-    covers: &[u64],
+    covers: &[BitSet],
     conditions: &[PolyExtLex],
     ops: &mut O,
 ) -> Result<(Vec<Vec<PolyExtLex>>, RefinementStats), O::Error> {
@@ -423,9 +419,10 @@ mod tests {
     fn sibling_conditions_take_single_extra_factors_of_earlier_covers() {
         // {0}, {1, 2}, {0, 3}: {0} \ {1, 2} = {0} gives the second cover the
         // condition 0; neither earlier cover exceeds {0, 3} by one factor.
+        let set = |indices: &[usize]| BitSet::from_indices(indices.iter().copied());
         assert_eq!(
-            sibling_conditions(&[0b0001, 0b0110, 0b1001]),
-            vec![0, 0b0001, 0]
+            sibling_conditions(&[set(&[0]), set(&[1, 2]), set(&[0, 3])]),
+            vec![set(&[]), set(&[0]), set(&[])]
         );
     }
 
@@ -437,7 +434,7 @@ mod tests {
         let x = systems(&["x == 0, y == 0"]).remove(0).remove(0);
         let groups = try_factor_groups_from_polys(polynomials).expect("factor");
         let (factors, index_groups) = build_factor_index(&groups);
-        let covers = minimal_covers(&index_groups, factors.len()).expect("covers");
+        let covers = minimal_covers(&index_groups);
 
         let (terminal, stats) =
             refine_covers(&factors, &ordered_cover_masks(&covers)).expect("refine");

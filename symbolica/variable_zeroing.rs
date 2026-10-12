@@ -38,6 +38,7 @@ use crate::gb_search::{
     ComputedBasis, GbBackend, Outcome, PolyExtGrevLex, Saturation, evaluate_cover, saturate,
     solution_dimension,
 };
+use crate::nonzero::{difference, uses_temporary_variable, with_rabinowitsch_equations};
 use crate::refine::{FactorGroups, RefineOps, refine_covers_under_conditions, without_conditions};
 use crate::solver_process::{
     ProcessRun, factor_groups_isolated, interreduce_isolated, running_under_test_harness,
@@ -527,19 +528,29 @@ impl<'a> Solver<'a> {
         });
     }
 
-    fn solve_node(
+    /// Solve the input with the variables in `nonzero` nonzero. Like an
+    /// inequality child, the root starts from `Saturate(P, N)` and carries the
+    /// conditions `x != 0` for refinement and the branch solver.
+    fn solve_root(
         &self,
         polynomials: Vec<PolyExtLex>,
         variables: Vec<ZeroingVariable>,
-        decisions: Vec<SplitDecision>,
+        nonzero: &[PolyVariable],
     ) -> Result<Option<usize>, String> {
-        self.solve_node_with_contraction(
-            polynomials,
-            variables,
-            decisions,
-            BranchConditions::default(),
-            false,
-        )
+        let conditions = BranchConditions {
+            equal: Vec::new(),
+            unequal: nonzero
+                .iter()
+                .map(|variable| (variable.clone(), 0))
+                .collect(),
+        };
+        let polynomials = if nonzero.is_empty() {
+            polynomials
+        } else {
+            self.saturated_branch(&polynomials, &conditions.unequal)
+                .unwrap_or(polynomials)
+        };
+        self.solve_node_with_contraction(polynomials, variables, Vec::new(), conditions, false)
     }
 
     /// The monic polynomials `x - a` of the inequality decisions, in the ring
@@ -1135,27 +1146,38 @@ fn next_split_value(strategy: SplitValueStrategy, random: &mut StdRng) -> i64 {
 }
 
 /// Solve a polynomial system by factor branching, recursively splitting on an
-/// original variable whenever a cover times out.
+/// original variable whenever a cover times out. The variables in `nonzero`
+/// are nonzero on the solutions; they need the ideal-saturation encoding and
+/// are never split on.
 pub fn solve_by_zeroing(
     polynomials: Vec<PolyExtLex>,
     variables: Vec<ZeroingVariable>,
+    nonzero: &[PolyVariable],
     options: &VariableZeroingOptions,
 ) -> Result<VariableZeroingResult, String> {
-    solve_by_zeroing_with(polynomials, variables, options, &evaluate_cover)
+    solve_by_zeroing_with(polynomials, variables, nonzero, options, &evaluate_cover)
 }
 
 fn solve_by_zeroing_with(
     polynomials: Vec<PolyExtLex>,
     variables: Vec<ZeroingVariable>,
+    nonzero: &[PolyVariable],
     options: &VariableZeroingOptions,
     evaluator: &Evaluator<'_>,
 ) -> Result<VariableZeroingResult, String> {
+    if !nonzero.is_empty() && options.nonzero_encoding != NonzeroEncoding::Saturation {
+        return Err("nonzero input variables need the ideal-saturation encoding".to_string());
+    }
+    let variables: Vec<ZeroingVariable> = variables
+        .into_iter()
+        .filter(|candidate| !nonzero.contains(&candidate.variable))
+        .collect();
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(options.jobs.max(1))
         .build()
         .map_err(|error| format!("cannot start {} worker thread(s): {error}", options.jobs))?;
     let solver = Solver::new(options, evaluator);
-    pool.install(|| solver.solve_node(polynomials, variables, Vec::new()))?;
+    pool.install(|| solver.solve_root(polynomials, variables, nonzero))?;
     let elapsed = solver.started.elapsed();
     let SearchState {
         components,
@@ -1256,88 +1278,6 @@ fn split_on_variable(
     ))
 }
 
-/// The Rabinowitsch-free generators of `candidate` together with Rabinowitsch
-/// equations for `inequality_conditions`: one per condition, or one for
-/// their product.
-fn with_rabinowitsch_equations(
-    candidate: Vec<PolyExtLex>,
-    inequality_conditions: &[(PolyVariable, i64)],
-    saturate_each_variable: bool,
-) -> Result<Vec<PolyExtLex>, String> {
-    let mut unequal_branch: Vec<_> = candidate
-        .into_iter()
-        .filter(|polynomial| !uses_temporary_variable(polynomial))
-        .collect();
-    if unequal_branch.is_empty() {
-        return Err("cannot rebuild saturation from an empty cover".to_string());
-    }
-    let saturation_variable_count = if saturate_each_variable {
-        inequality_conditions.len()
-    } else {
-        1
-    };
-    for index in 0..saturation_variable_count {
-        let saturation_variable = PolyVariable::Temporary(index);
-        for polynomial in &mut unequal_branch {
-            polynomial.add_variable(&saturation_variable);
-        }
-    }
-
-    let template = unequal_branch
-        .first()
-        .cloned()
-        .expect("the inequality branch retains the nonempty cover");
-    if saturate_each_variable {
-        for (index, (variable, value)) in inequality_conditions.iter().enumerate() {
-            let inverse = template.variable(&PolyVariable::Temporary(index))?;
-            let product = inverse * &difference(&template, variable, *value)?;
-            unequal_branch.push(template.one() - product);
-        }
-    } else {
-        let mut product = template.variable(&PolyVariable::Temporary(0))?;
-        for (variable, value) in inequality_conditions {
-            product = product * &difference(&template, variable, *value)?;
-        }
-        unequal_branch.push(template.one() - product);
-    }
-    Ok(unequal_branch)
-}
-
-/// The polynomial `x - a` in the ring of `template`.
-fn difference(
-    template: &PolyExtLex,
-    variable: &PolyVariable,
-    value: i64,
-) -> Result<PolyExtLex, String> {
-    Ok(template.variable(variable)? - template.constant(Rational::from(value)))
-}
-
-fn uses_variable<O: MonomialOrder>(
-    polynomial: &MultivariatePolynomial<Q, u16, O>,
-    variable: &PolyVariable,
-) -> bool {
-    let Some(position) = polynomial
-        .variables()
-        .iter()
-        .position(|candidate| candidate == variable)
-    else {
-        return false;
-    };
-    polynomial
-        .exponents_iter()
-        .any(|exponents| exponents[position] != 0)
-}
-
-fn uses_temporary_variable<O: MonomialOrder>(
-    polynomial: &MultivariatePolynomial<Q, u16, O>,
-) -> bool {
-    polynomial
-        .variables()
-        .iter()
-        .filter(|variable| matches!(variable, PolyVariable::Temporary(_)))
-        .any(|variable| uses_variable(polynomial, variable))
-}
-
 fn factor_groups_with_timeout(
     polynomials: Vec<PolyExtLex>,
     timeout: Duration,
@@ -1423,12 +1363,7 @@ fn terminal_hitting_sets_with_timeout(
     let deadline = Instant::now() + timeout;
     let groups = without_conditions(factor_before_deadline(polynomials, deadline)?, conditions);
     let (factors, index_groups) = build_factor_index(&groups);
-    let covers = minimal_covers(&index_groups, factors.len()).ok_or_else(|| {
-        HittingSetFailure::Fatal(format!(
-            "{} distinct factors; the cover enumerator supports at most 63",
-            factors.len()
-        ))
-    })?;
+    let covers = minimal_covers(&index_groups);
     let (terminal, _) = refine_covers_under_conditions(
         &factors,
         &ordered_cover_masks(&covers),
@@ -1464,6 +1399,7 @@ mod tests {
     use symbolica::poly::GrevLexOrder;
 
     use super::*;
+    use crate::nonzero::uses_variable;
     use crate::{
         LoadedMathematicaSystem, load_mathematica_system_from_str_with_var_names,
         polynomials_from_loaded,
@@ -1654,9 +1590,14 @@ mod tests {
         let options = VariableZeroingOptions::default();
         let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
 
-        let result =
-            solve_by_zeroing_with(polynomials, candidates(&loaded), &options, &always_timeout)
-                .expect("search");
+        let result = solve_by_zeroing_with(
+            polynomials,
+            candidates(&loaded),
+            &[],
+            &options,
+            &always_timeout,
+        )
+        .expect("search");
 
         assert_eq!(result.nodes[0].node_id, 0);
         assert!(result.nodes[0].decisions.is_empty());
@@ -1683,9 +1624,14 @@ mod tests {
         let options = VariableZeroingOptions::default();
         let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
 
-        let result =
-            solve_by_zeroing_with(polynomials, candidates(&loaded), &options, &always_timeout)
-                .expect("search");
+        let result = solve_by_zeroing_with(
+            polynomials,
+            candidates(&loaded),
+            &[],
+            &options,
+            &always_timeout,
+        )
+        .expect("search");
 
         assert_eq!(result.nodes[0].covers, 5);
     }
@@ -1702,6 +1648,7 @@ mod tests {
             solve_by_zeroing_with(
                 polynomials.clone(),
                 candidates(&loaded),
+                &[],
                 &options,
                 &always_timeout,
             )
@@ -1745,8 +1692,8 @@ mod tests {
             Outcome::Timeout
         };
 
-        let result =
-            solve_by_zeroing_with(polynomials, Vec::new(), &options, &evaluator).expect("search");
+        let result = solve_by_zeroing_with(polynomials, Vec::new(), &[], &options, &evaluator)
+            .expect("search");
 
         assert_eq!(*longest_limit.lock().unwrap(), Duration::from_secs(600));
         assert_eq!(result.stats.leaf_evaluations, 1);
@@ -1769,8 +1716,9 @@ mod tests {
             Outcome::Timeout
         };
 
-        let result = solve_by_zeroing_with(polynomials, candidates(&loaded), &options, &evaluator)
-            .expect("search");
+        let result =
+            solve_by_zeroing_with(polynomials, candidates(&loaded), &[], &options, &evaluator)
+                .expect("search");
 
         assert_eq!(evaluations.load(Ordering::Relaxed), 0);
         assert!(result.nodes.is_empty());
@@ -1784,9 +1732,14 @@ mod tests {
         let options = VariableZeroingOptions::default();
         let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
 
-        let result =
-            solve_by_zeroing_with(polynomials, candidates(&loaded), &options, &always_timeout)
-                .expect("search");
+        let result = solve_by_zeroing_with(
+            polynomials,
+            candidates(&loaded),
+            &[],
+            &options,
+            &always_timeout,
+        )
+        .expect("search");
 
         let root_children = result
             .nodes
@@ -1813,9 +1766,14 @@ mod tests {
             Outcome::Timeout
         };
 
-        let result =
-            solve_by_zeroing_with(polynomials, candidates(&loaded), &options, &always_timeout)
-                .expect("search");
+        let result = solve_by_zeroing_with(
+            polynomials,
+            candidates(&loaded),
+            &[],
+            &options,
+            &always_timeout,
+        )
+        .expect("search");
 
         // The root is evaluated and split on x. Its x = 0 child has one
         // cover, while its x != 0 sibling has none, so the unique cover is
@@ -2058,5 +2016,65 @@ mod tests {
             terminal_hitting_sets_with_timeout(saturated, Duration::from_secs(5), &[])
                 .expect("covers");
         assert!(covers.is_empty());
+    }
+
+    #[test]
+    fn nonzero_input_variables_need_ideal_saturation() {
+        let (loaded, polynomials) = load("{x*y == 0}");
+        let x = variable(&loaded, "x");
+        let always_timeout = |_: Vec<PolyExtLex>, _: Duration, _: GbBackend| Outcome::Timeout;
+
+        let result = solve_by_zeroing_with(
+            polynomials,
+            candidates(&loaded),
+            &[x],
+            &VariableZeroingOptions::default(),
+            &always_timeout,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn nonzero_input_variable_is_saturated_kept_and_never_split() {
+        if std::process::Command::new("Singular")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let (loaded, polynomials) = load("{x*y - 1 == 0}");
+        let x = variable(&loaded, "x");
+        let options = VariableZeroingOptions {
+            nonzero_encoding: NonzeroEncoding::Saturation,
+            timeout: Duration::from_secs(5),
+            ..VariableZeroingOptions::default()
+        };
+        let inputs: Mutex<Vec<Vec<PolyExtLex>>> = Mutex::default();
+        let recording_timeout = |input: Vec<PolyExtLex>, _: Duration, _: GbBackend| {
+            inputs.lock().expect("inputs").push(input);
+            Outcome::Timeout
+        };
+
+        let result = solve_by_zeroing_with(
+            polynomials,
+            candidates(&loaded),
+            std::slice::from_ref(&x),
+            &options,
+            &recording_timeout,
+        )
+        .expect("search");
+
+        assert_eq!(result.stats.saturations, 2);
+        assert!(result.nodes.iter().all(|node| {
+            node.decisions
+                .iter()
+                .all(|decision| decision.variable != "x")
+        }));
+        let root_input = inputs.lock().expect("inputs")[0].clone();
+        assert!(root_input.iter().any(|polynomial| {
+            uses_temporary_variable(polynomial) && uses_variable(polynomial, &x)
+        }));
     }
 }

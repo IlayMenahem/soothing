@@ -530,6 +530,41 @@ def symbolicdata_system(output: Path, file_name: str) -> Path | None:
     return path
 
 
+def strip_outer_braces(text: str) -> str:
+    text = text.strip()
+    if text.startswith("{") and text.endswith("}"):
+        return text[1:-1].strip()
+    return text
+
+
+def split_top_level(text: str) -> list[str]:
+    """The comma-separated parts of ``text`` outside every bracket."""
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth = max(depth - 1, 0)
+        elif ch == "," and depth == 0:
+            part = "".join(buf).strip()
+            if part:
+                parts.append(part)
+            buf = []
+            continue
+        buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def mathematica_rules(text: str) -> list[str]:
+    """The equations of a Mathematica system file, one rule or equation per entry, as written."""
+    return split_top_level(strip_outer_braces(text))
+
+
 def mathematica_to_sympy(expr: str) -> tuple[list[sp.Expr], set[sp.Symbol]]:
     """
     Convert Mathematica system of rational functions to SymPy polynomials.
@@ -565,33 +600,6 @@ def mathematica_to_sympy(expr: str) -> tuple[list[sp.Expr], set[sp.Symbol]]:
         r"\[Phi]": "phi",
         r"\[Omega]": "omega",
     }
-
-    def strip_outer_braces(text: str) -> str:
-        text = text.strip()
-        if text.startswith("{") and text.endswith("}"):
-            return text[1:-1].strip()
-        return text
-
-    def split_top_level(text: str) -> list[str]:
-        parts: list[str] = []
-        buf: list[str] = []
-        depth = 0
-        for ch in text:
-            if ch in "([{":
-                depth += 1
-            elif ch in ")]}":
-                depth = max(depth - 1, 0)
-            elif ch == "," and depth == 0:
-                part = "".join(buf).strip()
-                if part:
-                    parts.append(part)
-                buf = []
-                continue
-            buf.append(ch)
-        tail = "".join(buf).strip()
-        if tail:
-            parts.append(tail)
-        return parts
 
     def split_top_level_once(text: str, op: str) -> tuple[str, str] | None:
         depth = 0

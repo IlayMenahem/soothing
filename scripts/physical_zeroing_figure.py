@@ -2,7 +2,8 @@
 """Figure ``fig:variable_zeroing_tree``: the variable-zeroing tree of the physical system.
 
 Runs ``variable_zeroing`` with the M4GB backend, ideal saturation, a 5 s budget
-per branch and a 120 s overall budget, and stores the summary together with the raw TikZ tree
+per branch and a 120 s overall budget on the physical system with ``kappah != 0``
+(``_harness.physical_system``), and stores the summary together with the raw TikZ tree
 in ``results/physical_zeroing_figure.json``. The paper figure
 ``paper/figs/variable_zeroing_tree.tex`` is then derived from that raw TikZ with the
 plot-only changes of the current figure: a source header, "no hitting sets" in place
@@ -23,7 +24,16 @@ import re
 import tempfile
 from pathlib import Path
 
-from _harness import BINARIES, PHYSICAL_SYSTEM, REPO, RESULTS, build, run
+from _harness import (
+    BINARIES,
+    PHYSICAL_NONZERO,
+    REPO,
+    RESULTS,
+    build,
+    nonzero_arguments,
+    physical_system,
+    run,
+)
 
 BINARY = BINARIES["variable_zeroing"]
 OUTPUT = RESULTS / "physical_zeroing_figure.json"
@@ -43,11 +53,12 @@ def summary_line(stdout: str) -> str:
 
 
 def run_figure() -> dict[str, object]:
+    system = physical_system()
     with tempfile.TemporaryDirectory(prefix="zeroing_figure_") as directory:
         plot = Path(directory) / "variable_zeroing_tree.tex"
         argv: list[str] = [
             str(BINARY),
-            str(PHYSICAL_SYSTEM),
+            str(system),
             "--gb",
             "m4gb",
             "--timeout",
@@ -55,6 +66,7 @@ def run_figure() -> dict[str, object]:
             "--max-runtime",
             "120000",
             "--ideal-saturation",
+            *nonzero_arguments(PHYSICAL_NONZERO),
             "--summary",
             "--plot",
             str(plot),
@@ -65,7 +77,7 @@ def run_figure() -> dict[str, object]:
     return {
         "argv": argv[:-2],
         "binary_sha256": sha256(BINARY),
-        "input_sha256": sha256(PHYSICAL_SYSTEM),
+        "input_sha256": sha256(system),
         "raw_tikz": raw_tikz,
         "returncode": returncode,
         "killed": killed,

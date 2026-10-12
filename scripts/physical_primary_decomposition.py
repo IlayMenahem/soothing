@@ -1,18 +1,26 @@
 #!/usr/bin/env python3
 """Primary decomposition of the physical system by Alg. PrimaryBranching (paper/sections/method_primary.tex).
 
-    1. Q <- IdealReduce(P), whose branch solver is a factorizing Gröbner basis
-    2. the minimal primes of <Q> = <P> by Alg. Branching with minAssGTZ
-    3. primdecSY of Q
-    4. a component is isolated iff its radical contains a minimal prime of its own dimension
+The system P is systems/system.txt without its last equation, the Rabinowitsch equation of kappah != 0
+(_harness.physical_system). The condition kappah != 0 is imposed by saturation, so the decomposed ideal
+is J = <P> : kappah^oo.
 
-Coefficients lie in Q(pi). Interreduction, factorization, the branch solver of step 1, and primdecSY run
-in lex with the min-fill variable order of symbolica/factor_prep.rs; in name order, facstd on the largest
-hitting set and primdecSY of Q do not finish. Components are written as reduced Gröbner bases in
-degrevlex with the variables in name order.
+    1. Q <- IdealReduce(P) with kappah nonzero: its branch solver decides by saturation whether a hitting
+       set has a zero with kappah != 0, and every round keeps <Q> : kappah^oo = J
+    2. J = sat(Q, kappah)
+    3. the minimal primes of J: those of <Q>, by Alg. Branching with minAssGTZ, that omit kappah
+    4. primdecSY of J
+    5. a component is isolated iff its radical contains a minimal prime of its own dimension
 
-The output is checked: P lies in <Q>, the components intersect to <Q>, the isolated radicals are
-exactly the minimal primes, and no component is redundant. The exit status is 1 if a check fails.
+Coefficients lie in Q(pi). Interreduction, factorization, the branch solver of step 1, the saturation and
+primdecSY run in lex with the min-fill variable order of symbolica/factor_prep.rs. Components are written
+as reduced Gröbner bases in degrevlex with the variables in name order.
+
+The output is checked: P lies in J, kappah is a nonzerodivisor modulo J, the components intersect to J,
+the isolated radicals are exactly the minimal primes, and no component is redundant. The exit status is
+1 if a check fails.
+
+The Singular session holds one solver slot of ``_harness.solver_slot`` while it runs.
 
 Usage: physical_primary_decomposition.py [REPORT.md]
 Default report: results/physical_primary.md.
@@ -26,11 +34,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import factor_variants as fv
+from _harness import PHYSICAL_NONZERO, SolverSlot, physical_system, solver_slot
 from _systems import load_system, poly_to_singular
 
 ROOT = Path(__file__).resolve().parent.parent
 
-SYSTEM = ROOT / "systems" / "system.txt"
 REPORT = ROOT / "results" / "physical_primary.md"
 # The two families of minimal primes, each named by a polynomial that lies in all of its primes.
 FAMILIES: dict[str, str] = {"R": "kappah^2-192*pi^2", "D": "mh"}
@@ -120,6 +128,16 @@ def flag(lines: list[str], tag: str) -> bool:
     return fv.tagged(lines, tag) == ["1"]
 
 
+def omitting(session: fv.Session, primes: list[fv.Prime], nonzero: tuple[str, ...]) -> list[fv.Prime]:
+    """The primes that contain none of the `nonzero` polynomials: the minimal primes of the saturation."""
+    tests = "".join(
+        f'print("HAS {k} " + string(size(reduce(ideal({",".join(nonzero)}), std(ideal({prime.basis})))) < {len(nonzero)}));\n'
+        for k, prime in enumerate(primes)
+    )
+    lines = session.run(f"setring Rdp;\n{tests}")
+    return [prime for k, prime in enumerate(primes) if f"{k} 0" in fv.tagged(lines, "HAS")]
+
+
 def prime_labels(session: fv.Session, primes: list[fv.Prime]) -> list[str]:
     """The family of each minimal prime, by the polynomial of FAMILIES it contains, and its dimension."""
     tests = "".join(
@@ -134,9 +152,9 @@ def prime_labels(session: fv.Session, primes: list[fv.Prime]) -> list[str]:
     return [f"{families[k][0]}{prime.dim}" for k, prime in enumerate(primes)]
 
 
-def decompose(session: fv.Session, reduced: list[str]) -> tuple[list[Component], float]:
-    """Steps 3 and 4: primdecSY of Q in lex, mapped to degrevlex, each radical tested against the primes `Ps`."""
-    _, secs = timed_run(session, f"setring Rlp; list DL = primdecSY({fv.ideal_literal(reduced)});")
+def decompose(session: fv.Session, saturated: list[str]) -> tuple[list[Component], float]:
+    """Steps 4 and 5: primdecSY of J in lex, mapped to degrevlex, each radical tested against the primes `Ps`."""
+    _, secs = timed_run(session, f"setring Rlp; list DL = primdecSY({fv.ideal_literal(saturated)});")
     lines = session.run(
         "setring Rdp; list D = imap(Rlp, DL); list Comps; int i; int j; int k; ideal Q; ideal P; string contains;\n"
         "for (i = 1; i <= size(D); i++) {\n"
@@ -176,7 +194,7 @@ def is_isolated(component: Component, primes: list[fv.Prime]) -> bool:
 
 
 def checks(session: fv.Session, components: list[Component], primes: list[fv.Prime]) -> dict[str, bool]:
-    """Against `Gin`, a Gröbner basis of Q: the components intersect to it and none is redundant;
+    """Against `Gin`, a Gröbner basis of J: the components intersect to it and none is redundant;
     the isolated radicals are the minimal primes, each once."""
     count = len(components)
     whole = session.run(
@@ -200,7 +218,7 @@ def checks(session: fv.Session, components: list[Component], primes: list[fv.Pri
         k for c in components if is_isolated(c, primes) for k in c.contained_primes if primes[k].dim == c.dim
     )
     return {
-        "intersection of all components equals I": flag(whole, "EQUAL"),
+        "the components intersect to J": flag(whole, "EQUAL"),
         "the isolated radicals are exactly the minimal primes": matched == list(range(len(primes))),
         "no component is redundant": not redundant,
     }
@@ -216,6 +234,7 @@ def describe(component: Component, primes: list[fv.Prime], labels: list[str]) ->
 def report(
     system: PhysicalSystem,
     reduced: list[str],
+    saturated: list[str],
     rounds: int,
     primes: list[fv.Prime],
     labels: list[str],
@@ -224,29 +243,31 @@ def report(
     verdicts: dict[str, bool],
 ) -> str:
     order = sorted(components, key=lambda c: (not is_isolated(c, primes), -c.dim))
+    nonzero = ", ".join(PHYSICAL_NONZERO)
     lines = [
         "# Primary decomposition of the physical system",
         "",
         (
-            f"System: `systems/system.txt` ({len(system.polynomials)} equations, {len(system.variables)} variables, "
-            "coefficients in Q(pi))."
+            f"System: `systems/system.txt` without its last equation, the Rabinowitsch equation of {nonzero} != 0 "
+            f"({len(system.polynomials)} equations, {len(system.variables)} variables, coefficients in Q(pi)); "
+            f"{nonzero} != 0 is imposed by saturation, so the decomposed ideal is J = <P> : {nonzero}^oo."
         ),
         (
             "Computed with Alg. PrimaryBranching by `scripts/physical_primary_decomposition.py`: "
-            f"Alg. IdealReduce turns the {len(system.polynomials)} equations into {len(reduced)} generators "
-            f"in {rounds} rounds ({secs['reduce']:.1f} s), Alg. Branching with `minAssGTZ` finds the "
+            f"Alg. IdealReduce with {nonzero} nonzero turns the {len(system.polynomials)} equations into "
+            f"{len(reduced)} generators in {rounds} rounds ({secs['reduce']:.1f} s), their saturation by {nonzero} "
+            f"has {len(saturated)} generators ({secs['saturate']:.1f} s), Alg. Branching with `minAssGTZ` finds the "
             f"{len(primes)} minimal primes ({secs['primes']:.1f} s), and Singular `primdecSY` decomposes the "
-            f"{len(reduced)} generators ({secs['primdec']:.0f} s)."
+            f"saturation ({secs['primdec']:.0f} s)."
         ),
         (
-            "Interreduction, factorization, the branch solver of Alg. IdealReduce (`facstd`), and `primdecSY` run "
-            "in the lexicographic order with the min-fill variable order of `symbolica/factor_prep.rs` "
-            f"({' > '.join(system.min_fill)}); in name order, `primdecSY` did not finish in 30 minutes (2026-10-07)."
+            "Interreduction, factorization, the branch solver of Alg. IdealReduce (saturation by "
+            f"{nonzero}), the saturation, and `primdecSY` run in the lexicographic order with the min-fill "
+            f"variable order of `symbolica/factor_prep.rs` ({' > '.join(system.min_fill)})."
         ),
         (
-            f"Checks with a Gröbner basis of the reduced system ({secs['groebner']:.1f} s): "
-            f"the {len(system.polynomials)} equations lie in its ideal I: {verdicts['P in Q']}; "
-            + "; ".join(f"{name}: {value}" for name, value in verdicts.items() if name != "P in Q")
+            f"Checks with a Gröbner basis of J ({secs['groebner']:.1f} s): "
+            + "; ".join(f"{name}: {value}" for name, value in verdicts.items())
             + "."
         ),
         "",
@@ -274,40 +295,60 @@ def report(
     return "\n".join(lines) + "\n"
 
 
-def main() -> int:
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else REPORT
-    system = load(SYSTEM)
+def decompose_and_report(out: Path, slot: SolverSlot) -> int:
+    """Run Alg. PrimaryBranching, write the report to `out`, and return 1 if a check fails."""
+    system = load(physical_system())
     session = fv.Session(system.variables, system.parameters, factor_variables=system.min_fill, empty_ring="Rlp")
+    slot.track(session.pid)
     secs: dict[str, float] = {}
 
     started = time.monotonic()
-    reduced, rounds = fv.ideal_reduce(session, system.polynomials)
+    reduced, rounds = fv.ideal_reduce(session, system.polynomials, PHYSICAL_NONZERO)
     secs["reduce"] = time.monotonic() - started
     print(f"IdealReduce: {len(system.polynomials)} -> {len(reduced)} generators, {rounds} rounds, "
           f"{secs['reduce']:.1f} s", flush=True)
 
     started = time.monotonic()
-    primes, _ = fv.prime_branching(session, reduced)
+    saturated = fv.saturation(session, reduced, PHYSICAL_NONZERO, "Rlp")
+    secs["saturate"] = time.monotonic() - started
+    print(f"saturation: {len(saturated)} generators, {secs['saturate']:.1f} s", flush=True)
+
+    started = time.monotonic()
+    primes = omitting(session, fv.prime_branching(session, reduced)[0], PHYSICAL_NONZERO)
     secs["primes"] = time.monotonic() - started
     session.run("setring Rdp; list Ps = " + ",".join(f"std(ideal({p.basis}))" for p in primes) + ";")
     labels = prime_labels(session, primes)
     print(f"minimal primes: {', '.join(labels)}, {secs['primes']:.1f} s", flush=True)
 
-    components, secs["primdec"] = decompose(session, reduced)
+    components, secs["primdec"] = decompose(session, saturated)
     print(f"primdecSY: {len(components)} components, {secs['primdec']:.0f} s", flush=True)
 
+    nonzero = "*".join(PHYSICAL_NONZERO)
     lines, secs["groebner"] = timed_run(
         session,
-        f"setring Rdp; ideal Gin = std({fv.ideal_literal(reduced)});\n"
-        f'print("P_IN_Q " + string(size(reduce({fv.ideal_literal(system.polynomials)}, Gin)) == 0));',
+        f"setring Rdp; ideal Gin = std({fv.ideal_literal(saturated)});\n"
+        f'print("P_IN_J " + string(size(reduce({fv.ideal_literal(system.polynomials)}, Gin)) == 0));\n'
+        f'print("SATURATED " + string(size(reduce(std(quotient(Gin, ideal({nonzero}))), Gin)) == 0));',
     )
-    verdicts = {"P in Q": flag(lines, "P_IN_Q"), **checks(session, components, primes)}
+    verdicts = {
+        "the equations lie in J": flag(lines, "P_IN_J"),
+        f"{nonzero} is a nonzerodivisor modulo J": flag(lines, "SATURATED"),
+        **checks(session, components, primes),
+    }
     session.close()
     print(f"checks: {verdicts}", flush=True)
 
-    out.write_text(report(system, reduced, rounds, primes, labels, components, secs, verdicts), encoding="utf-8")
+    out.write_text(
+        report(system, reduced, saturated, rounds, primes, labels, components, secs, verdicts), encoding="utf-8"
+    )
     print(f"wrote {out}")
     return 0 if all(verdicts.values()) else 1
+
+
+def main() -> int:
+    """The Singular session is one long solver run, so it holds a solver slot throughout."""
+    with solver_slot() as slot:
+        return decompose_and_report(Path(sys.argv[1]) if len(sys.argv) > 1 else REPORT, slot)
 
 
 if __name__ == "__main__":

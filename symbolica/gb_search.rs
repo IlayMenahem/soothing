@@ -31,9 +31,9 @@ pub fn solution_dimension(basis: &[PolyExtGrevLex], nvars: usize) -> Option<usiz
                 .collect()
         })
         .collect();
-    minimal_covers(&supports, nvars)?
+    minimal_covers(&supports)
         .into_iter()
-        .map(|transversal| nvars - transversal.count_ones() as usize)
+        .map(|transversal| nvars - transversal.len())
         .max()
 }
 
@@ -81,8 +81,9 @@ pub enum GbBackend {
     /// `SingularGb` after replacing each Rabinowitsch generator by an ideal
     /// saturation.
     SingularGbSat,
-    /// `SingularFacstd` after replacing each Rabinowitsch generator by an
-    /// ideal saturation.
+    /// `SingularFacstd` with each Rabinowitsch generator replaced by an ideal
+    /// saturation: `facstd` splits the other generators, and each component
+    /// is saturated afterwards.
     SingularFacstdSat,
     /// Macaulay2's `decompose`; each minimal prime is reported as a component.
     M2Decompose,
@@ -190,12 +191,13 @@ fn rabinowitsch_generators(cover: &[PolyExtLex]) -> (Vec<&PolyExtLex>, Vec<(usiz
     (ordinary, rabinowitsch)
 }
 
-/// Declare the ring and the cover's ideal `I`. With `saturate`, each
-/// Rabinowitsch generator `c*(1 - s*h)` is replaced by the saturation
-/// `I:h^oo` (Singular `sat`, applied to `diff(g,s) = -c*h`), and `s` is then
-/// set to zero so the dimension over all ring variables equals the dimension
-/// over the original ones.
-fn singular_ideal(cover: &[PolyExtLex], saturate: bool) -> String {
+/// The ring and the cover's ideal `I`, without its Rabinowitsch generators
+/// when `saturate`, and those generators with the positions of their
+/// temporaries.
+fn singular_declarations(
+    cover: &[PolyExtLex],
+    saturate: bool,
+) -> (String, Vec<(usize, &PolyExtLex)>) {
     let variables = (0..cover[0].nvars())
         .map(|index| format!("x{index}"))
         .collect::<Vec<_>>()
@@ -214,16 +216,32 @@ fn singular_ideal(cover: &[PolyExtLex], saturate: bool) -> String {
             .collect::<Vec<_>>()
             .join(",")
     };
-    let ring = format!("ring r=0,({variables}),dp;\nideal I={generators};\n");
+    let prelude = if rabinowitsch.is_empty() {
+        ""
+    } else {
+        "LIB \"elim.lib\";\n"
+    };
+    (
+        format!("{prelude}ring r=0,({variables}),dp;\nideal I={generators};\ndef S;\n"),
+        rabinowitsch,
+    )
+}
+
+/// Statements replacing the ideal `name` by its saturation `name : h^oo` for
+/// each Rabinowitsch generator `c*(1 - s*h)`, one at a time (Singular `sat`,
+/// applied to `diff(g,s) = -c*h`), and then setting every `s` to zero, so the
+/// dimension over all ring variables equals the dimension over the original
+/// ones.
+fn saturation_statements(name: &str, rabinowitsch: &[(usize, &PolyExtLex)]) -> String {
     if rabinowitsch.is_empty() {
-        return ring;
+        return String::new();
     }
     let saturations: String = rabinowitsch
         .iter()
         .map(|(position, generator)| {
             format!(
-                "S=sat(I,ideal(diff({},x{position})));\n\
-                 if(typeof(S)==\"list\"){{I=S[1];}}else{{I=S;}}\n",
+                "S=sat({name},ideal(diff({},x{position})));\n\
+                 if(typeof(S)==\"list\"){{{name}=S[1];}}else{{{name}=S;}}\n",
                 singular_polynomial(generator)
             )
         })
@@ -233,7 +251,18 @@ fn singular_ideal(cover: &[PolyExtLex], saturate: bool) -> String {
         .map(|(position, _)| format!("x{position}"))
         .collect::<Vec<_>>()
         .join(",");
-    format!("LIB \"elim.lib\";\n{ring}def S;\n{saturations}I=I+ideal({pinned});\n")
+    format!("{saturations}{name}={name}+ideal({pinned});\n")
+}
+
+/// Declare the ring and the cover's ideal `I`. With `saturate`, each
+/// Rabinowitsch generator is replaced by the saturation of `I` by its
+/// polynomial (see [`saturation_statements`]).
+fn singular_ideal(cover: &[PolyExtLex], saturate: bool) -> String {
+    let (declarations, rabinowitsch) = singular_declarations(cover, saturate);
+    format!(
+        "{declarations}{}",
+        saturation_statements("I", &rabinowitsch)
+    )
 }
 
 fn singular_program(cover: &[PolyExtLex], saturate: bool) -> String {
@@ -260,25 +289,40 @@ enum SingularSplitter {
     PrimdecGtz,
 }
 
+/// A program printing each component of the cover's ideal. With `saturate`,
+/// `facstd` splits the generators other than the Rabinowitsch ones first and
+/// each component is then saturated, since `V(I) \\ V(h)` is the union of the
+/// `V(F) \\ V(h)`; a component whose saturation is `⟨1⟩` reports as a unit.
+/// `primdecGTZ` decomposes the saturated ideal instead.
 fn singular_components_program(
     cover: &[PolyExtLex],
     saturate: bool,
     splitter: SingularSplitter,
 ) -> String {
-    let ideal = singular_ideal(cover, saturate);
-    let (split, component) = match splitter {
-        SingularSplitter::Facstd => ("ideal FI=interred(I);\nlist F=facstd(FI);\n", "F[i]"),
-        SingularSplitter::PrimdecGtz => {
-            ("LIB \"primdec.lib\";\nlist F=primdecGTZ(I);\n", "F[i][2]")
-        }
+    let (declarations, rabinowitsch) = singular_declarations(cover, saturate);
+    let (before_split, split, component, after_split) = match splitter {
+        SingularSplitter::Facstd => (
+            String::new(),
+            "ideal FI=interred(I);\nlist F=facstd(FI);\n",
+            "F[i]",
+            saturation_statements("J", &rabinowitsch),
+        ),
+        SingularSplitter::PrimdecGtz => (
+            saturation_statements("I", &rabinowitsch),
+            "LIB \"primdec.lib\";\nlist F=primdecGTZ(I);\n",
+            "F[i][2]",
+            String::new(),
+        ),
     };
     format!(
-        "{ideal}\
+        "{declarations}{before_split}\
          {split}\
          int i; ideal J; ideal G;\n\
          for(i=1;i<=size(F);i=i+1){{\n\
            print(\"SINGULAR_COMPONENT\");\n\
-           J={component}; G=std(J);\n\
+           J={component};\n\
+           {after_split}\
+           G=std(J);\n\
            print(\"SINGULAR_UNIT \"+string(reduce(1,G)==0));\n\
            int j;\n\
            for(j=1;j<=size(G);j=j+1){{print(\"SINGULAR_LEAD \"+string(leadexp(G[j])));}};\n\
@@ -579,7 +623,9 @@ pub enum Saturation {
 }
 
 /// Singular program printing every term of the reduced degrevlex basis of
-/// `⟨generators⟩ : (∏ divisors)^∞`, computed by Singular's `sat`. All
+/// `⟨generators⟩ : (∏ divisors)^∞`, computed by Singular's `sat` one divisor
+/// at a time, since `I : (d_1 d_2)^∞ = (I : d_1^∞) : d_2^∞` and Singular
+/// saturates by a single variable far faster than by a product. All
 /// polynomials share one ring.
 fn singular_saturation_program(generators: &[PolyExtLex], divisors: &[PolyExtLex]) -> String {
     let variables = (0..generators[0].nvars())
@@ -591,17 +637,21 @@ fn singular_saturation_program(generators: &[PolyExtLex], divisors: &[PolyExtLex
         .map(singular_polynomial)
         .collect::<Vec<_>>()
         .join(",");
-    let product = divisors
+    let saturations: String = divisors
         .iter()
-        .map(|divisor| format!("({})", singular_polynomial(divisor)))
-        .collect::<Vec<_>>()
-        .join("*");
+        .map(|divisor| {
+            format!(
+                "S=sat(I,ideal({}));\nif(typeof(S)==\"list\"){{I=S[1];}}else{{I=S;}}\n",
+                singular_polynomial(divisor)
+            )
+        })
+        .collect();
     format!(
         "LIB \"elim.lib\";\n\
          ring r=0,({variables}),dp;\n\
          ideal I={ideal};\n\
-         def S=sat(I,ideal({product}));\n\
-         if(typeof(S)==\"list\"){{I=S[1];}}else{{I=S;}}\n\
+         def S;\n\
+         {saturations}\
          option(redSB);\n\
          I=std(I);\n\
          print(\"SINGULAR_UNIT \"+string(reduce(1,I)==0));\n\

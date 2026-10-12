@@ -67,6 +67,21 @@ proc emptyLine(ideal H)
   for (k = 1; k <= size(F); k++) { if (dim(std(F[k])) >= 0) { empty = 0; } }
   print("EMPTY " + string(empty));
 }
+proc saturatedEmptyLine(ideal H, poly u)
+{
+  // V(H) is the union of the V(F[k]), so V(H) minus V(u) is empty iff every saturation F[k] : u^oo is <1>.
+  list F = facstd(H);
+  int k; int empty = 1; list L;
+  for (k = 1; k <= size(F); k++) {
+    if (empty) { L = sat_with_exp(F[k], ideal(u)); if (dim(std(L[1])) >= 0) { empty = 0; } }
+  }
+  print("EMPTY " + string(empty));
+}
+proc saturationLines(ideal J, poly u)
+{
+  list L = sat_with_exp(J, ideal(u)); ideal S = simplify(L[1], 2); int k;
+  for (k = 1; k <= ncols(S); k++) { print("SAT " + string(S[k])); }
+}
 proc canonical(ideal J)
 {
   option(redSB); option(redTail);
@@ -174,6 +189,11 @@ class Session:
             f"ring Rdp = {field}, ({','.join(variables)}), dp; {options}\n"
             f"{PROCEDURES}"
         )
+
+    @property
+    def pid(self) -> int:
+        """The Singular process."""
+        return self._process.pid
 
     def run(self, code: str) -> list[str]:
         stdin, stdout = self._process.stdin, self._process.stdout
@@ -317,9 +337,21 @@ def branch_dimension(session: Session, polynomials: Iterable[str]) -> int:
     return int(tagged(lines, "DIM")[0])
 
 
-def certified_empty(session: Session, polynomials: Iterable[str]) -> bool:
-    lines = session.run(f"setring {session.empty_ring}; emptyLine({ideal_literal(polynomials)});")
+def certified_empty(session: Session, polynomials: Iterable[str], nonzero: Sequence[str] = ()) -> bool:
+    """Whether the branch has no zero, or with `nonzero` none where their product u is nonzero: then every
+    factorizing-Gröbner-basis component has saturation <1> by u."""
+    if nonzero:
+        call = f"saturatedEmptyLine({ideal_literal(polynomials)}, {'*'.join(nonzero)})"
+    else:
+        call = f"emptyLine({ideal_literal(polynomials)})"
+    lines = session.run(f"setring {session.empty_ring}; {call};")
     return tagged(lines, "EMPTY") == ["1"]
+
+
+def saturation(session: Session, polynomials: list[str], nonzero: Sequence[str], ring: str) -> list[str]:
+    """Generators of <polynomials> : (prod nonzero)^oo, a Gröbner basis in `ring`."""
+    lines = session.run(f"setring {ring}; saturationLines({ideal_literal(polynomials)}, {'*'.join(nonzero)});")
+    return tagged(lines, "SAT")
 
 
 def branch_primes(session: Session, branch: Branch) -> list[Prime]:
@@ -364,12 +396,18 @@ def prime_branching(session: Session, polynomials: list[str]) -> tuple[list[Prim
     return primes, {"branches": len(branches), "skipped": skipped, "found": len(found)}
 
 
-def ideal_reduce(session: Session, polynomials: list[str]) -> tuple[list[str], int]:
+def ideal_reduce(
+    session: Session, polynomials: list[str], nonzero: Sequence[str] = ()
+) -> tuple[list[str], int]:
     """Alg. IdealReduce: add h^(a_h) for factors h in every SAT minimal hitting set, drop the generators they divide.
 
     The candidates start as all factors and shrink to the intersection of the SAT hitting sets seen so far;
     a hitting set that contains every candidate cannot shrink them and is not checked, and the checks stop
     once no candidate is left.
+
+    With `nonzero`, a hitting set is SAT when it has a zero at which their product u does not vanish.
+    The proof of Lemma sat-branches then gives u^s h^(a_h) in <Q>, so every round keeps <Q> : u^oo
+    instead of <Q>.
     """
     current = factorize(session, polynomials, interreduce=True)
     for rounds in range(1, 1000):
@@ -379,7 +417,7 @@ def ideal_reduce(session: Session, polynomials: list[str]) -> tuple[list[str], i
         for branch in minimal_hitting_sets(current.factor_sets()):
             if not candidates:
                 break
-            if not candidates <= branch and not certified_empty(session, sorted(branch)):
+            if not candidates <= branch and not certified_empty(session, sorted(branch), nonzero):
                 candidates &= branch
         largest = {factor: max(f.get(factor, 0) for f in current.factorizations) for factor in candidates}
         present = {next(iter(f.items())) for f in current.factorizations if len(f) == 1}

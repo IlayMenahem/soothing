@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 """Table ``tab:physical-system``: the physical system with a 120 s limit per run.
 
-Harnesses, run sequentially so the timings are comparable:
+The system is ``systems/system.txt`` without its last equation, the Rabinowitsch
+equation ``kappah*rRabKappah = 1`` (``_harness.physical_system``). Every run imposes
+``kappah != 0`` by saturation instead: Alg. Branching and Alg. ZeroingBranching start
+from the saturation by ``kappah`` (5 s limit, else the system itself) and keep
+``kappah`` as a nonzero side condition; Singular and Macaulay2 saturate before their
+task; M4GB, F5, GVW and F4 cannot saturate and add ``1 - s*kappah``.
+
+Harnesses; all their runs start at once, each holding a solver slot of
+``_harness.solver_slot`` shared with every other experiment script:
 
     branching   Alg. Branching with each of six backends, no limit per branch
     zeroing     Alg. ZeroingBranching with each of six backends, ideal saturation
@@ -26,12 +34,17 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from functools import partial
+from pathlib import Path
 
 from _harness import (
     BINARIES,
-    PHYSICAL_SYSTEM,
+    PHYSICAL_NONZERO,
     RESULTS,
     build,
+    concurrently,
+    nonzero_arguments,
+    physical_system,
     run,
     run_direct,
     run_external,
@@ -64,20 +77,23 @@ HARNESSES: tuple[str, ...] = ("branching", "zeroing", "baselines")
 SUMMARY_FIELD = re.compile(r"(\w+)=(\S+)")
 
 
-def solver_argv(algorithm: str, backend: str) -> list[str]:
+def solver_argv(algorithm: str, backend: str, system: Path) -> list[str]:
     if algorithm == "branching":
         return [
             str(BINARIES["branching"]),
-            str(PHYSICAL_SYSTEM),
+            str(system),
             "--gb",
             backend,
             "--timeout",
             str(TOTAL_MS),
+            "--saturation-timeout",
+            str(PER_BRANCH_MS),
+            *nonzero_arguments(PHYSICAL_NONZERO),
             "--summary",
         ]
     return [
         str(BINARIES["variable_zeroing"]),
-        str(PHYSICAL_SYSTEM),
+        str(system),
         "--gb",
         backend,
         "--timeout",
@@ -85,6 +101,7 @@ def solver_argv(algorithm: str, backend: str) -> list[str]:
         "--max-runtime",
         str(TOTAL_MS),
         "--ideal-saturation",
+        *nonzero_arguments(PHYSICAL_NONZERO),
         "--summary",
     ]
 
@@ -96,8 +113,8 @@ def kept_line(algorithm: str, line: str) -> bool:
     return line.startswith("ZEROING_SUMMARY ")
 
 
-def run_solver(algorithm: str, backend: str) -> dict[str, object]:
-    argv = solver_argv(algorithm, backend)
+def run_solver(algorithm: str, backend: str, system: Path) -> dict[str, object]:
+    argv = solver_argv(algorithm, backend, system)
     stdout, stderr, wall, killed, returncode = run(argv, OUTER_TIMEOUT_SECS)
     fields: dict[str, object] = {
         "backend": backend,
@@ -120,21 +137,24 @@ def run_solver(algorithm: str, backend: str) -> dict[str, object]:
     }
 
 
-def run_baseline(label: str) -> dict[str, object]:
+def run_baseline(label: str, system: Path) -> dict[str, object]:
     seconds = TOTAL_MS // 1000
     if label.endswith("-grevlex"):
-        return run_direct(PHYSICAL_SYSTEM, label.removesuffix("-grevlex"), seconds)
-    return run_external(label, PHYSICAL_SYSTEM, seconds)
+        return run_direct(system, label.removesuffix("-grevlex"), seconds, PHYSICAL_NONZERO)
+    return run_external(label, system, seconds, PHYSICAL_NONZERO)
 
 
-def run_harness(harness: str) -> dict[str, dict[str, object]]:
-    print(f"=== {harness} (120 s limit) ===")
-    results: dict[str, dict[str, object]] = {}
-    for name in BASELINES if harness == "baselines" else BACKENDS:
-        results[name] = run_baseline(name) if harness == "baselines" else run_solver(harness, name)
-        outcome = results[name]["status"] if harness == "baselines" else results[name]["summary"]
-        print(f"[{harness}] {name}: {outcome}")
-    return results
+def run_one(system: Path, harness: str, name: str) -> dict[str, object]:
+    result = run_baseline(name, system) if harness == "baselines" else run_solver(harness, name, system)
+    outcome = result["status"] if harness == "baselines" else result["summary"]
+    print(f"[{harness}] {name}: {outcome}", flush=True)
+    return result
+
+
+def run_harness(system: Path, harness: str) -> dict[str, dict[str, object]]:
+    """Every backend or baseline of `harness` concurrently, 120 s each."""
+    names = BASELINES if harness == "baselines" else tuple(BACKENDS)
+    return dict(zip(names, concurrently(partial(run_one, system, harness), names), strict=True))
 
 
 def summary_fields(summary: str) -> dict[str, str]:
@@ -142,12 +162,14 @@ def summary_fields(summary: str) -> dict[str, str]:
 
 
 def timing(fields: dict[str, str]) -> str:
-    """``$T/F$``, or ``timeout$/F$`` for a run the total limit stopped."""
+    """``$T/F$``, or ``timeout$/F$`` for a run the total limit stopped. Alg. Branching
+    times its search after the saturation by ``kappah``, so its ``saturation_secs`` is added."""
+    saturation = float(fields.get("saturation_secs", "0"))
     first = fields.get("first_solution_secs", "unknown")
-    first_shown = "--" if first == "unknown" else f"{float(first):.3f}"
+    first_shown = "--" if first == "unknown" else f"{float(first) + saturation:.3f}"
     if fields.get("complete") != "true":
         return f"timeout$/{first_shown}$"
-    return f"${float(fields['elapsed_secs']):.3f}/{first_shown}$"
+    return f"${float(fields['elapsed_secs']) + saturation:.3f}/{first_shown}$"
 
 
 def branching_result(fields: dict[str, str]) -> str:
@@ -206,8 +228,10 @@ def main() -> int:
     if not args.report_only:
         if not args.no_build:
             build("sig_groebner", "branching", "variable_zeroing")
+        system = physical_system()
         results = load_results()
-        results.update({harness: run_harness(harness) for harness in args.harnesses or HARNESSES})
+        harnesses = args.harnesses or list(HARNESSES)
+        results.update(zip(harnesses, concurrently(partial(run_harness, system), harnesses), strict=True))
         OUTPUT.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
         print(f"saved {OUTPUT}")
     print(*report(load_results()), sep="\n")

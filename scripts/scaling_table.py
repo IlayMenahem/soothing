@@ -5,10 +5,11 @@ Families: reduced cyclic n-roots from SymbolicData (``Singular.rcyclic_n``)
 and the generators of ``_systems.py`` (Nash
 equilibria of binary games, box-QP faces, Lotka--Volterra supports).
 
-Runs within a family are sequential; separate families can run in parallel. Within
-a family, a method that times out or fails at one size is not run at larger
-sizes. Every time is process wall time, so factor branching and the tools
-alone both pay their process startup.
+Families run concurrently. Within a family the sizes run in order and the methods
+of one size concurrently; a method that times out or fails at one size is not run
+at larger sizes. Each run holds a solver slot of ``_harness.solver_slot``, shared
+with every other experiment script. Every time is process wall time, so factor
+branching and the tools alone both pay their process startup.
 
 Examples:
 
@@ -22,12 +23,14 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 from _harness import (
     RESULTS,
     append_row,
     build,
+    concurrently,
     load_rows,
     run_branching,
     run_direct,
@@ -111,6 +114,18 @@ def finished(row: dict[str, object]) -> bool:
     return row["status"] == "ok" and row.get("complete", True) is not False
 
 
+def measure(
+    family: str, size: int, path: Path, timeout: int, tag: dict[str, str], method: str
+) -> dict[str, object]:
+    """Run one method on one system of a family and store its row."""
+    row = run_method(method, path, timeout)
+    row.pop("error", None)
+    record = {"family": family, "size": size, "system": path.stem, "label": method, "timeout": timeout, **tag, **row}
+    append_row(RESULTS_FILE, record)
+    print(f"{path.stem} {method} {row['status']} {row['wall_secs']:.3f}", flush=True)
+    return record
+
+
 def benchmark_family(family: str, output: Path, timeout: int, condition: str | None) -> None:
     make, sizes, baselines = FAMILIES[family]
     done = {(row["size"], row["label"]): row for row in load_rows(RESULTS_FILE) if row["family"] == family}
@@ -126,14 +141,9 @@ def benchmark_family(family: str, output: Path, timeout: int, condition: str | N
         if not pending:
             continue
         path = make(output, size)
-        for method in pending:
-            row = run_method(method, path, timeout)
-            row.pop("error", None)
-            record = {"family": family, "size": size, "system": path.stem, "label": method, "timeout": timeout, **tag, **row}
-            append_row(RESULTS_FILE, record)
-            print(f"{path.stem} {method} {row['status']} {row['wall_secs']:.3f}", flush=True)
-            if not finished(row):
-                failed_at[method] = min(failed_at.get(method, size), size)
+        for record in concurrently(partial(measure, family, size, path, timeout, tag), pending):
+            if not finished(record):
+                failed_at[str(record["label"])] = min(failed_at.get(str(record["label"]), size), size)
 
 
 def best(rows: list[dict[str, object]], labels: tuple[str, ...]) -> tuple[float, str] | None:
@@ -156,7 +166,7 @@ def render_report() -> str:
         "# Scaling of factor branching on size-graded families",
         "",
         "Wall time in seconds of the fastest completed method per class. Within a family,",
-        "runs are sequential; families may run in parallel (`--families`), one driver each.",
+        "sizes run in order and the methods of one size concurrently; families run concurrently.",
         "A method that times out or fails at one size is not run at larger sizes.",
         "*Dimensions* lists the distinct largest dimensions reported by completed runs.",
         ("A size marked † has at least one run recorded under a noted machine condition"
@@ -213,8 +223,7 @@ def main() -> int:
         if not args.no_build:
             build("sig_groebner", "branching")
         args.output_dir.mkdir(parents=True, exist_ok=True)
-        for family in families:
-            benchmark_family(family, args.output_dir, args.timeout, args.condition)
+        concurrently(lambda family: benchmark_family(family, args.output_dir, args.timeout, args.condition), families)
     REPORT_FILE.write_text(render_report() + "\n", encoding="utf-8")
     print(f"updated {REPORT_FILE}")
     return 0

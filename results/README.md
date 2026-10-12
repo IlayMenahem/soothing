@@ -15,6 +15,7 @@ the table without rerunning.
 | `scaling.jsonl`, `scaling.md` | `scaling_table.py --output-dir DIR` | `tab:scaling-classes` |
 | `decomposition.jsonl`, `decomposition.md` | `scaling_decomposition_table.py` | `tab:scaling-decomposition` |
 | `ideal_refine.jsonl`, `ideal_refine.md` | `scaling_decomposition_table.py --systems baseline` | IdealRefine paragraph |
+| `physical_system.txt` | written by every `physical_*.py` script | the physical system: `systems/system.txt` without its last equation, the Rabinowitsch equation of `kappah != 0`, which the runs impose by saturation (`--nonzero kappah`) |
 | `physical.json` | `physical_table.py` | `tab:physical-system` and the nine standalone baselines |
 | `physical_primary.md` | `physical_primary_decomposition.py` | Alg. PrimaryBranching on the physical system |
 | `physical_zeroing_figure.json` | `physical_zeroing_figure.py` | variable-zeroing tree figure (`paper/figs/variable_zeroing_tree.tex`) |

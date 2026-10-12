@@ -1,10 +1,13 @@
 //! Run F5 and GVW on a Mathematica-style polynomial system.
 //!
 //! Usage:
-//!   `sig_groebner [path] [--algo m4gb|f5|gvw|both] [--order lex|grevlex] [--timeout-secs N]`
+//!   `sig_groebner [path] [--algo m4gb|f5|gvw|both] [--order lex|grevlex] [--timeout-secs N]
+//!   [--nonzero NAME[,NAME...]]`
 //!
 //! The default path is `<repo>/systems/system_s.txt`. Lex is the default
 //! monomial order; pass `--order grevlex` to compute a degrevlex basis.
+//! `--nonzero` adds a Rabinowitsch equation `1 - s*x` for each named variable
+//! `x`, the way a Gröbner basis decides the saturation by `x`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,6 +19,7 @@ use symbolica::poly::groebner::GroebnerBasis;
 use symbolica::poly::polynomial::MultivariatePolynomial;
 use symbolica::poly::{GrevLexOrder, LexOrder, MonomialOrder, PolyVariable};
 
+use polynomial_cdcl::nonzero::with_rabinowitsch_variables;
 use polynomial_cdcl::{
     PolynomialSystem, default_systems_dir_from_manifest, groebner_f5_from_system_with,
     groebner_gvw_from_system_with, groebner_m4gb_from_system_with, ideal_in_order,
@@ -51,6 +55,7 @@ struct Args {
     algo: Algo,
     order: Order,
     timeout: Option<Duration>,
+    nonzero: Vec<String>,
     summary: bool,
 }
 
@@ -59,6 +64,7 @@ fn parse_args(it: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut algo = Algo::Both;
     let mut order = Order::Lex;
     let mut timeout: Option<Duration> = None;
+    let mut nonzero = Vec::new();
     let mut summary = false;
     let mut it = it.into_iter();
     while let Some(arg) = it.next() {
@@ -85,6 +91,10 @@ fn parse_args(it: impl IntoIterator<Item = String>) -> Result<Args, String> {
                 let secs: u64 = v.parse().map_err(|e| format!("--timeout-secs: {e}"))?;
                 timeout = Some(Duration::from_secs(secs));
             }
+            "--nonzero" => {
+                let names = it.next().ok_or("--nonzero requires variable names")?;
+                nonzero.extend(names.split(',').map(str::to_string));
+            }
             "--summary" => summary = true,
             s if s.starts_with("--") => return Err(format!("unknown option {s:?}")),
             _ => path = Some(PathBuf::from(arg)),
@@ -96,6 +106,7 @@ fn parse_args(it: impl IntoIterator<Item = String>) -> Result<Args, String> {
         algo,
         order,
         timeout,
+        nonzero,
         summary,
     })
 }
@@ -232,6 +243,13 @@ fn main() {
         Err(e) => {
             eprintln!("load error: {e}");
             std::process::exit(1);
+        }
+    };
+    let loaded = match with_rabinowitsch_variables(loaded, &args.nonzero) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("--nonzero: {e}");
+            std::process::exit(2);
         }
     };
     println!(
