@@ -1,239 +1,255 @@
 \section{Factor branching framework}
 \label{sec:method}
 
+% An overview of the section: motivation, what we found, how and why it works
+Polynomial-ideal computations can be intractable even for small
+systems~\cite{mayr1982complexity}. Thus in this section we describe a
+method to break down a polynomial system into simpler branches which
+are easier for solvers to get a description of $\sqrt{\langle
+P\rangle}$ and $V(P)$.
+
 \subsection{Framework description}
 \label{subsec:branching-framework}
-
-% motivation for breaking down a system of polynomial equations
-Polynomial-ideal computations can be intractable even for small systems~\cite{mayr1982complexity}. Thus, decomposing a system into smaller and simpler
-branches may make the individual solver calls easier.
-
 % How breaking down is done
-We break a system into smaller branches by factoring each generator and
-enumerating the minimal hitting sets of the factor sets. Each hitting set
-generates a new branch, which we interreduce and factor again, until no
-branch changes.
-
-Algorithm~\ref{alg:Refine} first factors $P$ and then applies these two
-operations to every branch until it reaches a fixed point. We call a branch
-\emph{terminal} if one round leaves it unchanged.
+Algorithm~\ref{alg:Refine} breaks the system $P$ into smaller
+branches by factoring each generator and enumerating the minimal
+hitting sets of the factor sets. Each hitting set generates a new
+branch, which we interreduce and factor again, until it reaches a
+fixed point. We call a branch \emph{terminal} if one round leaves it unchanged.
 
 \begin{algorithm}[htbp]
-\caption{Refinement}
-\label{alg:Refine}
-\begin{algorithmic}[1]
+  \caption{Refinement}
+  \label{alg:Refine}
+  \begin{algorithmic}[1]
     \Require A finite polynomial system $P$
     \Ensure The terminal branches of $P$
     \State $W\gets\mathcal H(P)$
     \Repeat
-        \State $W_{\mathrm{prev}}\gets W$, \quad $W\gets\emptyset$
-        \ForAll{$Q\in W_{\mathrm{prev}}$}
-            \State $Q\gets\Call{Interreduce}{Q}$
-            \State $W\gets W\cup\mathcal H(Q)$
-        \EndFor
+    \State $W_{\mathrm{prev}}\gets W$, \quad $W\gets\emptyset$
+    \ForAll{$Q\in W_{\mathrm{prev}}$}
+    \State $Q\gets\Call{Interreduce}{Q}$
+    \State $W\gets W\cup\mathcal H(Q)$
+    \EndFor
     \Until{$W=W_{\mathrm{prev}}$}
     \State $W\gets\Call{Prune}{W}$ \Comment{Optional}
     \State \Return $W$
-\end{algorithmic}
+  \end{algorithmic}
 \end{algorithm}
 
 % All about pruning
 Hitting sets are minimal only among the children of one branch, so the loop
 of Algorithm~\ref{alg:Refine} can end with distinct branches $H$ and $H'$
 such that $V(H)\subseteq V(H')$. Solving $H$ then adds no solutions.
-$\Call{Prune}{W}$ returns the branches whose solution sets it cannot certify to be contained in each other.
+$\Call{Prune}{W}$ returns the branches whose solution sets it cannot
+certify to be contained in each other.
 
 % First interreduce?
-Interreducing $P$ first can expose factors that its generators hide, but interreducing can also eliminate factorizations without exposing new ones.
+Interreducing $P$ first can expose factors that its generators hide,
+but interreducing can also eliminate factorizations without exposing new ones.
 So the decision on whether to interreduce first depends on $P$.
 
 % How branching is done
 Let $\mathcal L(P)$ denote the terminal branches returned by
 Algorithm~\ref{alg:Refine} on $P$.
-For each $H\in\mathcal L(P)$, the branch solver must either describe $V(H)$ exactly or certify that $V(H)=\emptyset$.
-We assume that every solver in this paper terminates and returns a correct output.
+For each $H\in\mathcal L(P)$, the branch solver must either describe
+$V(H)$ exactly or certify that $V(H)=\emptyset$.
+We assume that every solver in this paper terminates and returns a
+correct output.
 
 \begin{algorithm}[htbp]
-\caption{Factor branching}
-\label{alg:Branching}
-\begin{algorithmic}[1]
-    \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$ and a branch solver $\mathcal{B}$.
+  \caption{Factor branching}
+  \label{alg:Branching}
+  \begin{algorithmic}[1]
+    \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$ and a
+    branch solver $\mathcal{B}$.
 
     \State $S \gets \emptyset$ \Comment{Solution-set representations}
     \ForAll{$H\in\Call{Refine}{P}$}
-        \State $S \gets S \cup \Call{$\mathcal{B}$}{H}$
+    \State $S \gets S \cup \Call{$\mathcal{B}$}{H}$
     \EndFor
 
     \State \Return $S$
-\end{algorithmic}
+  \end{algorithmic}
 \end{algorithm}
 
 % A flow chart of the method
 \begin{figure}[pos=htbp]
-    \centering
-    \resizebox{0.72\textwidth}{!}{\input{figs/branching_flowchart.tex}}
-    \caption{Factor branching procedure of Algorithm~\ref{alg:Branching}. Refinement produces terminal branches, which the exact solver either represents or certifies as UNSAT.}
-    \label{fig:branching_flowchart}
+  \centering
+  \resizebox{0.72\textwidth}{!}{\input{figs/branching_flowchart.tex}}
+  \caption{Factor branching procedure of
+    Algorithm~\ref{alg:Branching}. Refinement produces terminal
+  branches, which the exact solver either represents or certifies as UNSAT.}
+  \label{fig:branching_flowchart}
 \end{figure}
 
 % Optimizations: found primes absorb later branches
-A found branch solution can prune later branches. If this optimization is used, there are two reasons to start with branches that have fewer generators.
-First, they are likely to be solved faster. Secondly, they are likely to be higher dimensional and more likely to contain the probably lower dimensional later branches.
-
+A found branch solution can prune later branches. If this
+optimization is used, there are two reasons to start with branches
+that have fewer generators.
+First, they are likely to be solved faster. Secondly, they are likely
+to be higher dimensional and more likely to contain the probably
+lower dimensional later branches.
 
 % Theoretical analysis of the method
 \subsection{Theoretical analysis}
 \label{subsec:branching-theoretical-analysis}
 
 \begin{theorem}[One-round branch decomposition]
-\label{thm:branch-decomposition}
-For every finite $Q\subseteq R\setminus\{0\}$,
-\[
+  \label{thm:branch-decomposition}
+  For every finite $Q\subseteq R\setminus\{0\}$,
+  \[
     V(Q) = \bigcup_{H \in \mathcal{H}(Q)} V(H).
-\]
+  \]
 \end{theorem}
 
 \begin{proof}
-Let $a\in V(Q)$. Every $q\in Q$ vanishes at $a$, so some factor in $C_q$
-does. The factors in $C(Q)$ that vanish at $a$ therefore form a hitting set,
-which contains a minimal one $H$, and $a\in V(H)$. Conversely, let $a\in V(H)$
-for some $H\in\mathcal H(Q)$. Every $q\in Q$ has a factor in $H$, which
-vanishes at $a$, so $a\in V(Q)$.
+  Let $a\in V(Q)$. Every $q\in Q$ vanishes at $a$, so some factor in $C_q$
+  does. The factors in $C(Q)$ that vanish at $a$ therefore form a hitting set,
+  which contains a minimal one $H$, and $a\in V(H)$. Conversely, let $a\in V(H)$
+  for some $H\in\mathcal H(Q)$. Every $q\in Q$ has a factor in $H$, which
+  vanishes at $a$, so $a\in V(Q)$.
 \end{proof}
 
 \begin{theorem}[Termination of refinement]
-\label{thm:refine-termination}
-Algorithm~\ref{alg:Refine} terminates on every finite polynomial system.
+  \label{thm:refine-termination}
+  Algorithm~\ref{alg:Refine} terminates on every finite polynomial system.
 \end{theorem}
 
 \begin{proof}
-One round replaces each branch $Q$ by its children
-$\mathcal H(\widetilde Q)$, where $\widetilde Q=\Call{Interreduce}{Q}$,
-independently of the other branches. For a finite set $G$, write
-$M(G)=\langle\operatorname{LM}(g):g\in G\rangle$.
+  One round replaces each branch $Q$ by its children
+  $\mathcal H(\widetilde Q)$, where $\widetilde Q=\Call{Interreduce}{Q}$,
+  independently of the other branches. For a finite set $G$, write
+  $M(G)=\langle\operatorname{LM}(g):g\in G\rangle$.
 
-We first show that every child $H$ of $Q$ is terminal or satisfies
-$M(\widetilde Q)\subsetneq M(\widetilde H)$. Every $q\in\widetilde Q$ is a
-multiple of some $h\in H$, so $\operatorname{LM}(h)\mid\operatorname{LM}(q)$
-and $M(\widetilde Q)\subseteq M(H)$. Suppose that equality holds, and let
-$h\in H$ divide $q\in\widetilde Q$. Since
-$\operatorname{LM}(h)\in M(\widetilde Q)$, some $q'\in\widetilde Q$ has
-$\operatorname{LM}(q')\mid\operatorname{LM}(h)\mid\operatorname{LM}(q)$.
-Since $\widetilde Q$ is interreduced, $q'=q$, so $q/h$ has leading
-monomial $1$, and $h=q$ because both are monic. Every
-element of $H$ is a factor of an element of $\widetilde Q$, and every element
-of $\widetilde Q$ has a factor in $H$, so $H=\widetilde Q$. Then $H$ is
-interreduced and consists of monic irreducible polynomials, so
-$\widetilde H=H$ and $\mathcal H(H)=\{H\}$, that is, $H$ is terminal.
-Otherwise $M(\widetilde Q)\subsetneq M(H)\subseteq M(\widetilde H)$, since
-interreduction does not shrink the leading-monomial ideal.
+  We first show that every child $H$ of $Q$ is terminal or satisfies
+  $M(\widetilde Q)\subsetneq M(\widetilde H)$. Every $q\in\widetilde Q$ is a
+  multiple of some $h\in H$, so $\operatorname{LM}(h)\mid\operatorname{LM}(q)$
+  and $M(\widetilde Q)\subseteq M(H)$. Suppose that equality holds, and let
+  $h\in H$ divide $q\in\widetilde Q$. Since
+  $\operatorname{LM}(h)\in M(\widetilde Q)$, some $q'\in\widetilde Q$ has
+  $\operatorname{LM}(q')\mid\operatorname{LM}(h)\mid\operatorname{LM}(q)$.
+  Since $\widetilde Q$ is interreduced, $q'=q$, so $q/h$ has leading
+  monomial $1$, and $h=q$ because both are monic. Every
+  element of $H$ is a factor of an element of $\widetilde Q$, and every element
+  of $\widetilde Q$ has a factor in $H$, so $H=\widetilde Q$. Then $H$ is
+  interreduced and consists of monic irreducible polynomials, so
+  $\widetilde H=H$ and $\mathcal H(H)=\{H\}$, that is, $H$ is terminal.
+  Otherwise $M(\widetilde Q)\subsetneq M(H)\subseteq M(\widetilde H)$, since
+  interreduction does not shrink the leading-monomial ideal.
 
-Next, we show that the rounds started from $\{Q\}$ reach a fixed point. Since
-$R$ is Noetherian, it has no infinite strictly ascending chain of ideals, so
-we may assume this for every branch $H$ with
-$M(\widetilde Q)\subsetneq M(\widetilde H)$. A terminal $Q$ is a fixed point.
-Otherwise, each of the finitely many children $H$ of $Q$ is terminal or has
-$M(\widetilde Q)\subsetneq M(\widetilde H)$, so it reaches a fixed point after
-some $k_H$ rounds, and $\{Q\}$ reaches one after $1+\max_Hk_H$ rounds. Since
-rounds act on each branch separately, $W=\mathcal H(P)$ reaches a fixed point,
-and the loop stops.
+  Next, we show that the rounds started from $\{Q\}$ reach a fixed point. Since
+  $R$ is Noetherian, it has no infinite strictly ascending chain of ideals, so
+  we may assume this for every branch $H$ with
+  $M(\widetilde Q)\subsetneq M(\widetilde H)$. A terminal $Q$ is a fixed point.
+  Otherwise, each of the finitely many children $H$ of $Q$ is terminal or has
+  $M(\widetilde Q)\subsetneq M(\widetilde H)$, so it reaches a fixed point after
+  some $k_H$ rounds, and $\{Q\}$ reaches one after $1+\max_Hk_H$ rounds. Since
+  rounds act on each branch separately, $W=\mathcal H(P)$ reaches a fixed point,
+  and the loop stops.
 
-Finally, every branch of the final $W$ is terminal. Otherwise, choose a
-nonterminal $Q\in W$ whose $M(\widetilde Q)$ is minimal among the nonterminal
-branches of $W$. Since $W$ is a fixed point, $Q$ is a child of some $Q'\in W$.
-A terminal $Q'$ has only the child $Q'$, so $Q'$ is nonterminal, and
-$M(\widetilde Q')\subsetneq M(\widetilde Q)$ contradicts the choice of $Q$.
+  Finally, every branch of the final $W$ is terminal. Otherwise, choose a
+  nonterminal $Q\in W$ whose $M(\widetilde Q)$ is minimal among the nonterminal
+  branches of $W$. Since $W$ is a fixed point, $Q$ is a child of some $Q'\in W$.
+  A terminal $Q'$ has only the child $Q'$, so $Q'$ is nonterminal, and
+  $M(\widetilde Q')\subsetneq M(\widetilde Q)$ contradicts the choice of $Q$.
 \end{proof}
 
-% Simplicity: a child keeps at most one irreducible factor of each parent generator
+% Simplicity: a child keeps at most one irreducible factor of each
+% parent generator
 Each child keeps at most one irreducible factor of each generator of its
 parent, which makes it a smaller and simpler system in the following sense.
 
 \begin{theorem}[Refined branches are simpler]
-\label{thm:refine-simpler}
-Let $H\in\mathcal H(\widetilde Q)$ with $H\neq\widetilde Q$, where
-$\widetilde Q=\Call{Interreduce}{Q}$. Each element of $H$ divides a different
-element of $\widetilde Q$. The leading monomials of $H$ are smaller than those
-of $\widetilde Q$ in the multiset extension of $\prec$, yet generate a
-strictly larger monomial ideal.
+  \label{thm:refine-simpler}
+  Let $H\in\mathcal H(\widetilde Q)$ with $H\neq\widetilde Q$, where
+  $\widetilde Q=\Call{Interreduce}{Q}$. Each element of $H$ divides a different
+  element of $\widetilde Q$. The leading monomials of $H$ are smaller than those
+  of $\widetilde Q$ in the multiset extension of $\prec$, yet generate a
+  strictly larger monomial ideal.
 \end{theorem}
 
 \begin{proof}
-Let $h\in H$. Since $H$ is a minimal hitting set, $H\setminus\{h\}$ is not
-one, so some $q\in\widetilde Q$ has $C_q\cap H=\{h\}$. Let $\iota(h)$ be such
-a $q$. Then $h\mid\iota(h)$, and $\iota$ is injective, since
-$C_{\iota(h)}\cap H=\{h\}$ determines $h$. If $h\neq\iota(h)$, then
-$\iota(h)/h$ is not constant, since both polynomials are monic, so
-$\operatorname{LM}(h)\prec\operatorname{LM}(h)\operatorname{LM}(\iota(h)/h)
-=\operatorname{LM}(\iota(h))$, since $1\prec v$ for every monomial
-$v\neq1$~\cite[Ch.~2, \S4]{cox2015ideals}. The multiset of
-the leading monomials of $H$ arises from that of $\widetilde Q$ by replacing
-$\operatorname{LM}(\iota(h))$ with $\operatorname{LM}(h)$ for every $h\in H$
-and deleting $\operatorname{LM}(q)$ for every
-$q\in\widetilde Q\setminus\iota(H)$. Since $H\neq\widetilde Q$, some $h$ has
-$h\neq\iota(h)$, or some $q$ lies outside $\iota(H)$, so the multiset
-decreases strictly. Finally, with $M$ as in the proof of
-Theorem~\ref{thm:refine-termination}, that proof shows that
-$M(\widetilde Q)\subseteq M(H)$, with equality only if $H=\widetilde Q$.
+  Let $h\in H$. Since $H$ is a minimal hitting set, $H\setminus\{h\}$ is not
+  one, so some $q\in\widetilde Q$ has $C_q\cap H=\{h\}$. Let $\iota(h)$ be such
+  a $q$. Then $h\mid\iota(h)$, and $\iota$ is injective, since
+  $C_{\iota(h)}\cap H=\{h\}$ determines $h$. If $h\neq\iota(h)$, then
+  $\iota(h)/h$ is not constant, since both polynomials are monic, so
+  $\operatorname{LM}(h)\prec\operatorname{LM}(h)\operatorname{LM}(\iota(h)/h)
+  =\operatorname{LM}(\iota(h))$, since $1\prec v$ for every monomial
+  $v\neq1$~\cite[Ch.~2, \S4]{cox2015ideals}. The multiset of
+  the leading monomials of $H$ arises from that of $\widetilde Q$ by replacing
+  $\operatorname{LM}(\iota(h))$ with $\operatorname{LM}(h)$ for every $h\in H$
+  and deleting $\operatorname{LM}(q)$ for every
+  $q\in\widetilde Q\setminus\iota(H)$. Since $H\neq\widetilde Q$, some $h$ has
+  $h\neq\iota(h)$, or some $q$ lies outside $\iota(H)$, so the multiset
+  decreases strictly. Finally, with $M$ as in the proof of
+  Theorem~\ref{thm:refine-termination}, that proof shows that
+  $M(\widetilde Q)\subseteq M(H)$, with equality only if $H=\widetilde Q$.
 \end{proof}
 
 \begin{lemma}[Refinement preserves solutions]
-\label{lem:recursive-refinement}
-Every round of Algorithm~\ref{alg:Refine} preserves
-$\bigcup_{Q\in W}V(Q)$. Consequently,
-\[
+  \label{lem:recursive-refinement}
+  Every round of Algorithm~\ref{alg:Refine} preserves
+  $\bigcup_{Q\in W}V(Q)$. Consequently,
+  \[
     V(P)=\bigcup_{H\in\mathcal L(P)}V(H)
     \qquad\text{and}\qquad
     \sqrt{\langle P\rangle}=\bigcap_{H\in\mathcal L(P)}\sqrt{\langle H\rangle}.
-\]
+  \]
 \end{lemma}
 
 \begin{proof}
-Interreduction keeps $V(Q)$, so Theorem~\ref{thm:branch-decomposition} gives
-$V(Q)=\bigcup_{H\in\mathcal H(\widetilde Q)}V(H)$ for every branch $Q$, with
-$\widetilde Q=\Call{Interreduce}{Q}$, and a round keeps the union. The optional $\Call{Prune}{}$ removes only branches
-whose solution sets lie in that of a kept branch. The loop starts from
-$W=\mathcal H(P)$, so Theorem~\ref{thm:branch-decomposition} and induction on
-the rounds give the first identity. By the Nullstellensatz,
-$\sqrt{\langle P\rangle}=I(V(P))$ and $\sqrt{\langle H\rangle}=I(V(H))$, and
-the vanishing ideal of a finite union is the intersection of the vanishing
-ideals, which gives the second.
+  Interreduction keeps $V(Q)$, so Theorem~\ref{thm:branch-decomposition} gives
+  $V(Q)=\bigcup_{H\in\mathcal H(\widetilde Q)}V(H)$ for every branch $Q$, with
+  $\widetilde Q=\Call{Interreduce}{Q}$, and a round keeps the union.
+  The optional $\Call{Prune}{}$ removes only branches
+  whose solution sets lie in that of a kept branch. The loop starts from
+  $W=\mathcal H(P)$, so Theorem~\ref{thm:branch-decomposition} and induction on
+  the rounds give the first identity. By the Nullstellensatz,
+  $\sqrt{\langle P\rangle}=I(V(P))$ and $\sqrt{\langle H\rangle}=I(V(H))$, and
+  the vanishing ideal of a finite union is the intersection of the vanishing
+  ideals, which gives the second.
 \end{proof}
 
 \begin{theorem}[Factor branching]
-\label{thm:branching-correctness}
-Algorithm~\ref{alg:Branching} terminates, and
-\[
+  \label{thm:branching-correctness}
+  Algorithm~\ref{alg:Branching} terminates and returns a decomposition of
+  $V(P)$:
+  \[
     V(P)=\bigcup_{H\in S}V(H)
     \qquad\text{and}\qquad
     \sqrt{\langle P\rangle}=\bigcap_{H\in S}\sqrt{\langle H\rangle}.
-\]
+  \]
 \end{theorem}
 
 \begin{proof}
-By Theorem~\ref{thm:refine-termination}, $\Call{Refine}{P}$ returns the finite
-set $\mathcal L(P)$, so the algorithm makes finitely many solver calls, each of
-which returns. The branches that $\mathcal B$ certifies UNSAT have empty
-solution sets, and $\mathcal B$ represents every other branch exactly, so the
-first identity follows from Lemma~\ref{lem:recursive-refinement}, and the
-second follows from the first by the Nullstellensatz, as in the proof of
-Lemma~\ref{lem:recursive-refinement}.
+  By Theorem~\ref{thm:refine-termination}, $\Call{Refine}{P}$ returns the finite
+  set $\mathcal L(P)$, so the algorithm makes finitely many solver
+  calls, each of
+  which returns. The branches that $\mathcal B$ certifies UNSAT have empty
+  solution sets, and $\mathcal B$ represents every other branch exactly, so the
+  first identity follows from Lemma~\ref{lem:recursive-refinement}, and the
+  second follows from the first by the Nullstellensatz, as in the proof of
+  Lemma~\ref{lem:recursive-refinement}.
 \end{proof}
 
-\subsection{Minimal prime decomposition}
+\subsection{Minimal primes}
 \label{subsec:minimal-prime-decomposition}
 
-Let $\mathcal B_{\min}$ be a branch solver which returns a minimal prime decomposition. If we run Algorithm~\ref{alg:Branching} with $\mathcal B_{\min}$ as a branch solver and apply the following postprocessing, we get a minimal prime decomposition of $\langle P\rangle$.
+Let $\mathcal B_{\min}$ be a branch solver which returns the minimal
+primes of its input. If we run Algorithm~\ref{alg:Branching} with
+$\mathcal B_{\min}$ as a branch solver and apply the following
+postprocessing, we get the minimal primes of $\langle P\rangle$.
 
 % Postprocessing: keep the returned primes that contain no other
 The output $S$ is then the set of primes that $\mathcal B_{\min}$ returns on
 the branches in $\mathcal L(P)$, and the postprocessing keeps its minimal
 elements under inclusion in two steps.
 \begin{enumerate}
-    \item Represent each prime by its reduced Gr\"obner basis. Equal primes
+  \item Represent each prime by its reduced Gr\"obner basis. Equal primes
     have the same reduced Gr\"obner basis, so this merges the copies of a
     prime that several branches return.
-    \item Remove every $\mathfrak p\in S$ that contains another
+  \item Remove every $\mathfrak p\in S$ that contains another
     element $\mathfrak p'$ of $S$. The inclusion
     $\mathfrak p'\subseteq\mathfrak p$ holds exactly when every generator of
     $\mathfrak p'$ reduces to zero modulo the Gr\"obner basis of $\mathfrak p$.
@@ -244,38 +260,38 @@ only when $\mathfrak p'$ has the larger dimension.
 
 % Correctness
 \begin{theorem}[Prime factor branching]
-\label{thm:prime-branching}
-With the branch solver $\mathcal B_{\min}$, the output
-$S$ of Algorithm~\ref{alg:Branching} after the postprocessing is the minimal
-primes of $\langle P\rangle$.
+  \label{thm:prime-branching}
+  With the branch solver $\mathcal B_{\min}$, the output
+  $S$ of Algorithm~\ref{alg:Branching} after the postprocessing is the minimal
+  primes of $\langle P\rangle$.
 \end{theorem}
 
 \begin{proof}
-By Theorem~\ref{thm:refine-termination}, $\mathcal L(P)$ is finite, so
-$S$ is finite. On each $H\in\mathcal L(P)$, $\mathcal B_{\min}$
-returns the minimal primes of $\langle H\rangle$, which intersect to
-$\sqrt{\langle H\rangle}$, so Lemma~\ref{lem:recursive-refinement} gives
-\[
+  By Theorem~\ref{thm:refine-termination}, $\mathcal L(P)$ is finite, so
+  $S$ is finite. On each $H\in\mathcal L(P)$, $\mathcal B_{\min}$
+  returns the minimal primes of $\langle H\rangle$, which intersect to
+  $\sqrt{\langle H\rangle}$, so Lemma~\ref{lem:recursive-refinement} gives
+  \[
     \bigcap_{\mathfrak p\in S}\mathfrak p
     =\bigcap_{H\in\mathcal L(P)}\sqrt{\langle H\rangle}
     =\sqrt{\langle P\rangle}.
-\]
-In particular, every $\mathfrak p\in S$ contains $\langle P\rangle$.
+  \]
+  In particular, every $\mathfrak p\in S$ contains $\langle P\rangle$.
 
-Let $\mathfrak q$ be a minimal prime of $\langle P\rangle$. Every
-$\mathfrak p\in S$ with $\mathfrak p\subseteq\mathfrak q$ is a prime
-containing $\langle P\rangle$, so $\mathfrak p=\mathfrak q$ by the minimality
-of $\mathfrak q$. Such a $\mathfrak p$ exists, because a prime that contains a
-finite intersection of ideals contains one of
-them~\cite[Prop.~1.11]{atiyah1969introduction}, and $\mathfrak q$ contains
-$\bigcap_{\mathfrak p\in S}\mathfrak p$. Hence
-$\mathfrak q\in S$, no other element of $S$ lies in
-$\mathfrak q$, and $\mathfrak q$ is a minimal element of $S$.
+  Let $\mathfrak q$ be a minimal prime of $\langle P\rangle$. Every
+  $\mathfrak p\in S$ with $\mathfrak p\subseteq\mathfrak q$ is a prime
+  containing $\langle P\rangle$, so $\mathfrak p=\mathfrak q$ by the minimality
+  of $\mathfrak q$. Such a $\mathfrak p$ exists, because a prime that contains a
+  finite intersection of ideals contains one of
+  them~\cite[Prop.~1.11]{atiyah1969introduction}, and $\mathfrak q$ contains
+  $\bigcap_{\mathfrak p\in S}\mathfrak p$. Hence
+  $\mathfrak q\in S$, no other element of $S$ lies in
+  $\mathfrak q$, and $\mathfrak q$ is a minimal element of $S$.
 
-Conversely, let $\mathfrak p$ be a minimal element of $S$. It contains
-$\sqrt{\langle P\rangle}$, the intersection of the finitely many minimal
-primes of $\langle P\rangle$, so by the same proposition it contains one of
-them, $\mathfrak q$. By the previous paragraph $\mathfrak q\in S$, and
-the minimality of $\mathfrak p$ in $S$ gives
-$\mathfrak p=\mathfrak q$.
+  Conversely, let $\mathfrak p$ be a minimal element of $S$. It contains
+  $\sqrt{\langle P\rangle}$, the intersection of the finitely many minimal
+  primes of $\langle P\rangle$, so by the same proposition it contains one of
+  them, $\mathfrak q$. By the previous paragraph $\mathfrak q\in S$, and
+  the minimality of $\mathfrak p$ in $S$ gives
+  $\mathfrak p=\mathfrak q$.
 \end{proof}
