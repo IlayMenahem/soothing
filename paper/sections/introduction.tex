@@ -48,14 +48,9 @@ certifies that it is UNSAT.
 Since the worst-case complexity of computing a Gr\"obner basis is doubly exponential in the number of variables~\cite{mayr1982complexity}, breaking down a large system into smaller branches can be substantially faster than solving the original system directly.
 
 % Zeroing branching
-If a factor branch remains too expensive for the chosen solver, the framework
-can refine it by splitting a selected variable into the cases $x=0$ and
-$x\neq 0$. This heuristic split can expose additional algebraic structure for
-the branch solver without losing any solutions.
-While this is one of many possible splitting criteria, it proves particularly effective on the quantum field theory problem that we investigate.
 
 % Theoretical and experimental backing
-We prove that refinement and variable zeroing terminate and preserve the full
+We prove that refinement terminates and preserves the full
 solution set. We compare the resulting implementation with
 direct Gr\"obner-basis computation and symbolic decomposition on generated
 benchmarks. We also apply the framework to a system from

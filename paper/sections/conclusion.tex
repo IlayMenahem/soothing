@@ -3,16 +3,13 @@
 
 We introduced a solver-agnostic framework that decomposes polynomial systems
 into smaller branches by enumerating minimal hitting sets of their factor sets.
-The framework can recursively split timed-out branches into the cases $x=0$ and $x\neq0$.
 
 We proved that refinement terminates and preserves the full solution set.
-Variable zeroing also preserves the solution set and terminates. The output is complete whenever no branches
-remain unresolved.
 
 On the baseline benchmarks, factor branching completed 19 of 20 systems, compared with
 9 for direct Gr\"obner-basis methods and 16 for decomposition methods. On the QFT system, where one coupling must be nonzero, imposing this by
-saturation lets factor branching and variable zeroing complete with all six
-backends, in under 0.9 and 2.2 seconds, while all nine standalone baselines
+saturation lets factor branching complete with all six
+backends in under 0.9 seconds, while all nine standalone baselines
 time out.
 
-Future work will test this benefit on other systems, and improve the variable choice for splitting or find better splitting side conditions.
+Future work will test this benefit on other systems.
