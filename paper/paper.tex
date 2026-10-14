@@ -37,12 +37,12 @@
   \seq_if_empty:NF \g_stm_orcid_seq
   {
     \group_begin:
-      \tex_let:D \thefootnote \relax \footnotetext
-      {
-        \raggedright
-        \textsc{orcid}(s):\c_space_token
-        \seq_use:Nn \g_stm_orcid_seq { ;~ }
-      }
+    \tex_let:D \thefootnote \relax \footnotetext
+    {
+      \raggedright
+      \textsc{orcid}(s):\c_space_token
+      \seq_use:Nn \g_stm_orcid_seq { ;~ }
+    }
     \group_end:
   }
 }
@@ -58,44 +58,60 @@
 
 \title[mode=title]{Polynomial System Solving via Factor Branching}
 \author[1]{Ilay Menahem}
-\credit{Conceptualization, Methodology, Software, Validation, Formal analysis, Data curation, Writing -- original draft, Visualization}
+\credit{Conceptualization, Methodology, Software, Validation, Formal
+analysis, Data curation, Writing -- original draft, Visualization}
 \author[1]{Michael Shalyt}
 \credit{Writing -- review \& editing}
 \author[1, 2]{Ido Kaminer}
 \credit{Writing -- review \& editing, Visualization}
 
-\affiliation[1]{organization={Andrew and Erna Viterbi Faculty of Electrical and Computer Engineering, Technion -- Israel Institute of Technology},
-            city={Haifa},
-            postcode={3200003},
-            country={Israel}}
+\affiliation[1]{organization={Andrew and Erna Viterbi Faculty of
+    Electrical and Computer Engineering, Technion -- Israel Institute
+  of Technology},
+  city={Haifa},
+  postcode={3200003},
+country={Israel}}
 \affiliation[2]{organization={Department of Materials Science and Engineering,
-Technion -- Israel Institute of Technology},
-            city={Haifa},
-            postcode={3200003},
-            country={Israel}}
+  Technion -- Israel Institute of Technology},
+  city={Haifa},
+  postcode={3200003},
+country={Israel}}
 
 \begin{abstract}
-% [solving large sets of polynomial equations is important for problems in X Y Z]
-Polynomial systems are a fundamental language for describing algebraic and geometric problems in mathematics and its applications.
-Beyond finding individual solutions, one often seeks global properties of the solution space, such as its dimension and irreducible components, or structural properties and decompositions of the underlying polynomial ideal.
-% [many of those problems are still inaccessible \ldots]
-For large polynomial systems with many variables and high degrees, determining these global properties can become intractable.
-% [leading approaches include X Y Z] and [benchmark relative to other methods]
-Leading approaches include variants of Buchberger's algorithm, and resultants.
-% [however, these approaches are limited by \ldots]
-However, even the most modern approaches still often fail on practical problems or slight perturbations of standard benchmarks.
-% [Here we ..., Describe our approach]
-Here we introduce a framework that divides a polynomial system into simpler branches by interreducing and factoring its equations.
-% [broadest strongest claim] and [we demonstrate it on X Y]
-The framework only assumes that the solver used on each branch describes satisfiable (SAT) branches and certifies unsatisfiable (UNSAT) ones.
-In our experiments, we use Gr\"obner-basis solvers and apply the method to a system arising from research in quantum field theory for which no standard method in our comparison succeeds.
-% [outlook sentence on what would this contribute to in the figure / extensions for future work]
-Together, these ideas offer a path toward the exact analysis of previously inaccessible polynomial systems.
+  % [solving large sets of polynomial equations is important for
+  % problems in X Y Z]
+  Polynomial systems are a fundamental language for describing
+  algebraic and geometric problems in mathematics and its applications.
+  Beyond finding individual solutions, one often seeks global
+  properties of the solution space, such as its dimension and
+  irreducible components, or structural properties and decompositions
+  of the underlying polynomial ideal.
+  % [many of those problems are still inaccessible \ldots]
+  For large polynomial systems with many variables and high degrees,
+  determining these global properties can become intractable.
+  % [leading approaches include X Y Z] and [benchmark relative to other methods]
+  Leading approaches include variants of Buchberger's algorithm, and resultants.
+  % [however, these approaches are limited by \ldots]
+  However, even the most modern approaches still often fail on
+  practical problems or slight perturbations of standard benchmarks.
+  % [Here we ..., Describe our approach]
+  Here we introduce a framework that divides a polynomial system into
+  simpler branches by interreducing and factoring its equations.
+  % [broadest strongest claim] and [we demonstrate it on X Y]
+  The framework only assumes that the solver used on each branch
+  describes satisfiable (SAT) branches and certifies unsatisfiable (UNSAT) ones.
+  In our experiments, we use Gr\"obner-basis solvers and apply the
+  method to a system arising from research in quantum field theory
+  for which no standard method in our comparison succeeds.
+  % [outlook sentence on what would this contribute to in the figure
+  % / extensions for future work]
+  Together, these ideas offer a path toward the exact analysis of
+  previously inaccessible polynomial systems.
 \end{abstract}
 
 \begin{keywords}
-Polynomial systems \sep Gr\"obner bases \sep Factorization \sep
-Minimal hitting sets
+  Polynomial systems \sep Gr\"obner bases \sep Factorization \sep
+  Minimal hitting sets \sep Primary decomposition
 \end{keywords}
 
 {\hfuzz=120pt \maketitle}
@@ -103,6 +119,7 @@ Minimal hitting sets
 \input{sections/introduction.tex}
 \input{sections/preliminaries.tex}
 \input{sections/method.tex}
+\input{sections/method_ideal_covering.tex}
 \input{sections/experiments.tex}
 \FloatBarrier
 \input{sections/conclusion.tex}

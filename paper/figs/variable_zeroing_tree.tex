@@ -4,50 +4,66 @@
 \providecommand{\vzInconsistent}{\ensuremath{\textcolor{red!75!black}{\boldsymbol{\times}}}}
 \providecommand{\vzConsistent}{\ensuremath{\textcolor{green!45!black}{\boldsymbol{\checkmark}}}}
 \providecommand{\vzNoCovers}{\ensuremath{\textcolor{gray!75!black}{\boldsymbol{\varnothing}}}}
-\providecommand{\vzTimeout}{\tikz[baseline=-0.55ex,scale=0.105]{\filldraw[fill=yellow!70,draw=orange!85!black,line width=1.2pt] (0,0) circle (1);\draw[orange!85!black,line width=1.4pt,line cap=round] (0,0) -- (0,0.58) (0,0) -- (0.48,-0.28);}}
+\providecommand{\vzTimeout}{\tikz[baseline=-0.55ex,scale=0.105]{\filldraw[fill=yellow!70,draw=orange!85!black,line
+    width=1.2pt] (0,0) circle (1);\draw[orange!85!black,line
+width=1.4pt,line cap=round] (0,0) -- (0,0.58) (0,0) -- (0.48,-0.28);}}
 \providecommand{\vzContracted}{\ensuremath{\textcolor{violet!80!black}{\boldsymbol{\leadsto}}}}
 \providecommand{\vzError}{\ensuremath{\textcolor{red!75!black}{\boldsymbol{!}}}}
 
 \begin{tikzpicture}[
-  font=\small,
-  cover/.style={draw=blue!65!black,fill=blue!3,rounded corners=2pt,line width=0.65pt,minimum width=10mm,minimum height=7mm,inner sep=2pt,align=center},
-  timeout cover/.style={cover,draw=orange!85!black,fill=yellow!12,minimum width=18mm,minimum height=10mm},
-  contracted cover/.style={cover,draw=violet!75!black,fill=violet!5,minimum width=18mm,minimum height=10mm},
-  error cover/.style={cover,draw=red!75!black,fill=red!5,minimum width=18mm,minimum height=10mm},
-  empty branch/.style={draw=gray!65,dashed,fill=gray!5,rounded corners=2pt,minimum width=15mm,minimum height=7mm,inner sep=2pt,align=center},
-  input/.style={draw=blue!70!black,fill=blue!8,circle,line width=0.7pt,minimum size=8mm},
-  branch/.style={-{Stealth[length=1.8mm]},line width=0.65pt},
-  stem/.style={line width=0.65pt},
-  edge label/.style={fill=white,inner sep=1pt,font=\scriptsize}
-]
-\coordinate (group-0) at (-0.000,-0.730);
-\node[cover] (cover-0-0) at (-7.800,-1.450) {\vzConsistent};
-\node[cover] (cover-0-1) at (-6.500,-1.450) {\vzConsistent};
-\node[cover] (cover-0-2) at (-5.200,-1.450) {\vzConsistent};
-\node[cover] (cover-0-3) at (-3.900,-1.450) {\vzConsistent};
-\node[cover] (cover-0-4) at (-2.600,-1.450) {\vzConsistent};
-\node[cover] (cover-0-5) at (-1.300,-1.450) {\vzConsistent};
-\node[cover] (cover-0-6) at (-0.000,-1.450) {\vzConsistent};
-\node[cover] (cover-0-7) at (1.300,-1.450) {\vzConsistent};
-\node[cover] (cover-0-8) at (2.600,-1.450) {\vzConsistent};
-\node[cover] (cover-0-9) at (3.900,-1.450) {\vzConsistent};
-\node[cover] (cover-0-10) at (5.200,-1.450) {\vzConsistent};
-\node[cover] (cover-0-11) at (6.500,-1.450) {\vzConsistent};
-\node[cover] (cover-0-12) at (7.800,-1.450) {\vzConsistent};
-\node[input] (input) at (-0.000,0) {$P$};
-\draw[stem] (input) -- (group-0);
-\draw[branch] (group-0) -| (cover-0-0.north);
-\draw[branch] (group-0) -| (cover-0-1.north);
-\draw[branch] (group-0) -| (cover-0-2.north);
-\draw[branch] (group-0) -| (cover-0-3.north);
-\draw[branch] (group-0) -| (cover-0-4.north);
-\draw[branch] (group-0) -| (cover-0-5.north);
-\draw[branch] (group-0) -| (cover-0-6.north);
-\draw[branch] (group-0) -| (cover-0-7.north);
-\draw[branch] (group-0) -| (cover-0-8.north);
-\draw[branch] (group-0) -| (cover-0-9.north);
-\draw[branch] (group-0) -| (cover-0-10.north);
-\draw[branch] (group-0) -| (cover-0-11.north);
-\draw[branch] (group-0) -| (cover-0-12.north);
-\node[draw=gray!55,fill=white,rounded corners=2pt,inner sep=3pt,anchor=north] at (0,-2.250) {\textbf{Branch outcome:}\quad \vzInconsistent\ UNSAT\quad \vzConsistent\ SAT\quad \vzTimeout\ timed out\quad \vzContracted\ contracted\quad \vzNoCovers\ no hitting sets (UNSAT)};
+    font=\small,
+    cover/.style={draw=blue!65!black,fill=blue!3,rounded
+      corners=2pt,line width=0.65pt,minimum width=10mm,minimum
+    height=7mm,inner sep=2pt,align=center},
+    timeout
+    cover/.style={cover,draw=orange!85!black,fill=yellow!12,minimum
+    width=18mm,minimum height=10mm},
+    contracted
+    cover/.style={cover,draw=violet!75!black,fill=violet!5,minimum
+    width=18mm,minimum height=10mm},
+    error cover/.style={cover,draw=red!75!black,fill=red!5,minimum
+    width=18mm,minimum height=10mm},
+    empty branch/.style={draw=gray!65,dashed,fill=gray!5,rounded
+      corners=2pt,minimum width=15mm,minimum height=7mm,inner
+    sep=2pt,align=center},
+    input/.style={draw=blue!70!black,fill=blue!8,circle,line
+    width=0.7pt,minimum size=8mm},
+    branch/.style={-{Stealth[length=1.8mm]},line width=0.65pt},
+    stem/.style={line width=0.65pt},
+    edge label/.style={fill=white,inner sep=1pt,font=\scriptsize}
+  ]
+  \coordinate (group-0) at (-0.000,-0.730);
+  \node[cover] (cover-0-0) at (-7.800,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-1) at (-6.500,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-2) at (-5.200,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-3) at (-3.900,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-4) at (-2.600,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-5) at (-1.300,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-6) at (-0.000,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-7) at (1.300,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-8) at (2.600,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-9) at (3.900,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-10) at (5.200,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-11) at (6.500,-1.450) {\vzConsistent};
+  \node[cover] (cover-0-12) at (7.800,-1.450) {\vzConsistent};
+  \node[input] (input) at (-0.000,0) {$P$};
+  \draw[stem] (input) -- (group-0);
+  \draw[branch] (group-0) -| (cover-0-0.north);
+  \draw[branch] (group-0) -| (cover-0-1.north);
+  \draw[branch] (group-0) -| (cover-0-2.north);
+  \draw[branch] (group-0) -| (cover-0-3.north);
+  \draw[branch] (group-0) -| (cover-0-4.north);
+  \draw[branch] (group-0) -| (cover-0-5.north);
+  \draw[branch] (group-0) -| (cover-0-6.north);
+  \draw[branch] (group-0) -| (cover-0-7.north);
+  \draw[branch] (group-0) -| (cover-0-8.north);
+  \draw[branch] (group-0) -| (cover-0-9.north);
+  \draw[branch] (group-0) -| (cover-0-10.north);
+  \draw[branch] (group-0) -| (cover-0-11.north);
+  \draw[branch] (group-0) -| (cover-0-12.north);
+  \node[draw=gray!55,fill=white,rounded corners=2pt,inner
+  sep=3pt,anchor=north] at (0,-2.250) {\textbf{Branch outcome:}\quad
+    \vzInconsistent\ UNSAT\quad \vzConsistent\ SAT\quad
+    \vzTimeout\ timed out\quad \vzContracted\ contracted\quad
+  \vzNoCovers\ no hitting sets (UNSAT)};
 \end{tikzpicture}

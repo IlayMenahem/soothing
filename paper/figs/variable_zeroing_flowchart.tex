@@ -2,59 +2,61 @@
     font=\small,
     every node/.style={align=center},
     blue box/.style={draw=blue!70!cyan, line width=1pt, rounded corners=6pt,
-        fill=blue!50!cyan!4, inner sep=7pt},
+    fill=blue!50!cyan!4, inner sep=7pt},
     loop box/.style={draw=orange!85!black, line width=1pt, rounded corners=6pt,
-        fill=yellow!40!orange!12, inner sep=7pt},
+    fill=yellow!40!orange!12, inner sep=7pt},
     decision/.style={draw=green!55!black, line width=1pt, diamond, aspect=2.6,
-        fill=green!60!teal!8, inner sep=1pt},
+    fill=green!60!teal!8, inner sep=1pt},
     red box/.style={draw=red!70, line width=1pt, rounded corners=6pt,
-        fill=red!4, inner sep=7pt},
+    fill=red!4, inner sep=7pt},
     return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
-        fill=violet!6, inner sep=7pt},
+    fill=violet!6, inner sep=7pt},
     connector/.style={line width=1pt, line cap=round, line join=round},
     arr/.style={connector, -{Stealth[length=2.6mm, width=2mm]}},
-]
+  ]
 
-\node[blue box] (init) {$S,U\gets\emptyset$;\; $W\gets\{(P,\emptyset,\emptyset)\}$};
-\node[loop box, below=6mm of init] (next) {Remove $(Q,Z,N)$ from $W$};
-\node[return box, right=12mm of next] (ret) {%
-    \textcolor{violet}{\bfseries Return}\\$(S,U)$};
-\node[blue box, below=6mm of next] (run) {%
+  \node[blue box] (init) {$S,U\gets\emptyset$;\;
+  $W\gets\{(P,\emptyset,\emptyset)\}$};
+  \node[loop box, below=6mm of init] (next) {Remove $(Q,Z,N)$ from $W$};
+  \node[return box, right=12mm of next] (ret) {%
+  \textcolor{violet}{\bfseries Return}\\$(S,U)$};
+  \node[blue box, below=6mm of next] (run) {%
     Run $\mathcal B$ for at most $\tau$ on $(H,N)$, $H\in\Call{Refine}{Q,N}$ \\
     $V\gets\operatorname{vars}(H)\setminus(Z\cup N)$ \\
-    solved: representation with $(Z,N)\to S$};
-\node[decision, below=9mm of run] (test) {%
-    $\beta$ left and\\ $V\neq\emptyset$?};
-\node[red box, right=10mm of test] (keep) {$(H,Z,N)\to U$};
-\node[loop box, below=7mm of test] (choose) {%
-    $x\gets\Call{ChooseVariable}{H,V}$};
+  solved: representation with $(Z,N)\to S$};
+  \node[decision, below=9mm of run] (test) {%
+  $\beta$ left and\\ $V\neq\emptyset$?};
+  \node[red box, right=10mm of test] (keep) {$(H,Z,N)\to U$};
+  \node[loop box, below=7mm of test] (choose) {%
+  $x\gets\Call{ChooseVariable}{H,V}$};
 
-\node[blue box, below left=9mm and -22mm of choose] (zero) {%
-    $(H|_{x=0},\;Z\cup\{x\},\;N)\to W$};
-\node[blue box, below right=9mm and -22mm of choose] (nonzero) {%
-    $(\Call{Saturate}{H,N\cup\{x\}},$\\$Z,\;N\cup\{x\})\to W$};
+  \node[blue box, below left=9mm and -22mm of choose] (zero) {%
+  $(H|_{x=0},\;Z\cup\{x\},\;N)\to W$};
+  \node[blue box, below right=9mm and -22mm of choose] (nonzero) {%
+  $(\Call{Saturate}{H,N\cup\{x\}},$\\$Z,\;N\cup\{x\})\to W$};
 
-\node[draw=black!50, dashed, rounded corners=6pt, inner sep=8pt,
-    fit=(test) (keep) (choose) (zero) (nonzero)] (frame) {};
-\node[anchor=north west] at (frame.north west) {for each unsolved $H$};
+  \node[draw=black!50, dashed, rounded corners=6pt, inner sep=8pt,
+  fit=(test) (keep) (choose) (zero) (nonzero)] (frame) {};
+  \node[anchor=north west] at (frame.north west) {for each unsolved $H$};
 
-\coordinate (raill) at ([xshift=-4mm, yshift=-5mm]frame.south west);
-\coordinate (railr) at ([xshift=4mm, yshift=-5mm]frame.south east);
+  \coordinate (raill) at ([xshift=-4mm, yshift=-5mm]frame.south west);
+  \coordinate (railr) at ([xshift=4mm, yshift=-5mm]frame.south east);
 
-\draw[arr] (init) -- (next);
-\draw[arr] (next) -- node[above] {$W=\emptyset$} (ret);
-\draw[arr] (next) -- (run);
-\draw[arr] (run) -- (test);
-\draw[arr] (test) -- node[above] {No} (keep);
-\draw[arr] (test) -- node[right] {Yes} (choose);
-\draw[arr] (choose.south) -- node[above left] {$x=0$} (zero.north);
-\draw[arr] (choose.south) -- node[above right] {$x\neq0$} (nonzero.north);
-\draw[connector] (zero.south) -- (zero.south |- raill);
-\draw[connector] (nonzero.south) -- (nonzero.south |- raill);
-\draw[connector, rounded corners=4pt] (keep.east) -| (railr) -- (raill);
-\draw[connector, rounded corners=4pt] (run.west)
-    -| ([yshift=6mm]run.west -| raill);
-\draw[arr, rounded corners=4pt] (raill) -- node[left] {next} (raill |- next.west)
-    -- (next.west);
+  \draw[arr] (init) -- (next);
+  \draw[arr] (next) -- node[above] {$W=\emptyset$} (ret);
+  \draw[arr] (next) -- (run);
+  \draw[arr] (run) -- (test);
+  \draw[arr] (test) -- node[above] {No} (keep);
+  \draw[arr] (test) -- node[right] {Yes} (choose);
+  \draw[arr] (choose.south) -- node[above left] {$x=0$} (zero.north);
+  \draw[arr] (choose.south) -- node[above right] {$x\neq0$} (nonzero.north);
+  \draw[connector] (zero.south) -- (zero.south |- raill);
+  \draw[connector] (nonzero.south) -- (nonzero.south |- raill);
+  \draw[connector, rounded corners=4pt] (keep.east) -| (railr) -- (raill);
+  \draw[connector, rounded corners=4pt] (run.west)
+  -| ([yshift=6mm]run.west -| raill);
+  \draw[arr, rounded corners=4pt] (raill) -- node[left] {next} (raill
+  |- next.west)
+  -- (next.west);
 
 \end{tikzpicture}

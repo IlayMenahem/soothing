@@ -29,33 +29,38 @@ $x$.
 
 % Pseudocode for the method with variable zeroing
 \begin{algorithm}[htbp]
-\small
-\caption{Factor branching with variable zeroing}
-\label{alg:ZeroingBranching}
-\begin{algorithmic}[1]
-    \Require A polynomial system $P$, a branch solver $\mathcal B$, a per-call timeout $\tau$, and a global budget $\beta$
-    \State $S\gets\emptyset$; $U\gets\emptyset$ \Comment{Solved and unresolved branches}
-    \State $W\gets\{(P,\emptyset,\emptyset)\}$ \Comment{Pending branches $(Q,Z,N)$}
+  \small
+  \caption{Factor branching with variable zeroing}
+  \label{alg:ZeroingBranching}
+  \begin{algorithmic}[1]
+    \Require A polynomial system $P$, a branch solver $\mathcal B$, a
+    per-call timeout $\tau$, and a global budget $\beta$
+    \State $S\gets\emptyset$; $U\gets\emptyset$ \Comment{Solved and
+    unresolved branches}
+    \State $W\gets\{(P,\emptyset,\emptyset)\}$ \Comment{Pending
+    branches $(Q,Z,N)$}
     \While{$W\neq\emptyset$}
-        \State Remove an element $(Q,Z,N)$ from $W$
-        \ForAll{$H\in\Call{Refine}{Q,N}$}
-            \State Run $\mathcal B$ on $(H,N)$ for at most $\tau$, unless $\beta$ is exhausted
-            \State $V\gets \operatorname{vars}(H)\setminus(Z\cup N)$ \Comment{Useful variables for $H$}
-            \If{$\mathcal B$ returns a representation of $V(H)\setminus V(u_N)$}
-                \State Add the representation, with $(Z,N)$, to $S$
-            \ElsIf{$\beta$ is exhausted or $V=\emptyset$}
-                \State $U\gets U\cup\{(H,Z,N)\}$
-            \Else
-                \State $x\gets\Call{ChooseVariable}{H,V}$
-                \State $W\gets W\cup\{(H|_{x=0},Z\cup\{x\},N)\}$ \Comment{$x=0$}
-                \State $W\gets W\cup\{(\Call{Saturate}{H,N\cup\{x\}},Z,N\cup\{x\})\}$ \Comment{$x\neq0$}
-            \EndIf
-        \EndFor
+    \State Remove an element $(Q,Z,N)$ from $W$
+    \ForAll{$H\in\Call{Refine}{Q,N}$}
+    \State Run $\mathcal B$ on $(H,N)$ for at most $\tau$, unless
+    $\beta$ is exhausted
+    \State $V\gets \operatorname{vars}(H)\setminus(Z\cup N)$
+    \Comment{Useful variables for $H$}
+    \If{$\mathcal B$ returns a representation of $V(H)\setminus V(u_N)$}
+    \State Add the representation, with $(Z,N)$, to $S$
+    \ElsIf{$\beta$ is exhausted or $V=\emptyset$}
+    \State $U\gets U\cup\{(H,Z,N)\}$
+    \Else
+    \State $x\gets\Call{ChooseVariable}{H,V}$
+    \State $W\gets W\cup\{(H|_{x=0},Z\cup\{x\},N)\}$ \Comment{$x=0$}
+    \State $W\gets
+    W\cup\{(\Call{Saturate}{H,N\cup\{x\}},Z,N\cup\{x\})\}$ \Comment{$x\neq0$}
+    \EndIf
+    \EndFor
     \EndWhile
     \State \Return $(S,U)$
-\end{algorithmic}
+  \end{algorithmic}
 \end{algorithm}
-
 
 % How the constraints are encoded into the system.
 Each pending branch $(Q,Z,N)$ records the variables $Z$ set to zero and the
@@ -71,7 +76,7 @@ $\langle H\rangle:u_N^\infty$. Every $g\in\langle H\rangle:u_N^\infty$
 satisfies $u_N^mg\in\langle H\rangle$ for some $m$, so $g$ vanishes on
 $V(H)\setminus V(u_N)$, and $\langle H\rangle$ lies in the saturation. Hence
 \[
-    V\bigl(\Call{Saturate}{H,N}\bigr)\setminus V(u_N)=V(H)\setminus V(u_N).
+  V\bigl(\Call{Saturate}{H,N}\bigr)\setminus V(u_N)=V(H)\setminus V(u_N).
 \]
 Saturation discards the components of $V(H)$ that lie in $V(u_N)$, and the
 saturated generators can factor again in the next refinement. A saturation
@@ -92,21 +97,21 @@ $s_y$ and the Rabinowitsch generator
 $1-s_y y$~\cite{rabinowitsch1930nullstellensatz}, and project the solutions
 onto the original variables. Since $s_ya_y=1$ has a solution $s_y$ exactly
 when $a_y\neq0$, the projection is $V(H)\setminus V(u_N)$. Auxiliary
-variables therefore appear only inside solver calls. The zero and nonzero decisions
+variables therefore appear only inside solver calls. The zero and
+nonzero decisions
 remain part of the solution-set representation.
 
 \begin{figure}[pos=htbp]
-    \centering
-    \resizebox{0.72\textwidth}{!}{\input{figs/variable_zeroing_flowchart.tex}}
-    \caption{Flowchart of Algorithm~\ref{alg:ZeroingBranching}.}
-    \label{fig:variable_zeroing_flowchart}
+  \centering
+  \resizebox{0.72\textwidth}{!}{\input{figs/variable_zeroing_flowchart.tex}}
+  \caption{Flowchart of Algorithm~\ref{alg:ZeroingBranching}.}
+  \label{fig:variable_zeroing_flowchart}
 \end{figure}
 
-
 \begin{figure}[pos=htbp]
-    \centering
-    \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_tree.tex}}
-    \caption{Split tree of factor branching with variable zeroing on the
+  \centering
+  \resizebox{\textwidth}{!}{\input{figs/variable_zeroing_tree.tex}}
+  \caption{Split tree of factor branching with variable zeroing on the
     fifth-order graviton QFT system (detailed in
     Section~\ref{subsec:physical-system}) using M4GB with a five-second
     timeout per branch, which also bounds each saturation. The run takes
@@ -114,8 +119,8 @@ remain part of the solution-set representation.
     timed-out or contracted branch is the one it splits on. ``Contracted''
     branches come from the optimization of
     Subsection~\ref{subsec:zeroing-branch-contraction}.
-    }
-    \label{fig:variable_zeroing_tree}
+  }
+  \label{fig:variable_zeroing_tree}
 \end{figure}
 
 For comparison, we repeat the experiment twice: once with the fixed side
@@ -142,32 +147,37 @@ promising choice. Setting it to zero removes all terms containing it at once.
 In the nonzero branch, saturation by $x$ discards every component on which
 $x$ vanishes.
 
-For each $x\in X = \operatorname{vars}(Q)\setminus(Z\cup N)$, the variables not yet split on, define
+For each $x\in X = \operatorname{vars}(Q)\setminus(Z\cup N)$, the
+variables not yet split on, define
 \begin{align*}
-    g_Q(x) &= \#\{q\in Q : x\text{ occurs in }q\},\\
-    t_Q(x) &= \#\{(q,m) : q\in Q,\ m\text{ is a term of }q,\ \deg_x(m) > 0\},\\
-    e_Q(x) &= \sum_{q\in Q}\ \sum_{\substack{m\text{ a term of }q,\\ \deg_x(m) > 0}} \deg_x(m).
+  g_Q(x) &= \#\{q\in Q : x\text{ occurs in }q\},\\
+  t_Q(x) &= \#\{(q,m) : q\in Q,\ m\text{ is a term of }q,\ \deg_x(m) > 0\},\\
+  e_Q(x) &= \sum_{q\in Q}\ \sum_{\substack{m\text{ a term of
+  }q,\\ \deg_x(m) > 0}} \deg_x(m).
 \end{align*}
 Its score is the triple
 \[
-    h_Q(x)=\bigl(g_Q(x),t_Q(x),e_Q(x)\bigr),
+  h_Q(x)=\bigl(g_Q(x),t_Q(x),e_Q(x)\bigr),
 \]
 and scores are compared lexicographically.
-$\mathrm{ChooseVariable}(Q,X)$ returns a variable $x\in X$ with the largest score $h_Q(x)$.
+$\mathrm{ChooseVariable}(Q,X)$ returns a variable $x\in X$ with the
+largest score $h_Q(x)$.
 
 \subsection{Branch contraction}
 \label{subsec:zeroing-branch-contraction}
 
-Suppose that one child of a split on $x$ has no terminal branches (i.e., UNSAT) and the other has exactly one, $H$.
+Suppose that one child of a split on $x$ has no terminal branches
+(i.e., UNSAT) and the other has exactly one, $H$.
 Lemma~\ref{lem:recursive-refinement} and Equation~\eqref{eq:zeroing-split} give
 \[
-    V_Y(Q;Z,N)=
-    \begin{cases}
-        V_Y(H;Z,N\cup\{x\}) & \text{if the $x=0$ child is UNSAT,}\\
-        V_Y(H;Z\cup\{x\},N) & \text{if the $x\neq0$ child is UNSAT.}
-    \end{cases}
+  V_Y(Q;Z,N)=
+  \begin{cases}
+    V_Y(H;Z,N\cup\{x\}) & \text{if the $x=0$ child is UNSAT,}\\
+    V_Y(H;Z\cup\{x\},N) & \text{if the $x\neq0$ child is UNSAT.}
+  \end{cases}
 \]
-Thus we can choose the next splitting variable without running the branch solver on $H$, or losing solutions.
+Thus we can choose the next splitting variable without running the
+branch solver on $H$, or losing solutions.
 This optimization may save a solver call that is likely to fail.
 
 \subsection{Theoretical analysis}
@@ -180,9 +190,9 @@ points of $\overline K^{Y}$ that satisfy $A$ and solve $Q$. For variable
 zeroing, a pending branch $(Q,Z,N)$ has $Q\subseteq K[Y\setminus Z]$, and we
 write
 \[
-    V_Y(Q;Z,N)=\bigl\{a\in\overline K^{Y}:
+  V_Y(Q;Z,N)=\bigl\{a\in\overline K^{Y}:
     a_z=0\ (z\in Z),\ a_y\neq0\ (y\in N),\
-    a|_{Y\setminus Z}\in V(Q)\bigr\}.
+  a|_{Y\setminus Z}\in V(Q)\bigr\}.
 \]
 At the root, $V_Y(P;\emptyset,\emptyset)=V(P)$. If side conditions
 $D_1,\ldots,D_k$ cover every point satisfying $A$, and each child $Q_i$ has
@@ -191,29 +201,30 @@ union of the sets $V_Y(Q_i;A\cup\{D_i\})$.
 
 For variable zeroing, the conditions $x=0$ and $x\neq0$ cover all values of
 $x$. Lemma~\ref{lem:zero-nonzero-split} is a set-theoretic form of the
-decomposition $V(I)=V(I+\langle f\rangle)\cup V(I:f^\infty)$~\cite[Ch.~4, \S4]{cox2015ideals}.
+decomposition $V(I)=V(I+\langle f\rangle)\cup
+V(I:f^\infty)$~\cite[Ch.~4, \S4]{cox2015ideals}.
 
 \begin{lemma}
-\label{lem:zero-nonzero-split}
-Let $H$ be a terminal branch of a pending branch $(Q,Z,N)$, let
-$Q_0=H|_{x=0}$, and let $Q_1=\Call{Saturate}{H,N\cup\{x\}}$. Then
-\begin{equation}
-\label{eq:zeroing-split}
+  \label{lem:zero-nonzero-split}
+  Let $H$ be a terminal branch of a pending branch $(Q,Z,N)$, let
+  $Q_0=H|_{x=0}$, and let $Q_1=\Call{Saturate}{H,N\cup\{x\}}$. Then
+  \begin{equation}
+    \label{eq:zeroing-split}
     V_Y(H;Z,N)=V_Y(Q_0;Z\cup\{x\},N)
     \cup V_Y(Q_1;Z,N\cup\{x\}).
-\end{equation}
+  \end{equation}
 \end{lemma}
 
 \begin{proof}
-Every point has $a_x=0$ or $a_x\neq0$, so by the covering argument above it
-suffices to show that $V_Y(Q_0;Z\cup\{x\},N)$ and $V_Y(Q_1;Z,N\cup\{x\})$
-consist of the points of $V_Y(H;Z,N)$ with $a_x=0$ and with $a_x\neq0$,
-respectively. At a point with $a_x=0$, each $q|_{x=0}$ takes the value of
-$q$, which gives the first set. The
-identity
-$V\bigl(\Call{Saturate}{H,N\cup\{x\}}\bigr)\setminus V(u_{N\cup\{x\}})
-=V(H)\setminus V(u_{N\cup\{x\}})$ of
-Subsection~\ref{subsec:zeroing-branching} gives the second.
+  Every point has $a_x=0$ or $a_x\neq0$, so by the covering argument above it
+  suffices to show that $V_Y(Q_0;Z\cup\{x\},N)$ and $V_Y(Q_1;Z,N\cup\{x\})$
+  consist of the points of $V_Y(H;Z,N)$ with $a_x=0$ and with $a_x\neq0$,
+  respectively. At a point with $a_x=0$, each $q|_{x=0}$ takes the value of
+  $q$, which gives the first set. The
+  identity
+  $V\bigl(\Call{Saturate}{H,N\cup\{x\}}\bigr)\setminus V(u_{N\cup\{x\}})
+  =V(H)\setminus V(u_{N\cup\{x\}})$ of
+  Subsection~\ref{subsec:zeroing-branching} gives the second.
 \end{proof}
 
 Let $\mathcal L(Q,N)$ be the terminal branches returned by
@@ -223,47 +234,47 @@ $V(Q)\setminus V(u_N)$, so
 $V(Q)\setminus V(u_N)=\bigcup_{H\in\mathcal L(Q,N)}V(H)\setminus V(u_N)$.
 Since $V_Y(Q;Z,N)$ depends on $Q$ only through $V(Q)\setminus V(u_N)$,
 \begin{equation}
-\label{eq:zeroing-refinement}
-    V_Y(Q;Z,N)=\bigcup_{H\in\mathcal L(Q,N)}V_Y(H;Z,N).
+  \label{eq:zeroing-refinement}
+  V_Y(Q;Z,N)=\bigcup_{H\in\mathcal L(Q,N)}V_Y(H;Z,N).
 \end{equation}
 
 \begin{theorem}[Correctness of recursive splitting]
-\label{thm:zeroing-correctness}
-Suppose every split uses side conditions that cover all possibilities. If
-Algorithm~\ref{alg:ZeroingBranching} returns $(S,U)$ on input $P$, then
-\[
+  \label{thm:zeroing-correctness}
+  Suppose every split uses side conditions that cover all possibilities. If
+  Algorithm~\ref{alg:ZeroingBranching} returns $(S,U)$ on input $P$, then
+  \[
     V(P)=\operatorname{Sol}(S)
     \cup\bigcup_{(H,Z,N)\in U}V_Y(H;Z,N),
-\]
-where a representation in $S$ stored with $(Z,N)$ for the branch $H$
-represents $V_Y(H;Z,N)$.
+  \]
+  where a representation in $S$ stored with $(Z,N)$ for the branch $H$
+  represents $V_Y(H;Z,N)$.
 \end{theorem}
 
 \begin{proof}
-The algorithm maintains
-\[
+  The algorithm maintains
+  \[
     V(P)=\operatorname{Sol}(S)
     \cup\bigcup_{(H,Z,N)\in U}V_Y(H;Z,N)
     \cup\bigcup_{(Q,Z,N)\in W}V_Y(Q;Z,N),
-\]
-which holds initially, since $V_Y(P;\emptyset,\emptyset)=V(P)$. An iteration
-removes $(Q,Z,N)$ from $W$, and Equation~\eqref{eq:zeroing-refinement}
-replaces $V_Y(Q;Z,N)$ by the sets $V_Y(H;Z,N)$ of its terminal branches. The
-algorithm then represents $V_Y(H;Z,N)$ in $S$, finds it empty, records it in
-$U$, or replaces it by the sets of the two children, which have the same
-union by Lemma~\ref{lem:zero-nonzero-split}, or by the covering argument for
-other side conditions. So the invariant still holds, and when the algorithm
-returns, $W=\emptyset$.
+  \]
+  which holds initially, since $V_Y(P;\emptyset,\emptyset)=V(P)$. An iteration
+  removes $(Q,Z,N)$ from $W$, and Equation~\eqref{eq:zeroing-refinement}
+  replaces $V_Y(Q;Z,N)$ by the sets $V_Y(H;Z,N)$ of its terminal branches. The
+  algorithm then represents $V_Y(H;Z,N)$ in $S$, finds it empty, records it in
+  $U$, or replaces it by the sets of the two children, which have the same
+  union by Lemma~\ref{lem:zero-nonzero-split}, or by the covering argument for
+  other side conditions. So the invariant still holds, and when the algorithm
+  returns, $W=\emptyset$.
 \end{proof}
 
 \begin{corollary}[Completeness of variable zeroing]
-\label{cor:zeroing-completeness}
-If $U=\emptyset$ in the output of Algorithm~\ref{alg:ZeroingBranching}, then
-$\operatorname{Sol}(S)=V(P)$.
+  \label{cor:zeroing-completeness}
+  If $U=\emptyset$ in the output of Algorithm~\ref{alg:ZeroingBranching}, then
+  $\operatorname{Sol}(S)=V(P)$.
 \end{corollary}
 
 \begin{proof}
-This is Theorem~\ref{thm:zeroing-correctness} with $U=\emptyset$.
+  This is Theorem~\ref{thm:zeroing-correctness} with $U=\emptyset$.
 \end{proof}
 
 The \emph{split tree} of a run of Algorithm~\ref{alg:ZeroingBranching} has
@@ -273,34 +284,35 @@ of the two pending branches that the split creates. The leaves are the
 branches that the algorithm adds to $S$ or $U$.
 
 \begin{theorem}[Termination of recursive splitting]
-\label{thm:zeroing-termination}
-Algorithm~\ref{alg:ZeroingBranching} terminates.
+  \label{thm:zeroing-termination}
+  Algorithm~\ref{alg:ZeroingBranching} terminates.
 \end{theorem}
 
 \begin{proof}
-Every iteration of the while loop is finite. The proof of
-Theorem~\ref{thm:refine-termination} applies to $\Call{Refine}{Q,N}$: its
-children are still hitting sets of factor sets, which have lost only
-variables of $N$, so a child that equals its interreduced parent is still
-terminal, and dropping a branch only removes children. So $\mathcal L(Q,N)$
-is finite. On a leaf $H\in\mathcal L(Q,N)$, the iteration makes at most one
-call of $\mathcal B$, which stops within $\tau$. The algorithm
-splits any other $H$ because $\mathcal B$ did not return within $\tau$, and
-stops $\mathcal B$ there. The split then makes one restriction to $x=0$ and
-one call of $\Call{Saturate}{}$, which stops within $\tau$ as well, since it
-returns $H$ when \texttt{sat} does not finish.
+  Every iteration of the while loop is finite. The proof of
+  Theorem~\ref{thm:refine-termination} applies to $\Call{Refine}{Q,N}$: its
+  children are still hitting sets of factor sets, which have lost only
+  variables of $N$, so a child that equals its interreduced parent is still
+  terminal, and dropping a branch only removes children. So $\mathcal L(Q,N)$
+  is finite. On a leaf $H\in\mathcal L(Q,N)$, the iteration makes at most one
+  call of $\mathcal B$, which stops within $\tau$. The algorithm
+  splits any other $H$ because $\mathcal B$ did not return within $\tau$, and
+  stops $\mathcal B$ there. The split then makes one restriction to $x=0$ and
+  one call of $\Call{Saturate}{}$, which stops within $\tau$ as well, since it
+  returns $H$ when \texttt{sat} does not finish.
 
-For a pending branch $(Q,Z,N)$, let $d=|Y\setminus(Z\cup N)|$ be the number
-of variables it can still split on. A split variable $x$ lies in
-$\operatorname{vars}(H)\setminus(Z\cup N)$, so both children of a split have
-$d$ one smaller than the pending branch whose iteration creates them. An
-iteration therefore removes one element from the multiset of the numbers $d$
-over $W$ and adds finitely many smaller ones. This multiset order is well
-founded~\cite{dershowitz1979proving}, so the loop makes finitely many
-iterations.
+  For a pending branch $(Q,Z,N)$, let $d=|Y\setminus(Z\cup N)|$ be the number
+  of variables it can still split on. A split variable $x$ lies in
+  $\operatorname{vars}(H)\setminus(Z\cup N)$, so both children of a split have
+  $d$ one smaller than the pending branch whose iteration creates them. An
+  iteration therefore removes one element from the multiset of the numbers $d$
+  over $W$ and adds finitely many smaller ones. This multiset order is well
+  founded~\cite{dershowitz1979proving}, so the loop makes finitely many
+  iterations.
 \end{proof}
 
-% Simplicity: the zero child loses a variable and monomials, the nonzero child components
+% Simplicity: the zero child loses a variable and monomials, the
+% nonzero child components
 Theorem~\ref{thm:refine-simpler} also applies to $\Call{Refine}{Q,N}$, whose
 factor sets have lost only variables of $N$. Both children of a split are
 simpler than the split branch as well. The child with $x=0$ has one variable
@@ -308,32 +320,33 @@ and some monomials fewer, and the child with $x\neq0$ keeps only the
 primary components that lie in no hyperplane $y=0$ with $y\in N\cup\{x\}$.
 
 \begin{theorem}[Split branches are simpler]
-\label{thm:zeroing-simpler}
-Let Algorithm~\ref{alg:ZeroingBranching} split a branch $H$ of $(Q,Z,N)$ on
-$x$ into $Q_0=H|_{x=0}$ and $Q_1=\Call{Saturate}{H,N\cup\{x\}}$. Then $Q_0$
-has one variable fewer, and its monomials form a proper sub-multiset of those
-of $H$. If the saturation finishes and
-$\langle H\rangle=\mathfrak q_1\cap\cdots\cap\mathfrak q_t$ is a minimal
-primary decomposition with $\mathfrak p_j=\sqrt{\mathfrak q_j}$, then
-\[
-  \langle Q_1\rangle=\bigcap\bigl\{\mathfrak q_j:
-  \mathfrak p_j\cap(N\cup\{x\})=\emptyset\bigr\}.
-\]
+  \label{thm:zeroing-simpler}
+  Let Algorithm~\ref{alg:ZeroingBranching} split a branch $H$ of $(Q,Z,N)$ on
+  $x$ into $Q_0=H|_{x=0}$ and $Q_1=\Call{Saturate}{H,N\cup\{x\}}$. Then $Q_0$
+  has one variable fewer, and its monomials form a proper sub-multiset of those
+  of $H$. If the saturation finishes and
+  $\langle H\rangle=\mathfrak q_1\cap\cdots\cap\mathfrak q_t$ is a minimal
+  primary decomposition with $\mathfrak p_j=\sqrt{\mathfrak q_j}$, then
+  \[
+    \langle Q_1\rangle=\bigcap\bigl\{\mathfrak q_j:
+    \mathfrak p_j\cap(N\cup\{x\})=\emptyset\bigr\}.
+  \]
 \end{theorem}
 
 \begin{proof}
-The generators of $H$ lie in $K[Y\setminus Z]$, so those of $Q_0$ lie in
-$K[Y\setminus(Z\cup\{x\})]$. Restricting to $x=0$ deletes the terms that
-contain $x$ and keeps the others, and elements that restrict to $0$ or to the
-same polynomial only remove monomials. So the monomials of $Q_0$ form a
-sub-multiset of those of $H$. It is proper, since $x\in\operatorname{vars}(H)$,
-so some term of $H$ contains $x$.
+  The generators of $H$ lie in $K[Y\setminus Z]$, so those of $Q_0$ lie in
+  $K[Y\setminus(Z\cup\{x\})]$. Restricting to $x=0$ deletes the terms that
+  contain $x$ and keeps the others, and elements that restrict to $0$ or to the
+  same polynomial only remove monomials. So the monomials of $Q_0$ form a
+  sub-multiset of those of $H$. It is proper, since
+  $x\in\operatorname{vars}(H)$,
+  so some term of $H$ contains $x$.
 
-If the saturation finishes, then
-$\langle Q_1\rangle=\langle H\rangle:u^\infty$ with $u=u_{N\cup\{x\}}$.
-Since $\mathfrak p_j$ is prime,
-$u\notin\mathfrak p_j$ if and only if $\mathfrak p_j$ contains no variable of
-$N\cup\{x\}$, and the identity
-$\langle H\rangle:u^\infty=\bigcap_{u\notin\mathfrak p_j}\mathfrak q_j$ of
-Subsection~\ref{subsec:decompositions} gives the formula.
+  If the saturation finishes, then
+  $\langle Q_1\rangle=\langle H\rangle:u^\infty$ with $u=u_{N\cup\{x\}}$.
+  Since $\mathfrak p_j$ is prime,
+  $u\notin\mathfrak p_j$ if and only if $\mathfrak p_j$ contains no variable of
+  $N\cup\{x\}$, and the identity
+  $\langle H\rangle:u^\infty=\bigcap_{u\notin\mathfrak p_j}\mathfrak q_j$ of
+  Subsection~\ref{subsec:decompositions} gives the formula.
 \end{proof}

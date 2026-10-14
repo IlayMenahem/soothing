@@ -6,10 +6,13 @@ into smaller branches by enumerating minimal hitting sets of their factor sets.
 
 We proved that refinement terminates and preserves the full solution set.
 
-On the baseline benchmarks, factor branching completed 19 of 20 systems, compared with
-9 for direct Gr\"obner-basis methods and 16 for decomposition methods. On the QFT system, where one coupling must be nonzero, imposing this by
+On the baseline benchmarks, factor branching completed 19 of 20
+systems, compared with
+9 for direct Gr\"obner-basis methods and 16 for decomposition
+methods. On the QFT system, where one coupling must be nonzero, imposing this by
 saturation lets factor branching complete with all six
 backends in under 0.9 seconds, while all nine standalone baselines
-time out.
+time out. Primary factor branching decomposes the same saturated system in
+under four minutes.
 
 Future work will test this benefit on other systems.
