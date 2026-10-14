@@ -27,17 +27,14 @@ open FactorBranching
 #print axioms FactorBranching.Factorizer.pow_maxMult_mem_span'
 #print axioms FactorBranching.Refiner.ideal_reduce_terminates
 #print axioms FactorBranching.Refiner.ideal_reduce_span
-#print axioms FactorBranching.power_branches
-#print axioms FactorBranching.saturation_split
-#print axioms FactorBranching.IdealRefine.exists_round_no_split
-#print axioms FactorBranching.IdealRefine.span_eq_inf_leaves
-#print axioms FactorBranching.mem_span_iff_reduces_to_zero
--- Section "Primary factor branching"
+-- Subsection "Primary decomposition"
 #print axioms FactorBranching.exists_separator
 #print axioms FactorBranching.isolated_separator
 #print axioms FactorBranching.separatedComponents_unmixed
 #print axioms FactorBranching.eq_of_le_of_ringKrullDim_eq
 #print axioms FactorBranching.primaryBranching_spec
+#print axioms FactorBranching.primaryBranchingSeparated_spec
+#print axioms FactorBranching.mem_span_iff_reduces_to_zero_components
 -- Section "Recursive splitting"
 #print axioms FactorBranching.exhaustive_split
 #print axioms FactorBranching.mem_V_iff_of_isSaturation
@@ -61,7 +58,6 @@ open FactorBranching
 #print axioms FactorBranching.IsInterRun.span_eq
 #print axioms FactorBranching.IsInterRun.isInterreduced
 #print axioms FactorBranching.Refiner.iUnion_V_round
-#print axioms FactorBranching.IdealRefine.mem_span_iff_forall_leaves
 #print axioms FactorBranching.mem_iff_remainder_eq_zero
 #print axioms FactorBranching.exists_isRemainder
 #print axioms FactorBranching.saturation_finsetInf_primary
@@ -73,3 +69,10 @@ open FactorBranching
 #print axioms FactorBranching.wellFounded_interStep
 #print axioms FactorBranching.exists_isInterRun
 #print axioms FactorBranching.Interreducer.ofTermination
+-- Ideal refinement (no longer in the paper)
+#print axioms FactorBranching.power_branches
+#print axioms FactorBranching.saturation_split
+#print axioms FactorBranching.IdealRefine.exists_round_no_split
+#print axioms FactorBranching.IdealRefine.span_eq_inf_leaves
+#print axioms FactorBranching.IdealRefine.mem_span_iff_forall_leaves
+#print axioms FactorBranching.mem_span_iff_reduces_to_zero

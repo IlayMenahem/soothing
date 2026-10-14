@@ -7,7 +7,8 @@
 We implemented Algorithm~\ref{alg:Branching} in Rust 1.98.1 and used
 Symbolica 3.0.1 for polynomial arithmetic over the
 rationals~\cite{ruijl2023symbolica}. Refinement applies the pruning of
-Subsection~\ref{subsec:branching-framework}, and the branch solver processes the terminal
+Subsection~\ref{subsec:branching-framework}, and the branch solver
+processes the terminal
 branches fewest generators first. In all experiments, we solve the branches
 with a Gr\"obner-basis computation. The available implementations are M4GB,
 F5, GVW, F4, and Singular 4.4.1~\cite{makarim2017m4gb,faugere2002f5,
@@ -22,7 +23,8 @@ Every table entry is a single run. Every method received 60 seconds per system.
 
 For factor branching, $T$ is end-to-end wall time and $F$ is the
 time to first SAT branch, measured from the start of the
-minimal-hitting-set search.  Factorization and input processing are therefore included in
+minimal-hitting-set search.  Factorization and input processing are
+therefore included in
 $T$ but not in $F$.
 The complete measurements are in the \texttt{results} directory of the
 repository listed under Data availability.
@@ -32,86 +34,120 @@ repository listed under Data availability.
 
 The baseline has 20 generated systems in six families.
 \begin{itemize}
-    \item Signed-distance cycles and affine-factor hypergraphs test many inexpensive branches.
-    \item The overlapping random multiples use seeded dense quadratic factors that recur across equations, with no factor shared by every equation.
-    \item For gated systems, we create a new variable and multiply every equation in Cyclic, Katsura, or dense quadratic by it~\cite{bjorck1991cyclic,boege1986examples}.
-    \item This produces one easy selector branch and one nonlinear residual branch.
+  \item Signed-distance cycles and affine-factor hypergraphs test
+    many inexpensive branches.
+  \item The overlapping random multiples use seeded dense quadratic
+    factors that recur across equations, with no factor shared by
+    every equation.
+  \item For gated systems, we create a new variable and multiply
+    every equation in Cyclic, Katsura, or dense quadratic by
+    it~\cite{bjorck1991cyclic,boege1986examples}.
+  \item This produces one easy selector branch and one nonlinear
+    residual branch.
 \end{itemize}
 
 \begin{table}[pos=htbp]
-\centering
-\small
-\setlength{\tabcolsep}{5pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{l l l}
-\hline
-Family & Tested sizes & Variables/equations; hitting sets \\
-\hline
-Signed-distance cycle & $n=12,14,16$ & $12/12,14/14,16/16$; $924,3432,12870$ \\
-Overlapping random multiples & $(n,p,k)=(4,6,2),(6,8,3),(8,10,3)$ & $n/n$; $4,16,28$ \\
-Positive affine hypergraph & $(n,m,k)=(8,6,4),(10,8,5),(12,10,6)$ & $n/m$; $63,239,833$ \\
-Gated Cyclic & orders $5,6,7$ & $6/5,7/6,8/7$; $2$ each \\
-Gated Katsura and dense quadratics & Katsura $6,7,8$; dense $n=5,6,7$ & $8/7,9/8,10/9,6/5,7/6,8/7$; $2$ each \\
-Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $178,309$ \\
-\hline
-\end{tabular}%
-}
-\caption{The generated systems used for the baseline benchmark.}
-\label{tab:benchmark-families}
+  \centering
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \resizebox{\textwidth}{!}{%
+    \begin{tabular}{l l l}
+      \hline
+      Family & Tested sizes & Variables/equations; hitting sets \\
+      \hline
+      Signed-distance cycle & $n=12,14,16$ & $12/12,14/14,16/16$;
+      $924,3432,12870$ \\
+      Overlapping random multiples &
+      $(n,p,k)=(4,6,2),(6,8,3),(8,10,3)$ & $n/n$; $4,16,28$ \\
+      Positive affine hypergraph &
+      $(n,m,k)=(8,6,4),(10,8,5),(12,10,6)$ & $n/m$; $63,239,833$ \\
+      Gated Cyclic & orders $5,6,7$ & $6/5,7/6,8/7$; $2$ each \\
+      Gated Katsura and dense quadratics & Katsura $6,7,8$; dense
+      $n=5,6,7$ & $8/7,9/8,10/9,6/5,7/6,8/7$; $2$ each \\
+      Square affine hypergraph & $(n,k)=(8,4),(10,5)$ & $n/n$; $178,309$ \\
+      \hline
+    \end{tabular}%
+  }
+  \caption{The generated systems used for the baseline benchmark.}
+  \label{tab:benchmark-families}
 \end{table}
 
 Table~\ref{tab:baseline-comparison}
-selects the fastest completed factor branching backend and the fastest completed method in each baseline
+selects the fastest completed factor branching backend and the
+fastest completed method in each baseline
 class.  A factor branching entry gives $T/F$ in seconds;
 the other entries give total wall time.  ``Timeout'' means that every tested
 method in that class timed out.
 
 \begin{table}[pos=htbp]
-\centering
-\scriptsize
-\setlength{\tabcolsep}{4pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{l l l l}
-\hline
-System & Best factor branching $T/F$ & Best direct GB & Best decomposition \\
-\hline
-Signed distance, $n=12$ & F5 $2.669/0.006$ & \textbf{F4} $\mathbf{0.443}$ & primdec $3.056$ \\
-Signed distance, $n=14$ & GVW $9.824/0.006$ & \textbf{Singular} $\mathbf{7.421}$ & primdec $29.894$ \\
-Signed distance, $n=16$ & \textbf{M4GB} $\mathbf{37.391/0.006}$ & timeout & timeout \\
-\hline
-Overlapping $(4,6,2)$ & \textbf{F5} $\mathbf{0.014/0.003}$ & F4 $0.429$ & facstd $0.265$ \\
-Overlapping $(6,8,3)$ & \textbf{F5} $\mathbf{0.160/0.006}$ & timeout & timeout \\
-Overlapping $(8,10,3)$ & \textbf{Singular} $\mathbf{2.671/0.013}$ & timeout & timeout \\
-\hline
-Positive affine $(8,6,4)$ & \textbf{M4GB} $\mathbf{0.180/0.003}$ & timeout & facstd $0.368$ \\
-Positive affine $(10,8,5)$ & \textbf{F4} $\mathbf{0.703/0.003}$ & timeout & facstd $1.836$ \\
-Positive affine $(12,10,6)$ & \textbf{F4} $\mathbf{2.398/0.003}$ & timeout & facstd $53.318$ \\
-\hline
-Gated Cyclic-5 & F4 $0.011/0.003$ & \textbf{GVW} $\mathbf{0.009}$ & facstd $0.181$ \\
-Gated Cyclic-6 & \textbf{Singular} $\mathbf{0.043/0.010}$ & Singular $0.309$ & M2 $2.620$ \\
-Gated Cyclic-7 & timeout & timeout & timeout \\
-\hline
-Gated Katsura-6 & \textbf{Singular} $\mathbf{0.047/0.010}$ & GVW $0.226$ & facstd $0.233$ \\
-Gated Katsura-7 & \textbf{Singular} $\mathbf{0.283/0.010}$ & GVW $3.176$ & facstd $0.539$ \\
-Gated Katsura-8 & \textbf{Singular} $\mathbf{2.575/0.010}$ & timeout & facstd $3.596$ \\
-Gated dense, $n=5$ & \textbf{Singular} $\mathbf{0.025/0.010}$ & M4GB $0.171$ & facstd $0.198$ \\
-Gated dense, $n=6$ & \textbf{Singular} $\mathbf{0.552/0.010}$ & M4GB $4.736$ & facstd $0.755$ \\
-Gated dense, $n=7$ & \textbf{Singular} $\mathbf{42.670/0.010}$ & timeout & facstd $48.820$ \\
-\hline
-Square affine $(8,4)$ & \textbf{M4GB} $\mathbf{0.532/0.003}$ & timeout & facstd $0.601$ \\
-Square affine $(10,5)$ & \textbf{F4} $\mathbf{0.920/0.003}$ & timeout & facstd $2.141$ \\
-\hline
-\#systems solved & $19$ & $9$ & $16$ \\
-\#fastest (ties counted) & $16$ & $3$ & $0$ \\
-\hline
-\end{tabular}%
-}
-\caption{Best completed baseline results across solver classes. All times are in seconds.}
-\label{tab:baseline-comparison}
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \resizebox{\textwidth}{!}{%
+    \begin{tabular}{l l l l}
+      \hline
+      System & Best factor branching $T/F$ & Best direct GB & Best
+      decomposition \\
+      \hline
+      Signed distance, $n=12$ & F5 $2.669/0.006$ & \textbf{F4}
+      $\mathbf{0.443}$ & primdec $3.056$ \\
+      Signed distance, $n=14$ & GVW $9.824/0.006$ & \textbf{Singular}
+      $\mathbf{7.421}$ & primdec $29.894$ \\
+      Signed distance, $n=16$ & \textbf{M4GB} $\mathbf{37.391/0.006}$
+      & timeout & timeout \\
+      \hline
+      Overlapping $(4,6,2)$ & \textbf{F5} $\mathbf{0.014/0.003}$ & F4
+      $0.429$ & facstd $0.265$ \\
+      Overlapping $(6,8,3)$ & \textbf{F5} $\mathbf{0.160/0.006}$ &
+      timeout & timeout \\
+      Overlapping $(8,10,3)$ & \textbf{Singular}
+      $\mathbf{2.671/0.013}$ & timeout & timeout \\
+      \hline
+      Positive affine $(8,6,4)$ & \textbf{M4GB}
+      $\mathbf{0.180/0.003}$ & timeout & facstd $0.368$ \\
+      Positive affine $(10,8,5)$ & \textbf{F4} $\mathbf{0.703/0.003}$
+      & timeout & facstd $1.836$ \\
+      Positive affine $(12,10,6)$ & \textbf{F4}
+      $\mathbf{2.398/0.003}$ & timeout & facstd $53.318$ \\
+      \hline
+      Gated Cyclic-5 & F4 $0.011/0.003$ & \textbf{GVW}
+      $\mathbf{0.009}$ & facstd $0.181$ \\
+      Gated Cyclic-6 & \textbf{Singular} $\mathbf{0.043/0.010}$ &
+      Singular $0.309$ & M2 $2.620$ \\
+      Gated Cyclic-7 & timeout & timeout & timeout \\
+      \hline
+      Gated Katsura-6 & \textbf{Singular} $\mathbf{0.047/0.010}$ &
+      GVW $0.226$ & facstd $0.233$ \\
+      Gated Katsura-7 & \textbf{Singular} $\mathbf{0.283/0.010}$ &
+      GVW $3.176$ & facstd $0.539$ \\
+      Gated Katsura-8 & \textbf{Singular} $\mathbf{2.575/0.010}$ &
+      timeout & facstd $3.596$ \\
+      Gated dense, $n=5$ & \textbf{Singular} $\mathbf{0.025/0.010}$ &
+      M4GB $0.171$ & facstd $0.198$ \\
+      Gated dense, $n=6$ & \textbf{Singular} $\mathbf{0.552/0.010}$ &
+      M4GB $4.736$ & facstd $0.755$ \\
+      Gated dense, $n=7$ & \textbf{Singular} $\mathbf{42.670/0.010}$
+      & timeout & facstd $48.820$ \\
+      \hline
+      Square affine $(8,4)$ & \textbf{M4GB} $\mathbf{0.532/0.003}$ &
+      timeout & facstd $0.601$ \\
+      Square affine $(10,5)$ & \textbf{F4} $\mathbf{0.920/0.003}$ &
+      timeout & facstd $2.141$ \\
+      \hline
+      \#systems solved & $19$ & $9$ & $16$ \\
+      \#fastest (ties counted) & $16$ & $3$ & $0$ \\
+      \hline
+    \end{tabular}%
+  }
+  \caption{Best completed baseline results across solver classes. All
+  times are in seconds.}
+  \label{tab:baseline-comparison}
 \end{table}
 
-% [Theortical explanation of when factor branching and variable zeroing are a good choice]
-Factor branching is a good choice when factorization produces branch ideals that are
+% [Theortical explanation of when factor branching and variable
+% zeroing are a good choice]
+Factor branching is a good choice when factorization produces branch
+ideals that are
 substantially easier than the expanded input ideal.  A large number of hitting
 sets can still be manageable when individual branches are cheap to solve;
 the positive affine family shows that the hitting-set count alone is not
@@ -119,7 +155,8 @@ decisive.  The method is less effective when one branch retains the difficulty
 of the original nonlinear system, as Cyclic-7 does.
 
 % [Back up the explanation with current or new experiments]
-The measurements of time to first SAT branch support this explanation.  On positive affine
+The measurements of time to first SAT branch support this
+explanation.  On positive affine
 $(12,10,6)$, $F$ is $0.003$ seconds despite the 833 hitting sets.  On
 gated Katsura-8, the first SAT branch is found in $0.010$ seconds, but
 the full run takes $2.575$ seconds.  Factorization therefore finds the easy
@@ -128,23 +165,25 @@ component quickly, while the nonlinear residual controls completion time.
 \subsection{Size-graded families}
 \label{subsec:scaling-families}
 
-% [Families whose factors come from the problem, grown until every method times out]
+% [Families whose factors come from the problem, grown until every
+% method times out]
 The baseline families were built to have factor structure.  The following
 five families inherit it from the problem instead, and we grow each until every
 method times out.
 \begin{itemize}
-    \item The reduced cyclic $n$-roots systems \texttt{Singular.rcyclic\_$n$}, a
+  \item The reduced cyclic $n$-roots systems \texttt{Singular.rcyclic\_$n$}, a
     variant of the cyclic $n$-roots problem~\cite{bjorck1991cyclic}, taken
-    unchanged from SymbolicData\footnote{\url{https://github.com/symbolicdata/data},
+    unchanged from
+    SymbolicData\footnote{\url{https://github.com/symbolicdata/data},
     commit \texttt{a5cdf53}.}.
-    \item Nash equilibria of $n$-player games with two pure strategies per
+  \item Nash equilibria of $n$-player games with two pure strategies per
     player~\cite{sturmfels2002solving}.  Each player $i$ either plays a pure
     strategy, $p_i(p_i-1)=0$, or is indifferent, so its payoff difference
     vanishes.  The payoffs are random integers in $[-9,9]$ (generic) or in
     $\{-1,0,1\}$ (degenerate).
-    \item Critical points of a random quadratic program $f$ on every face of the
+  \item Critical points of a random quadratic program $f$ on every face of the
     box $[0,1]^n$, given by $x_i(x_i-1)\,\partial_i f=0$.
-    \item Equilibria of a random Lotka--Volterra community on every species
+  \item Equilibria of a random Lotka--Volterra community on every species
     support~\cite{hofbauer1998evolutionary}, given by
     $x_i\bigl(r_i+\sum_j a_{ij}x_j\bigr)=0$ with $a_{ii}<0$.
 \end{itemize}
@@ -156,56 +195,74 @@ branching backend.  A method that times out at one size is not run at larger
 sizes.
 
 \begin{table}[pos=htbp]
-\centering
-\scriptsize
-\setlength{\tabcolsep}{4pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{l l l l}
-\hline
-System & Best factor branching $T$ & Best direct GB & Best decomposition \\
-\hline
-rcyclic-8 & F4 $0.019$ & \textbf{GVW} $\mathbf{0.008}$ & facstd $0.425$ \\
-rcyclic-10 & \textbf{F4} $\mathbf{0.018}$ & M4GB $0.041$ & timeout \\
-rcyclic-12 & \textbf{F4} $\mathbf{0.021}$ & M4GB $0.198$ & timeout \\
-rcyclic-14 & \textbf{F4} $\mathbf{0.029}$ & Singular dp $0.676$ & timeout \\
-rcyclic-16 & \textbf{Singular} $\mathbf{0.062}$ & Singular dp $7.154$ & timeout \\
-rcyclic-17 & \textbf{Singular} $\mathbf{0.091}$ & M2 $19.76$ & timeout \\
-rcyclic-18 & \textbf{Singular} $\mathbf{0.093}$ & M2 $34.60$ & timeout \\
-rcyclic-19 & \textbf{Singular} $\mathbf{0.113}$ & timeout & timeout \\
-\hline
-Nash generic, $n=3$ & F5 $0.044$ & \textbf{F5} $\mathbf{0.006}$ & facstd $0.197$ \\
-Nash generic, $n=4$ & \textbf{GVW} $\mathbf{0.136}$ & Singular dp $0.262$ & facstd $0.262$ \\
-Nash generic, $n=5$ & \textbf{Singular} $\mathbf{1.382}$ & timeout & timeout \\
-Nash generic, $n=6$ & timeout & timeout & timeout \\
-\hline
-Nash degenerate, $n=3$ & M4GB $0.043$ & \textbf{GVW} $\mathbf{0.005}$ & facstd $0.179$ \\
-Nash degenerate, $n=4$ & \textbf{F5} $\mathbf{0.086}$ & Singular lex $0.215$ & facstd $0.203$ \\
-Nash degenerate, $n=5$ & \textbf{Singular} $\mathbf{0.714}$ & timeout & timeout \\
-Nash degenerate, $n=6$ & timeout & timeout & timeout \\
-\hline
-Box-QP, $n=4$ & F4 $0.237$ & \textbf{F5} $\mathbf{0.005}$ & facstd $0.179$ \\
-Box-QP, $n=5$ & F5 $0.700$ & \textbf{Singular dp} $\mathbf{0.216}$ & facstd $0.297$ \\
-Box-QP, $n=6$ & M4GB $2.174$ & \textbf{F5} $\mathbf{0.033}$ & primdec $0.939$ \\
-Box-QP, $n=7$ & \textbf{F5} $\mathbf{6.494}$ & timeout & facstd $12.63$ \\
-Box-QP, $n=8$ & \textbf{F5} $\mathbf{20.42}$ & timeout & timeout \\
-Box-QP, $n=9$ & timeout & timeout & timeout \\
-\hline
-Lotka--Volterra, $n=6$ & M4GB $0.191$ & \textbf{F5} $\mathbf{0.006}$ & facstd $0.216$ \\
-Lotka--Volterra, $n=8$ & F4 $0.809$ & Singular dp $0.701$ & \textbf{facstd} $\mathbf{0.464}$ \\
-Lotka--Volterra, $n=10$ & \textbf{GVW} $\mathbf{3.002}$ & timeout & facstd $6.432$ \\
-Lotka--Volterra, $n=12$ & \textbf{F5} $\mathbf{13.15}$ & timeout & timeout \\
-Lotka--Volterra, $n=14$ & timeout & timeout & timeout \\
-\hline
-\#systems solved & $27$ & $20$ & $13$ \\
-\#fastest (ties counted) & $18$ & $8$ & $1$ \\
-\hline
-\end{tabular}%
-}
-\caption{Best completed results across solver classes on the size-graded
-families, with a 60-second limit.  For rcyclic, only selected sizes are shown;
-the summary rows count all 31 systems, rcyclic-8 to rcyclic-19 included.  All
-times are in seconds.}
-\label{tab:scaling-classes}
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \resizebox{\textwidth}{!}{%
+    \begin{tabular}{l l l l}
+      \hline
+      System & Best factor branching $T$ & Best direct GB & Best
+      decomposition \\
+      \hline
+      rcyclic-8 & F4 $0.019$ & \textbf{GVW} $\mathbf{0.008}$ & facstd $0.425$ \\
+      rcyclic-10 & \textbf{F4} $\mathbf{0.018}$ & M4GB $0.041$ & timeout \\
+      rcyclic-12 & \textbf{F4} $\mathbf{0.021}$ & M4GB $0.198$ & timeout \\
+      rcyclic-14 & \textbf{F4} $\mathbf{0.029}$ & Singular dp $0.676$
+      & timeout \\
+      rcyclic-16 & \textbf{Singular} $\mathbf{0.062}$ & Singular dp
+      $7.154$ & timeout \\
+      rcyclic-17 & \textbf{Singular} $\mathbf{0.091}$ & M2 $19.76$ & timeout \\
+      rcyclic-18 & \textbf{Singular} $\mathbf{0.093}$ & M2 $34.60$ & timeout \\
+      rcyclic-19 & \textbf{Singular} $\mathbf{0.113}$ & timeout & timeout \\
+      \hline
+      Nash generic, $n=3$ & F5 $0.044$ & \textbf{F5} $\mathbf{0.006}$
+      & facstd $0.197$ \\
+      Nash generic, $n=4$ & \textbf{GVW} $\mathbf{0.136}$ & Singular
+      dp $0.262$ & facstd $0.262$ \\
+      Nash generic, $n=5$ & \textbf{Singular} $\mathbf{1.382}$ &
+      timeout & timeout \\
+      Nash generic, $n=6$ & timeout & timeout & timeout \\
+      \hline
+      Nash degenerate, $n=3$ & M4GB $0.043$ & \textbf{GVW}
+      $\mathbf{0.005}$ & facstd $0.179$ \\
+      Nash degenerate, $n=4$ & \textbf{F5} $\mathbf{0.086}$ &
+      Singular lex $0.215$ & facstd $0.203$ \\
+      Nash degenerate, $n=5$ & \textbf{Singular} $\mathbf{0.714}$ &
+      timeout & timeout \\
+      Nash degenerate, $n=6$ & timeout & timeout & timeout \\
+      \hline
+      Box-QP, $n=4$ & F4 $0.237$ & \textbf{F5} $\mathbf{0.005}$ &
+      facstd $0.179$ \\
+      Box-QP, $n=5$ & F5 $0.700$ & \textbf{Singular dp}
+      $\mathbf{0.216}$ & facstd $0.297$ \\
+      Box-QP, $n=6$ & M4GB $2.174$ & \textbf{F5} $\mathbf{0.033}$ &
+      primdec $0.939$ \\
+      Box-QP, $n=7$ & \textbf{F5} $\mathbf{6.494}$ & timeout & facstd $12.63$ \\
+      Box-QP, $n=8$ & \textbf{F5} $\mathbf{20.42}$ & timeout & timeout \\
+      Box-QP, $n=9$ & timeout & timeout & timeout \\
+      \hline
+      Lotka--Volterra, $n=6$ & M4GB $0.191$ & \textbf{F5}
+      $\mathbf{0.006}$ & facstd $0.216$ \\
+      Lotka--Volterra, $n=8$ & F4 $0.809$ & Singular dp $0.701$ &
+      \textbf{facstd} $\mathbf{0.464}$ \\
+      Lotka--Volterra, $n=10$ & \textbf{GVW} $\mathbf{3.002}$ &
+      timeout & facstd $6.432$ \\
+      Lotka--Volterra, $n=12$ & \textbf{F5} $\mathbf{13.15}$ &
+      timeout & timeout \\
+      Lotka--Volterra, $n=14$ & timeout & timeout & timeout \\
+      \hline
+      \#systems solved & $27$ & $20$ & $13$ \\
+      \#fastest (ties counted) & $18$ & $8$ & $1$ \\
+      \hline
+    \end{tabular}%
+  }
+  \caption{Best completed results across solver classes on the size-graded
+    families, with a 60-second limit.  For rcyclic, only selected
+    sizes are shown;
+    the summary rows count all 31 systems, rcyclic-8 to rcyclic-19
+    included.  All
+  times are in seconds.}
+  \label{tab:scaling-classes}
 \end{table}
 
 % [Factor branching loses only on the smallest sizes, and its lead grows with n]
@@ -220,56 +277,116 @@ rcyclic system refines into only 3 terminal branches, each far easier than
 the whole system.  Box-QP refines into up to $3^n$ branches, 6534 at $n=8$,
 and each branch is cheap, as in the positive affine family.
 
-% [With a decomposition engine as backend: compare against the same engine alone]
+% [With a decomposition engine as backend: compare against the same
+% engine alone]
 Factor branching can also use a decomposition method as its branch solver.
-Table~\ref{tab:scaling-decomposition} compares each of the three decomposition
-methods as a backend with the same method alone.
+Table~\ref{tab:scaling-decomposition} compares \texttt{facstd} as a backend
+with \texttt{facstd} alone.  It also compares each new algorithm with the
+Singular command that computes the same object:
+Algorithm~\ref{alg:PrimaryBranching} with primdec, and
+Algorithm~\ref{alg:Branching} with \texttt{minAssGTZ}.  Both members
+of these two pairs run in one Python process that
+drives one Singular process for the whole run.  Refinement interreduces in
+lex order, and every Gr\"obner basis is in degrevlex.  The implementations use
+the optimizations described after each algorithm.
+Algorithm~\ref{alg:Branching} with \texttt{minAssGTZ} interreduces
+$P$ first, solves the
+branches fewest generators first, lets only positive-dimensional primes prune
+later branches, and prunes a branch only if it contains another as a set.
+Its branch solver $\mathcal B_{\min}$ computes a factorizing Gr\"obner
+basis~\cite{graebe1995factorized}, returns each linear piece as a prime, and
+decomposes every other piece with \texttt{minAssGTZ}~\cite{gianni1988primary}.
+Algorithm~\ref{alg:PrimaryBranching} runs Algorithm~\ref{alg:IdealReduce}
+with the factorizing Gr\"obner basis as its branch solver, takes the minimal
+primes of the reduced system from Algorithm~\ref{alg:Branching} with
+\texttt{minAssGTZ}, and uses the separators and the zero-dimensional shortcut
+of Subsection~\ref{subsec:primary-decomposition}.  It runs primdec on
+the reduced system
+only when the separators detect an embedded component, and marks its
+components with the minimal primes.
 
 \begin{table}[pos=htbp]
-\centering
-\scriptsize
-\setlength{\tabcolsep}{4pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{l l l l l l l}
-\hline
- & \multicolumn{2}{c}{\texttt{facstd}} & \multicolumn{2}{c}{primdec} & \multicolumn{2}{c}{M2 \texttt{decompose}} \\
-System & FB & alone & FB & alone & FB & alone \\
-\hline
-rcyclic-8 & $\mathbf{0.038}$ & $0.425$ & $\mathbf{0.264}$ & timeout & $1.247$ & $\mathbf{1.120}$ \\
-rcyclic-10 & $\mathbf{0.040}$ & timeout & timeout & timeout & $\mathbf{1.569}$ & timeout \\
-rcyclic-12 & $\mathbf{0.043}$ & timeout & timeout & timeout & $\mathbf{1.999}$ & timeout \\
-rcyclic-14 & $\mathbf{0.053}$ & timeout & timeout & timeout & $\mathbf{3.326}$ & timeout \\
-rcyclic-16 & $\mathbf{0.079}$ & timeout & timeout & timeout & $\mathbf{6.341}$ & timeout \\
-rcyclic-17 & $\mathbf{0.119}$ & timeout & timeout & timeout & $\mathbf{11.92}$ & timeout \\
-rcyclic-18 & $\mathbf{0.162}$ & timeout & timeout & timeout & $\mathbf{15.60}$ & timeout \\
-rcyclic-19 & $\mathbf{0.285}$ & timeout & timeout & timeout & $\mathbf{33.82}$ & timeout \\
-\hline
-Nash generic, $n=3$ & $\mathbf{0.138}$ & $0.197$ & $\mathbf{0.205}$ & $0.206$ & $4.746$ & $\mathbf{0.588}$ \\
-Nash generic, $n=4$ & $0.449$ & $\mathbf{0.262}$ & $\mathbf{0.665}$ & timeout & $15.72$ & $\mathbf{3.560}$ \\
-Nash generic, $n=5$ & $\mathbf{13.48}$ & timeout & timeout & timeout & timeout & timeout \\
-\hline
-Nash degenerate, $n=3$ & $\mathbf{0.136}$ & $0.179$ & $0.207$ & $\mathbf{0.202}$ & $4.760$ & $\mathbf{0.525}$ \\
-Nash degenerate, $n=4$ & $0.263$ & $\mathbf{0.203}$ & $\mathbf{0.433}$ & $4.766$ & $10.21$ & $\mathbf{0.789}$ \\
-Nash degenerate, $n=5$ & $\mathbf{1.634}$ & timeout & timeout & timeout & timeout & timeout \\
-\hline
-Box-QP, $n=4$ & $0.661$ & $\mathbf{0.179}$ & $1.085$ & $\mathbf{0.226}$ & $29.03$ & $\mathbf{0.806}$ \\
-Box-QP, $n=5$ & $1.928$ & $\mathbf{0.297}$ & $\mathbf{3.484}$ & $14.90$ & timeout & $\mathbf{55.87}$ \\
-Box-QP, $n=6$ & $7.528$ & $\mathbf{1.259}$ & $11.46$ & $\mathbf{0.939}$ & timeout & $\mathbf{11.58}$ \\
-Box-QP, $n=7$ & $22.77$ & $\mathbf{12.63}$ & $\mathbf{35.12}$ & timeout & timeout & timeout \\
-\hline
-Lotka--Volterra, $n=6$ & $0.615$ & $\mathbf{0.216}$ & $0.930$ & $\mathbf{0.265}$ & $20.70$ & $\mathbf{0.872}$ \\
-Lotka--Volterra, $n=8$ & $3.012$ & $\mathbf{0.464}$ & $\mathbf{4.826}$ & timeout & timeout & timeout \\
-Lotka--Volterra, $n=10$ & $10.05$ & $\mathbf{6.432}$ & $\mathbf{14.99}$ & timeout & timeout & timeout \\
-Lotka--Volterra, $n=12$ & $\mathbf{41.47}$ & timeout & timeout & timeout & timeout & timeout \\
-\hline
-\end{tabular}%
-}
-\caption{Each decomposition method as the factor branching (FB) backend and
-alone, with a 60-second limit; the faster of each pair is in bold.  A method
-that timed out at a smaller size of a family was not run again and is listed
-as a timeout.  Sizes at which every method times out are omitted.  All times
-are in seconds.}
-\label{tab:scaling-decomposition}
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \resizebox{\textwidth}{!}{%
+    \begin{tabular}{l l l l l l l}
+      \hline
+      & \multicolumn{2}{c}{\texttt{facstd}} &
+      \multicolumn{2}{c}{primdec} & \multicolumn{2}{c}{\texttt{minAssGTZ}} \\
+      System & FB & alone & Primary & alone & Prime & alone \\
+      \hline
+      rcyclic-8 & $\mathbf{0.038}$ & $0.425$ & timeout & timeout &
+      $\mathbf{0.081}$ & $10.64$ \\
+      rcyclic-10 & $\mathbf{0.040}$ & timeout & timeout & timeout &
+      $\mathbf{0.110}$ & timeout \\
+      rcyclic-12 & $\mathbf{0.043}$ & timeout & timeout & timeout &
+      $\mathbf{1.472}$ & timeout \\
+      rcyclic-14 & $\mathbf{0.053}$ & timeout & timeout & timeout &
+      $\mathbf{21.22}$ & timeout \\
+      rcyclic-16 & $\mathbf{0.079}$ & timeout & timeout & timeout &
+      timeout & timeout \\
+      rcyclic-17 & $\mathbf{0.119}$ & timeout & timeout & timeout &
+      timeout & timeout \\
+      rcyclic-18 & $\mathbf{0.162}$ & timeout & timeout & timeout &
+      timeout & timeout \\
+      rcyclic-19 & $\mathbf{0.285}$ & timeout & timeout & timeout &
+      timeout & timeout \\
+      \hline
+      Nash generic, $n=3$ & $\mathbf{0.138}$ & $0.197$ & $0.065$ &
+      $\mathbf{0.063}$ & $\mathbf{0.063}$ & $0.073$ \\
+      Nash generic, $n=4$ & $0.449$ & $\mathbf{0.262}$ & timeout &
+      timeout & $\mathbf{0.121}$ & timeout \\
+      Nash generic, $n=5$ & $\mathbf{13.48}$ & timeout & timeout &
+      timeout & timeout & timeout \\
+      \hline
+      Nash degenerate, $n=3$ & $\mathbf{0.136}$ & $0.179$ & $0.087$ &
+      $\mathbf{0.074}$ & $\mathbf{0.060}$ & $0.069$ \\
+      Nash degenerate, $n=4$ & $0.263$ & $\mathbf{0.203}$ & $6.117$ &
+      $\mathbf{5.004}$ & $\mathbf{0.088}$ & timeout \\
+      Nash degenerate, $n=5$ & $\mathbf{1.634}$ & timeout & timeout &
+      timeout & timeout & timeout \\
+      \hline
+      Box-QP, $n=4$ & $0.661$ & $\mathbf{0.179}$ & $\mathbf{0.089}$ &
+      $0.128$ & $\mathbf{0.089}$ & $0.170$ \\
+      Box-QP, $n=5$ & $1.928$ & $\mathbf{0.297}$ & $\mathbf{0.715}$ &
+      $16.20$ & $\mathbf{0.166}$ & $17.00$ \\
+      Box-QP, $n=6$ & $7.528$ & $\mathbf{1.259}$ & $\mathbf{0.423}$ &
+      $3.172$ & $\mathbf{0.446}$ & $1.564$ \\
+      Box-QP, $n=7$ & $22.77$ & $\mathbf{12.63}$ & timeout & timeout
+      & $\mathbf{1.564}$ & timeout \\
+      Box-QP, $n=8$ & timeout & timeout & timeout & timeout &
+      $\mathbf{5.742}$ & timeout \\
+      Box-QP, $n=9$ & timeout & timeout & timeout & timeout &
+      $\mathbf{23.05}$ & timeout \\
+      \hline
+      Lotka--Volterra, $n=6$ & $0.615$ & $\mathbf{0.216}$ &
+      $\mathbf{0.101}$ & $0.128$ & $\mathbf{0.096}$ & $0.161$ \\
+      Lotka--Volterra, $n=8$ & $3.012$ & $\mathbf{0.464}$ &
+      $\mathbf{1.873}$ & timeout & $\mathbf{0.254}$ & timeout \\
+      Lotka--Volterra, $n=10$ & $10.05$ & $\mathbf{6.432}$ & timeout
+      & timeout & $\mathbf{1.059}$ & timeout \\
+      Lotka--Volterra, $n=12$ & $\mathbf{41.47}$ & timeout & timeout
+      & timeout & $\mathbf{5.286}$ & timeout \\
+      Lotka--Volterra, $n=14$ & timeout & timeout & timeout & timeout
+      & $\mathbf{31.61}$ & timeout \\
+      \hline
+    \end{tabular}%
+  }
+  \caption{\texttt{facstd} as the factor branching (FB) backend and alone, and
+    each new algorithm against the Singular command with the same output, with a
+    60-second limit; the faster of each pair is in bold.  Primary is
+    primary factor branching
+    (Algorithm~\ref{alg:PrimaryBranching}), and Prime is prime factor branching,
+    Algorithm~\ref{alg:Branching} with \texttt{minAssGTZ}.  Both members of
+    these two pairs run in one Python process that drives one Singular process
+    and exclude the input conversion, so their times are not comparable with the
+    \texttt{facstd} columns or with Table~\ref{tab:scaling-classes}.  A method
+    that timed out at a smaller size of a family was not run again and is listed
+    as a timeout.  Sizes at which every method times out are omitted, and for
+    rcyclic only the sizes of Table~\ref{tab:scaling-classes} are shown.  All
+  times are in seconds.}
+  \label{tab:scaling-decomposition}
 \end{table}
 
 % [Which backend benefits: facstd on rcyclic and on the largest systems]
@@ -279,14 +396,46 @@ It also completes the largest Nash and Lotka--Volterra systems that factor
 branching solves, on which \texttt{facstd} alone times out.  On box-QP, the
 $n=4$ Nash games, and the smaller Lotka--Volterra systems, \texttt{facstd}
 alone is faster.  There, factor branching starts Singular once per terminal
-branch, whereas \texttt{facstd} alone starts it once.  With primdec, factor
-branching completes rcyclic-8, Nash generic with $n=4$, box-QP
-with $n=7$, and Lotka--Volterra with $n=8$ and $n=10$, on which primdec alone
-times out; it times out itself from rcyclic-10 and at $n=5$ for the Nash
-games.  The Macaulay2 backend likewise starts Macaulay2 once per branch.  It
-beats \texttt{decompose} alone from rcyclic-10 to rcyclic-19, where there are
-only 3 branches, but loses on the application families, for example $20.70$
-against $0.872$ seconds on the 58 branches of Lotka--Volterra with $n=6$.
+branch, whereas \texttt{facstd} alone starts it once.
+
+% [PrimeBranching reaches the minimal primes as far as factor
+% branching, until one branch is too hard]
+Algorithm~\ref{alg:Branching} with \texttt{minAssGTZ} returns the
+minimal primes of every listed
+system up to rcyclic-14, the Nash games with $n=4$, box-QP with $n=9$, and
+Lotka--Volterra with $n=14$,
+whereas \texttt{minAssGTZ} alone stops after rcyclic-8, box-QP with $n=6$,
+Lotka--Volterra with $n=6$, and the $n=3$ Nash games.  On the largest box-QP
+and Lotka--Volterra systems, it costs at most about 1.5 times as much as
+factor branching with \texttt{std} in the same harness, for example $23.05$
+against $15.13$ seconds for box-QP with $n=9$.  It stops when
+\texttt{minAssGTZ} cannot decompose one terminal branch.  On rcyclic-13, a
+single branch takes almost all of the 18 seconds, and on the degenerate Nash
+game with $n=5$, \texttt{minAssGTZ} does not finish the branch on which every
+player is indifferent.
+
+% [PrimaryBranching: isolated components are cheap; embedded
+% components still need primdec]
+Algorithm~\ref{alg:PrimaryBranching} completes 8 of the listed systems and
+primdec alone 7, and where both finish they return the same components.  It
+is faster on box-QP with $n=5$ and $n=6$, $0.715$ against $16.20$ seconds at
+$n=5$, and only it completes Lotka--Volterra with $n=8$.  On these three
+systems the separators show that no embedded component exists, so primdec
+never runs.  When embedded components exist, it runs primdec on the reduced
+system and pays for both, $6.117$ against $5.004$ seconds on the degenerate
+Nash game with $n=4$.  On rcyclic-8, it finds the three isolated components
+in $0.37$ seconds, one of them not prime, and detects an embedded component,
+but primdec times out, as it does alone.  Algorithm~\ref{alg:IdealReduce}
+stops after one round on every system it finishes, so the reduced system is
+the interreduced input.  Algorithm~\ref{alg:PrimaryBranching} needs a
+Gr\"obner basis of the ideal, so it
+times out wherever \texttt{std} does, at box-QP with $n=7$, Lotka--Volterra
+with $n=10$, and the Nash games with $n=5$.  On the generic Nash game with
+$n=4$, computing its isolated components does not finish, although
+\texttt{std} does.
+
+% [IdealReduce: no factor lies in every SAT branch here; with skipped
+% checks it matches std]
 
 \subsection{Physical System}
 \label{subsec:physical-system}
@@ -311,34 +460,35 @@ $\kappa_h\neq0$.  The branch solver receives each terminal branch with the
 generator $1-s\kappa_h$.
 
 \begin{table}[pos=htbp]
-\centering
-\small
-\setlength{\tabcolsep}{5pt}
-\begin{tabular}{l l l}
-\hline
-Backend & Factor branching $T/F$ (s) & Factor branching result \\
-\hline
-M4GB & $0.796/0.770$ & complete: 10 SAT, 0 UNSAT \\
-F5 & $0.788/0.763$ & complete: 10 SAT, 0 UNSAT \\
-GVW & $0.786/0.755$ & complete: 10 SAT, 0 UNSAT \\
-F4 & $0.781/0.755$ & complete: 10 SAT, 0 UNSAT \\
-Singular & $0.844/0.762$ & complete: 10 SAT, 0 UNSAT \\
-\texttt{facstd} & $0.857/0.764$ & complete: 10 SAT, 0 UNSAT \\
-\hline
-\end{tabular}
-\caption{Physical-system results with a 120-second total limit per run.
-Factor branching refines the saturated system into 10 terminal branches,
-which its result column counts by outcome; its $T$ and $F$ include the
-saturation.  The nine standalone baselines, including standalone
-\texttt{facstd}, all time out and are omitted.}
-\label{tab:physical-system}
+  \centering
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{l l l}
+    \hline
+    Backend & Factor branching $T/F$ (s) & Factor branching result \\
+    \hline
+    M4GB & $0.796/0.770$ & complete: 10 SAT, 0 UNSAT \\
+    F5 & $0.788/0.763$ & complete: 10 SAT, 0 UNSAT \\
+    GVW & $0.786/0.755$ & complete: 10 SAT, 0 UNSAT \\
+    F4 & $0.781/0.755$ & complete: 10 SAT, 0 UNSAT \\
+    Singular & $0.844/0.762$ & complete: 10 SAT, 0 UNSAT \\
+    \texttt{facstd} & $0.857/0.764$ & complete: 10 SAT, 0 UNSAT \\
+    \hline
+  \end{tabular}
+  \caption{Physical-system results with a 120-second total limit per run.
+    Factor branching refines the saturated system into 10 terminal branches,
+    which its result column counts by outcome; its $T$ and $F$ include the
+    saturation.  The nine standalone baselines, including standalone
+  \texttt{facstd}, all time out and are omitted.}
+  \label{tab:physical-system}
 \end{table}
 
 All nine standalone baselines time out after 120 seconds on the physical system:
 M4GB, F5, GVW, and F4 in grevlex order, Singular and Macaulay2 lex Gr\"obner
 bases, Singular \texttt{facstd} and \texttt{primdecGTZ}, and Macaulay2
 \texttt{decompose}.  Factor branching completes with every backend in 0.78 to
-0.86 seconds.  The saturation by $\kappa_h$ takes about 0.75 seconds of this time;
+0.86 seconds.  The saturation by $\kappa_h$ takes about 0.75 seconds
+of this time;
 afterwards every backend shows all 10 terminal branches SAT within 0.11
 seconds.
 
@@ -346,20 +496,23 @@ seconds.
 Without a time limit and without the optional separators,
 Algorithm~\ref{alg:PrimaryBranching} returns a minimal
 primary decomposition of the physical system over $\mathbb Q(\pi)$.
-Algorithm~\ref{alg:IdealReduce}, with $\kappa_h$ kept nonzero, reduces the 28
-equations to 18 generators in three rounds and 0.6 seconds, whose saturation by
-$\kappa_h$ has 56 generators.  Algorithm~\ref{alg:Branching} with
+Algorithm~\ref{alg:IdealReduce}, with $\kappa_h$ kept nonzero as in
+Subsection~\ref{subsec:sat-reduction}, reduces the 28 equations to 18
+generators in three rounds and 0.6 seconds. The saturation of these generators
+by $\kappa_h$ has 56 generators.  Algorithm~\ref{alg:Branching} with
 \texttt{minAssGTZ} finds the six minimal primes in 0.2 seconds, and
 \texttt{primdecSY}~\cite{shimoyama1996localization} decomposes the saturation
 in 213 seconds.  On the unreduced system, \texttt{primdecSY} did not finish in
-30 minutes when $\kappa_h\neq0$ was encoded by a Rabinowitsch generator.  Six of the ten components are isolated, in two
+30 minutes when $\kappa_h\neq0$ was encoded by a Rabinowitsch
+generator.  Six of the ten components are isolated, in two
 families of dimensions 13, 12, and 8.  In one family they are prime.  In the
 other, each component arises from its radical by replacing one generator, a
 variable, by its square, which doubles the degree.  Each family also has two
 embedded components, one of dimension 10 inside its 12-dimensional component
 and one of dimension 8 inside its 13-dimensional component.  A Gr\"obner basis
 of the saturation confirms that the components intersect to
-$\langle P\rangle:\kappa_h^\infty$.  Every step uses lex order with the variables ordered by a
+$\langle P\rangle:\kappa_h^\infty$.  Every step uses lex order with
+the variables ordered by a
 min-fill heuristic on the supports of the equations.  With the variables in
 alphabetical order, Algorithm~\ref{alg:IdealReduce} stops at 27 generators,
 because the factorizing Gr\"obner basis of the largest hitting set does not

@@ -5,15 +5,15 @@ import FactorBranching.IdealReduction
 /-!
 # Primary factor branching
 
-Section "Primary factor branching": Algorithm `alg:PrimaryBranching`, Theorem
-`thm:primary-branching`, and Lemma `lem:isolated-separator` with the optimizations it justifies.
+Subsection `subsec:primary-decomposition`: Algorithm `alg:PrimaryBranching`, Theorem
+`thm:primary-branching`, and Lemma `lem:isolated-separator`.
 
-The algorithm reduces `P` to `Q` with Algorithm `alg:IdealReduce` (`⟨Q⟩ = ⟨P⟩`, Theorem
-`thm:ideal-reduce`), decomposes `⟨Q⟩` with `𝓑_prim`, and marks each component isolated when its
-radical is one of the minimal primes returned by `𝓑_min`. Under it, the paper's optimizations: the
-isolated components from separators, which already form a minimal primary decomposition when
-they intersect to `⟨P⟩` (`separatedComponents_unmixed`), and the mark by containment and
-dimension (`eq_of_le_of_ringKrullDim_eq`).
+Primary factor branching reduces `P` to `Q` with Algorithm `alg:IdealReduce` (`⟨Q⟩ = ⟨P⟩`, Theorem
+`thm:ideal-reduce`) and takes the minimal primes returned by `𝓑_min`. In its optional lines it
+computes the isolated components from separators and returns them when they intersect to `⟨P⟩`
+(`separatedComponents_unmixed`). Otherwise it decomposes `⟨Q⟩` with `𝓑_prim` and marks each
+component isolated when its radical is one of the minimal primes, which containment and dimension
+decide (`eq_of_le_of_ringKrullDim_eq`).
 
 Primary decompositions are Mathlib's `Submodule.IsMinimalPrimaryDecomposition` (primary components
 with distinct radicals, none redundant); for an ideal the radical `√(q : R)` there is
@@ -242,7 +242,7 @@ theorem mem_isolatedComponents {I q : Ideal (MvPolynomial σ K)} {t : Finset (Id
     q ∈ isolatedComponents I t ↔ q ∈ t ∧ q.radical ∈ I.minimalPrimes :=
   Finset.mem_filter
 
-/-! ### Algorithm `alg:PrimaryBranching` and Theorem `thm:primary-branching` -/
+/-! ### Primary factor branching and Theorem `thm:primary-branching` -/
 
 /-- A primary decomposition algorithm `𝓑_prim`. -/
 structure PrimarySolver (K : Type*) [Field K] (σ : Type*) where
@@ -267,7 +267,7 @@ theorem top_saturation_separator [Finite σ] {I 𝔭 : Ideal (MvPolynomial σ K)
   rw [𝒯.spec _ _ (isMinimalPrimaryDecomposition_saturation ht _), htop, Finset.inf_singleton]
   exact ⟨hqt, hq𝔭⟩
 
-/-- The components `𝔮_1, …, 𝔮_r` that Algorithm `alg:PrimaryBranching` computes from the minimal
+/-- The components `𝔮_1, …, 𝔮_r` that the optional lines of Algorithm `alg:PrimaryBranching` compute from the minimal
 primes `ps` and the separators `sep`. -/
 def separatedComponents (ps : Finset (Ideal (MvPolynomial σ K))) (sep : Ideal (MvPolynomial σ K) → MvPolynomial σ K)
     (𝒯 : TopPartSolver K σ) (P : Finset (MvPolynomial σ K)) : Finset (Ideal (MvPolynomial σ K)) :=
@@ -296,7 +296,7 @@ theorem separatedComponents_eq [Finite σ] {P : Finset (MvPolynomial σ K)} {ps 
     exact ⟨q.radical, hq, radical_injOn ht hct hqt hcrad⟩
 
 
-/-- **Optimization: isolated components by separators.** If the components `𝔮_i` computed from
+/-- **Isolated components by separators (optional lines).** If the components `𝔮_i` computed from
 the separators intersect to `⟨P⟩`, they already form a minimal primary decomposition: their radicals
 are the distinct minimal primes, and by prime avoidance no `𝔮_i` is redundant. -/
 theorem separatedComponents_unmixed [Finite σ] {P : Finset (MvPolynomial σ K)}
@@ -334,19 +334,19 @@ theorem eq_of_le_of_ringKrullDim_eq [Finite σ] {𝔭 𝔮 : Ideal (MvPolynomial
 def mark (ps : Finset (Ideal (MvPolynomial σ K))) (q : Ideal (MvPolynomial σ K)) : Bool :=
   decide (q.radical ∈ ps)
 
-/-- Algorithm `alg:PrimaryBranching`. `Q` is the output of Algorithm `alg:IdealReduce` on `P`,
-and `ps` are the minimal primes returned by `𝓑_min`. Each component of `𝓑_prim(Q)` is returned
-with its mark. -/
+/-- Algorithm `alg:PrimaryBranching` without its optional lines. `Q` is the output of Algorithm
+`alg:IdealReduce` on `P`, and `ps` are the minimal primes returned by `𝓑_min`. Each component of
+`𝓑_prim(Q)` is returned with its mark. -/
 def primaryBranching (ps : Finset (Ideal (MvPolynomial σ K))) (𝓑prim : PrimarySolver K σ)
     (Q : Finset (MvPolynomial σ K)) : Finset (Ideal (MvPolynomial σ K) × Bool) :=
   (𝓑prim.decompose Q).image fun q => (q, mark ps q)
 
 variable {m : MonomialOrder σ}
 
-/-- **Theorem `thm:primary-branching` (Primary branching).** Let `Q` be any system that
-Algorithm `alg:IdealReduce` reaches from `P` (for any answers of the branch solver `𝓑`), `ps` the
-minimal primes of `⟨P⟩`, and `𝓑_prim` a primary decomposition algorithm. Then the components that
-Algorithm `alg:PrimaryBranching` returns form a minimal primary decomposition of `⟨P⟩`; a component
+/-- **Theorem `thm:primary-branching` (Primary factor branching), without the optional lines.** Let `Q` be any
+system that Algorithm `alg:IdealReduce` reaches from `P` (for any answers of the branch solver `𝓑`),
+`ps` the minimal primes of `⟨P⟩`, and `𝓑_prim` a primary decomposition algorithm. Then the
+components that Algorithm `alg:PrimaryBranching` returns form a minimal primary decomposition of `⟨P⟩`; a component
 is marked isolated exactly when its radical is a minimal prime of `⟨P⟩`, and the radical of every
 component marked embedded strictly contains a minimal prime. -/
 theorem primaryBranching_spec [Finite σ] (ρ : Refiner K m) {P Q : Finset (MvPolynomial σ K)}
@@ -374,5 +374,64 @@ theorem primaryBranching_spec [Finite σ] (ρ : Refiner K m) {P Q : Finset (MvPo
   have : q.radical.IsPrime := Ideal.isPrime_radical (hD.primary hq)
   obtain ⟨𝔭, h𝔭, h𝔭q⟩ := Ideal.exists_minimalPrimes_le ((le_of_mem hD hq).trans Ideal.le_radical)
   exact ⟨𝔭, h𝔭, lt_of_le_of_ne h𝔭q fun h => hnot (hmem.mpr (by rw [← h]; exact h𝔭))⟩
+
+/-- Algorithm `alg:PrimaryBranching` with its optional lines: if the components `𝔮_i` computed from
+the separators intersect to `⟨Q⟩`, they are returned, all marked isolated; otherwise `𝓑_prim` runs. -/
+def primaryBranchingSeparated (ps : Finset (Ideal (MvPolynomial σ K)))
+    (sep : Ideal (MvPolynomial σ K) → MvPolynomial σ K) (𝒯 : TopPartSolver K σ)
+    (𝓑prim : PrimarySolver K σ) (Q : Finset (MvPolynomial σ K)) :
+    Finset (Ideal (MvPolynomial σ K) × Bool) :=
+  if (separatedComponents ps sep 𝒯 Q).inf id = Ideal.span (↑Q : Set (MvPolynomial σ K)) then
+    (separatedComponents ps sep 𝒯 Q).image fun q => (q, true)
+  else primaryBranching ps 𝓑prim Q
+
+/-- **Theorem `thm:primary-branching` (Primary factor branching), with the optional lines.** Under the
+hypotheses of `primaryBranching_spec`, and with a separator `sep 𝔭` of every minimal prime `𝔭`, the
+same conclusion holds. -/
+theorem primaryBranchingSeparated_spec [Finite σ] (ρ : Refiner K m) {P Q : Finset (MvPolynomial σ K)}
+    (h0 : (0 : MvPolynomial σ K) ∉ P) (hrun : Relation.ReflTransGen ρ.ReduceStep (ρ.I.ired P) Q)
+    (ps : Finset (Ideal (MvPolynomial σ K)))
+    (hps : (↑ps : Set (Ideal (MvPolynomial σ K))) = (Ideal.span (↑P : Set (MvPolynomial σ K))).minimalPrimes)
+    {sep : Ideal (MvPolynomial σ K) → MvPolynomial σ K}
+    (hsep : ∀ 𝔭 ∈ ps, IsSeparator (Ideal.span (↑P : Set (MvPolynomial σ K))) 𝔭 (sep 𝔭))
+    (𝒯 : TopPartSolver K σ) (𝓑prim : PrimarySolver K σ) :
+    Submodule.IsMinimalPrimaryDecomposition (Ideal.span (↑P : Set (MvPolynomial σ K)))
+        ((primaryBranchingSeparated ps sep 𝒯 𝓑prim Q).image Prod.fst) ∧
+      ∀ x ∈ primaryBranchingSeparated ps sep 𝒯 𝓑prim Q,
+        (x.2 = true ↔ x.1.radical ∈ (Ideal.span (↑P : Set (MvPolynomial σ K))).minimalPrimes) ∧
+        (x.2 = false → ∃ 𝔭 ∈ (Ideal.span (↑P : Set (MvPolynomial σ K))).minimalPrimes, 𝔭 < x.1.radical) := by
+  unfold primaryBranchingSeparated
+  split_ifs with hinf
+  · -- the optional lines return: `⟨Q⟩ = ⟨P⟩`, so the separated components decompose `⟨P⟩`, all isolated
+    have hspan := ρ.ideal_reduce_span h0 hrun
+    rw [← hspan] at hps hsep
+    obtain ⟨t, ht⟩ := Submodule.IsLasker.exists_isMinimalPrimaryDecomposition
+      (Submodule.isLasker (MvPolynomial σ K) (MvPolynomial σ K)) (Ideal.span (↑Q : Set (MvPolynomial σ K)))
+    have hfst : ((separatedComponents ps sep 𝒯 Q).image fun q => (q, true)).image Prod.fst =
+        separatedComponents ps sep 𝒯 Q := by
+      simp [Finset.image_image, Function.comp_def]
+    rw [hfst, ← hspan]
+    refine ⟨separatedComponents_unmixed hps hsep 𝒯 hinf, fun x hx => ?_⟩
+    obtain ⟨q, hq, rfl⟩ := Finset.mem_image.mp hx
+    rw [separatedComponents_eq hps hsep 𝒯 ht] at hq
+    exact ⟨⟨fun _ => (mem_isolatedComponents.mp hq).2, fun _ => rfl⟩, fun h => by simp at h⟩
+  · exact primaryBranching_spec ρ h0 hrun ps hps 𝓑prim
+
+/-- **Theorem `thm:primary-branching` (Primary factor branching), membership.** If every component
+of a minimal primary decomposition of `⟨P⟩`, such as the output of Algorithm `alg:PrimaryBranching`, is
+given by a Gröbner basis, then `g ∈ ⟨P⟩` iff `g` reduces to zero modulo the basis of every
+component. -/
+theorem mem_span_iff_reduces_to_zero_components {P : Finset (MvPolynomial σ K)}
+    {t : Finset (Ideal (MvPolynomial σ K))}
+    (ht : Submodule.IsMinimalPrimaryDecomposition (Ideal.span (↑P : Set (MvPolynomial σ K))) t)
+    (basis : Ideal (MvPolynomial σ K) → Finset (MvPolynomial σ K))
+    (hbasis : ∀ q ∈ t, IsGroebnerBasis m (basis q) q) (g : MvPolynomial σ K) :
+    g ∈ Ideal.span (↑P : Set (MvPolynomial σ K)) ↔
+      ∀ q ∈ t, ∀ r, IsRemainder m (basis q) g r → r = 0 := by
+  rw [← ht.inf_eq, Submodule.mem_finsetInf]
+  refine forall₂_congr fun q hq => ⟨fun hg r hr => (mem_iff_remainder_eq_zero (hbasis q hq) hr).mp hg,
+    fun h => ?_⟩
+  obtain ⟨r, hr⟩ := exists_isRemainder (hbasis q hq).2.1 g
+  exact (mem_iff_remainder_eq_zero (hbasis q hq) hr).mpr (h r hr)
 
 end FactorBranching

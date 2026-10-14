@@ -1,0 +1,51 @@
+\begin{tikzpicture}[
+    font=\small,
+    grid line/.style={draw=black!25, line width=0.6pt},
+    undefined region/.style={draw=red!70, line width=1pt, fill=red!4},
+    hatch/.style={draw=red!45, line width=0.6pt},
+    method label/.style={anchor=south west, font=\footnotesize,
+    text=green!45!black, inner sep=1pt},
+    arr/.style={-{Stealth[length=2.6mm]}, line width=0.8pt},
+    method/.pic={
+      \foreach \a in {30, 90, 150}
+      \draw[line width=1.1pt, green!55!black] (\a:2.4mm) -- (\a+180:2.4mm);
+    },
+  ]
+
+  % ---- grid: columns by breakdown, rows by retained information ----
+  \foreach \x/\name in {0/one piece, 2.4/decomposition, 4.8/components} {
+    \draw[grid line] (\x, -0.6) -- (\x, 5.4);
+    \node[anchor=north, text height=1.6ex, text depth=0.3ex] at (\x,
+    -0.75) {\name};
+  }
+  \foreach \y/\name in {4.8/{$I$}, 3.2/{$\sqrt{I}$},
+  1.6/{properties\\ of $V(I)$}, 0/{$V(I)=\emptyset$?}} {
+    \draw[grid line] (-0.6, \y) -- (5.4, \y);
+    \node[anchor=east, align=right] at (-0.75, \y) {\name};
+  }
+
+  % ---- undefined combinations ----
+  \draw[undefined region] (1.2, -0.6) rectangle (5.4, 0.6);
+  \begin{scope}
+    \clip (1.2, -0.6) rectangle (5.4, 0.6);
+    \foreach \x in {-0.1, 0.2, ..., 5.4}
+    \draw[hatch] (\x, -0.6) -- ++(1.2, 1.2);
+  \end{scope}
+  \node[fill=red!4, inner sep=2pt, text=red!70!black] at (3.3, 0) {undefined};
+
+  % ---- methods presented in the paper ----
+  \foreach \x/\y/\alg in {4.8/4.8/alg:PrimaryBranching, 2.4/3.2/alg:Branching,
+  0/4.8/alg:IdealReduce} {
+    \pic at (\x, \y) {method};
+    \node[method label] at (\x + 0.15, \y + 0.2) {Algorithm~\ref*{\alg}};
+  }
+  \pic at (4.8, 3.2) {method};
+  \node[method label] at (4.95, 3.4) {Theorem~\ref*{thm:prime-branching}};
+
+  % ---- axis titles ----
+  \draw[arr] (0, -1.5) -- (4.8, -1.5)
+  node[midway, below] {breakdown of the ideal};
+  \draw[arr] (-2.9, 0) -- (-2.9, 4.8)
+  node[midway, above, rotate=90] {information retained};
+
+\end{tikzpicture}

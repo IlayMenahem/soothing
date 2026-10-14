@@ -29,17 +29,13 @@ lake env lean Audit.lean  # prints the axioms of every result
 | Absorption optimization | `Refiner.primeBranching_with_absorption` | `PrimeBranching.lean` |
 | Lemma `lem:sat-branches` | `Factorizer.pow_maxMult_mem_span` (geometric SAT: `pow_maxMult_mem_span'`) | `IdealReduction.lean` |
 | Theorem `thm:ideal-reduce` | `Refiner.ideal_reduce_terminates`, `Refiner.ideal_reduce_span` | `IdealReduction.lean` |
-| Power branches are exact for large `k` (§`subsec:ideal-branching-framework`) | `power_branches` | `IdealRefinement.lean` |
-| Lemma `lem:saturation-split` | `saturation_split` | `IdealRefinement.lean` |
-| Theorem `thm:ideal-refine` | `IdealRefine.exists_round_no_split`, `IdealRefine.span_eq_inf_leaves` | `IdealRefinement.lean` |
-| Corollary `cor:ideal-membership` | `IdealRefine.mem_span_iff_forall_leaves`, `mem_span_iff_reduces_to_zero` | `IdealRefinement.lean` |
 | Gröbner bases decide membership (preliminaries) | `mem_iff_remainder_eq_zero`, `exists_isRemainder` | `IdealRefinement.lean` |
-| Separators exist (§`subsec:primary-branching-framework`) | `exists_separator` | `PrimaryBranching.lean` |
+| Separators exist (§`subsec:primary-decomposition`) | `exists_separator` | `PrimaryBranching.lean` |
 | Saturation keeps components, `J:u^∞ = ⋂_{u∉𝔭_j} 𝔮_j` | `saturation_finsetInf_primary` | `PrimaryBranching.lean` |
 | Lemma `lem:isolated-separator` | `isolated_separator` | `PrimaryBranching.lean` |
-| Isolated components by separators suffice when they intersect to `⟨P⟩` (§`subsec:primary-branching-framework`) | `separatedComponents_unmixed` | `PrimaryBranching.lean` |
-| Marking by containment and dimension (§`subsec:primary-branching-framework`) | `eq_of_le_of_ringKrullDim_eq` | `PrimaryBranching.lean` |
-| Theorem `thm:primary-branching` | `primaryBranching_spec` | `PrimaryBranching.lean` |
+| Isolated components by separators suffice when they intersect to `⟨P⟩` (§`subsec:primary-decomposition`) | `separatedComponents_unmixed` | `PrimaryBranching.lean` |
+| Marking by containment and dimension (§`subsec:primary-decomposition`) | `eq_of_le_of_ringKrullDim_eq` | `PrimaryBranching.lean` |
+| Theorem `thm:primary-branching` | `primaryBranching_spec` (without the optional lines), `primaryBranchingSeparated_spec` (with them), `mem_span_iff_reduces_to_zero_components` (membership) | `PrimaryBranching.lean` |
 | Rabinowitsch encoding of the nonzero conditions (§`subsec:zeroing-branching`) | `separate_encoding` | `VariableZeroing.lean` |
 | Product encoding `1 - s ∏_{x ∈ N} x` (no longer in the paper) | `product_encoding` | `VariableZeroing.lean` |
 | Auxiliary generators survive refinement (Rabinowitsch encoding, §`subsec:zeroing-branching`; no longer used by Algorithm `alg:ZeroingBranching`) | `projection_auxGen`, `degree_auxGen_apply`, `auxGen_reduces_none`, `auxGen_not_reduced_by_auxGen`, `reduceTerm_auxGen`, `irreducible_auxGen`, `mem_of_isHitting_auxGen` | `AuxGenerators.lean` |
@@ -83,8 +79,13 @@ that carries exactly what the paper assumes, and each theorem holds for every ad
   intersection of the components of maximal dimension. That this doesn't depend on which
   decomposition is chosen (uniqueness of isolated components) is part of its specification,
   not proved here. Algorithm `alg:PrimaryBranching` takes any system `Q` that Algorithm
-  `alg:IdealReduce` reaches from `P`, and returns each component of `𝓑_prim(Q)` paired with its
-  mark (`true` for isolated).
+  `alg:IdealReduce` reaches from `P`. With its optional lines (`primaryBranchingSeparated`) it
+  returns the components from the separators, all marked isolated, if they intersect to `⟨Q⟩`.
+  Otherwise, and always without them (`primaryBranching`), it returns each component of
+  `𝓑_prim(Q)` paired with its mark (`true` for isolated).
+- **Ideal refinement.** `IdealRefinement.lean` also formalizes an ideal refinement algorithm
+  (`IdealRefine`, `saturation_split`, `power_branches`) that is no longer in the paper. The paper
+  uses only its saturation and Gröbner-membership lemmas.
 - **Variable zeroing.** Every branch lives in the original ring `K[Y]`, without auxiliary
   variables. A point is a full `a : Y → L` with `a_z = 0` for `z ∈ Z`, which is equivalent to
   the paper's restriction to `Y ∖ Z`. `H|_{x=0}` drops equations that become `0`.

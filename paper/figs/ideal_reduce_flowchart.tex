@@ -1,0 +1,81 @@
+\begin{tikzpicture}[
+    font=\small,
+    every node/.style={align=center},
+    blue box/.style={draw=blue!70!cyan, line width=1pt, rounded corners=6pt,
+    fill=blue!50!cyan!4, inner sep=7pt},
+    loop box/.style={draw=orange!85!black, line width=1pt, rounded corners=6pt,
+    fill=yellow!40!orange!12, inner sep=7pt},
+    decision/.style={draw=green!55!black, line width=1pt, diamond, aspect=1.8,
+    fill=green!60!teal!8, inner sep=1pt},
+    green box/.style={draw=green!55!black, line width=1pt, rounded corners=6pt,
+    fill=green!60!teal!4, inner sep=7pt},
+    red box/.style={draw=red!70, line width=1pt, rounded corners=6pt,
+    fill=red!4, inner sep=7pt},
+    return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
+    fill=violet!6, inner sep=7pt},
+    arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
+  ]
+
+  % ---- initialization ----
+  \node[blue box] (init) {%
+    \textcolor{blue}{\bfseries Initialize}\\
+  $Q\gets\Call{Interreduce}{P}$};
+
+  % ---- classify every minimal hitting set ----
+  \node[loop box, below=8mm of init] (classify) {%
+    \textcolor{orange!75!black}{\bfseries Classify}\\
+    Solve the terminal branches of\\
+  each $H\in\mathcal H(Q)$ with $\mathcal B$};
+
+  % ---- two outcome branches ----
+  \node[red box, anchor=west] (unsat) at ($(classify.south)+(8mm,-10mm)$) {%
+    \textcolor{red}{\bfseries UNSAT}\\
+  Drop $H$};
+
+  \node[green box, anchor=east] (sat) at ($(classify.south)+(-8mm,-10mm)$) {%
+    \textcolor{green!45!black}{\bfseries SAT or unknown}\\
+  Keep $H$ in $\mathcal H_{\mathrm{sat}}$};
+
+  % ---- bottom rail ----
+  \coordinate (raill) at ($(sat.south)+(0,-4mm)$);
+  \coordinate (railm) at (raill -| classify.south);
+  \coordinate (railr) at (raill -| unsat.south);
+
+  % ---- collect the certified members ----
+  \node[blue box, below=7mm of railm] (collect) {%
+    \textcolor{blue}{\bfseries Collect ideal members}\\
+  $\Delta\gets\{h^{a_h}:h\in\bigcap\mathcal H_{\mathrm{sat}}\}\setminus Q$};
+
+  % ---- decision, return, and replacement ----
+  \node[decision, below=7mm of collect] (empty) {$\Delta=\emptyset$?};
+  \node[return box, right=12mm of empty] (return)
+  {\textcolor{violet}{\bfseries Return $Q$}};
+  \node[blue box, below=7mm of empty] (replace) {%
+    \textcolor{blue}{\bfseries Replace}\\
+    Add $\Delta$, drop the generators that\\
+  an element of $\Delta$ divides, interreduce};
+
+  % ---- arrows: pipeline ----
+  \draw[arr] (init) -- (classify);
+  \coordinate (outcome split) at ($(classify.south)+(0,-6mm)$);
+  \draw[line width=1pt] (classify.south) -- (outcome split);
+  \draw[arr] (outcome split)
+  .. controls +(0,-2.2mm) and +(-2.2mm,0) .. ++(4mm,-4mm)
+  -- (unsat.west);
+  \draw[arr] (outcome split)
+  .. controls +(0,-2.2mm) and +(2.2mm,0) .. ++(-4mm,-4mm)
+  -- (sat.east);
+  \draw[line width=1pt] (sat.south) -- (raill) -- (railr) -- (unsat.south);
+  \draw[arr] (railm) -- (collect);
+  \draw[arr] (collect) -- (empty);
+  \draw[arr] (empty) -- node[above] {yes} (return);
+  \draw[arr] (empty) -- node[right] {no} (replace);
+
+  % ---- feedback: the new system is classified again ----
+  \coordinate (fbcol) at ($(sat.west)+(-8mm,0)$);
+  \coordinate (feedback) at (fbcol |- classify.west);
+  \draw[line width=1pt, rounded corners=5pt]
+  (replace.west) -- (replace.west -| fbcol) -- (feedback);
+  \draw[arr] (feedback) -- (classify.west);
+
+\end{tikzpicture}

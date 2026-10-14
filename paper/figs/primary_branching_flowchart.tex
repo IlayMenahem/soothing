@@ -1,0 +1,58 @@
+\begin{tikzpicture}[
+    font=\small,
+    every node/.style={align=center},
+    blue box/.style={draw=blue!70!cyan, line width=1pt, rounded corners=6pt,
+    fill=blue!50!cyan!4, inner sep=7pt},
+    loop box/.style={draw=orange!85!black, line width=1pt, rounded corners=6pt,
+    fill=yellow!40!orange!12, inner sep=7pt},
+    decision/.style={draw=green!55!black, line width=1pt, diamond, aspect=1.8,
+    fill=green!60!teal!8, inner sep=1pt},
+    return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
+    fill=violet!6, inner sep=7pt},
+    arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
+  ]
+
+  % ---- ideal reduction and the minimal primes ----
+  \node[blue box, text width=45mm] (reduce) {%
+    \textcolor{blue}{\bfseries Ideal reduction}\\
+    $Q\gets\Call{IdealReduce}{P,\mathcal B}$\\
+  $\langle Q\rangle=\langle P\rangle$};
+
+  \node[blue box, text width=45mm, right=10mm of reduce] (primes) {%
+    \textcolor{blue}{\bfseries Minimal primes}\\
+    $\mathfrak p_1,\ldots,\mathfrak p_r$ of $\langle Q\rangle$ by\\
+  Algorithm~\ref*{alg:Branching} with $\mathcal B_{\min}$};
+
+  % ---- isolated components from separators (optional) ----
+  \node[loop box, text width=45mm, below=8mm of primes] (separate) {%
+    \textcolor{orange!75!black}{\bfseries Isolated components (optional)}\\
+    $\mathfrak q_i\gets$ top-dimensional part of\\
+  $\langle Q\rangle:w_i^\infty$, $w_i$ a separator of $\mathfrak p_i$};
+
+  \node[decision, below=7mm of separate] (unmixed)
+  {$\bigcap_i\mathfrak q_i=\langle Q\rangle$?};
+  \node[return box, text width=45mm] (isolated) at (reduce |- unmixed) {%
+    \textcolor{violet}{\bfseries Return $\mathfrak q_1,\ldots,\mathfrak q_r$}\\
+  all isolated};
+
+  % ---- the general decomposition, marked by the minimal primes ----
+  \node[blue box, text width=45mm, below=7mm of unmixed] (decompose) {%
+    \textcolor{blue}{\bfseries Primary decomposition}\\
+    $\mathcal D\gets\mathcal B_{\mathrm{prim}}(Q)$; $\mathfrak
+    q\in\mathcal D$ is\\
+    isolated if $\sqrt{\mathfrak q}\in\{\mathfrak p_1,\ldots,\mathfrak p_r\}$,\\
+  embedded otherwise};
+
+  \node[return box, text width=45mm] (done) at (reduce |- decompose) {%
+    \textcolor{violet}{\bfseries Return $\mathcal D$}\\
+  minimal primary decomposition\\ of $\langle P\rangle$};
+
+  % ---- arrows ----
+  \draw[arr] (reduce) -- (primes);
+  \draw[arr] (primes) -- (separate);
+  \draw[arr] (separate) -- (unmixed);
+  \draw[arr] (unmixed) -- node[above] {yes} (isolated);
+  \draw[arr] (unmixed) -- node[right] {no} (decompose);
+  \draw[arr] (decompose) -- (done);
+
+\end{tikzpicture}
