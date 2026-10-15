@@ -56,7 +56,7 @@ from typing import TextIO
 
 import sympy as sp
 
-from _systems import load_system, mathematica_rules, poly_to_singular
+from _systems import load_system, mathematica_rules, min_fill_variables, poly_to_singular
 
 REPO = Path(__file__).resolve().parent.parent
 SYMBOLICA = REPO / "symbolica"
@@ -65,6 +65,13 @@ PHYSICAL_SOURCE = REPO / "systems" / "system.txt"
 PHYSICAL_SYSTEM = RESULTS / "physical_system.txt"
 PHYSICAL_RABINOWITSCH_RULE = "0 -> rRabKappah*kappah - 1"
 PHYSICAL_NONZERO: tuple[str, ...] = ("kappah",)
+# The Singular settings of every physical experiment (the fields of factor_variants.Settings), chosen on
+# the physical systems: Singular's sat, primdecSY, and the separators of Alg. PrimaryBranching. Saturations
+# and decompositions run in lex with the min-fill variable order on the physical system (Rlp) and in
+# degrevlex with the variables in name order on the graviton-fermion systems (Rdp). Coefficients lie in
+# Q(pi) wherever Singular and Macaulay2 allow it.
+PHYSICAL_SETTINGS: dict[str, object] = {"saturation": "sat", "primdec": "primdecSY", "separators": True, "ring": "Rlp"}
+GRAVFERM_SETTINGS: dict[str, object] = {**PHYSICAL_SETTINGS, "ring": "Rdp"}
 BINARIES: dict[str, Path] = {
     name: SYMBOLICA / "target" / "release" / name
     for name in ("sig_groebner", "branching", "variable_zeroing")
@@ -79,6 +86,7 @@ EXTERNAL: dict[str, tuple[str, list[str]]] = {
     "singular-gb-lex": ("singular", ["--task", "gb"]),
     "singular-facstd": ("singular", ["--task", "facstd"]),
     "singular-primdecGTZ": ("singular", ["--task", "decompose"]),
+    "singular-primdecSY": ("singular", ["--task", "decompose", "--primdec", "primdecSY"]),
     "m2-gb-lex": ("macaulay2", ["--task", "gb"]),
     "m2-decompose": ("macaulay2", ["--task", "decompose"]),
 }
@@ -561,7 +569,10 @@ def run_zeroing(
     }
 
 
-def run_external(label: str, path: Path, timeout: int, nonzero: tuple[str, ...] = ()) -> dict[str, object]:
+def run_external(
+    label: str, path: Path, timeout: int, nonzero: tuple[str, ...] = (), lex_min_fill: bool = False
+) -> dict[str, object]:
+    """One Singular or Macaulay2 baseline; with `lex_min_fill`, in lex with the min-fill variable order."""
     tool, extra = EXTERNAL[label]
     stdout, _, wall, killed, _ = run(
         [
@@ -573,6 +584,7 @@ def run_external(label: str, path: Path, timeout: int, nonzero: tuple[str, ...] 
             "--timeout-secs",
             str(timeout),
             *nonzero_arguments(nonzero),
+            *(["--lex-min-fill"] if lex_min_fill else []),
         ],
         timeout + 2,
     )
@@ -663,20 +675,25 @@ SINGULAR_LABELS: dict[str, str] = {
 }
 
 
-def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str, nonzero: list[str]) -> str:
-    # The Rust loader recognizes Mathematica's \[Pi] as the
-    # coefficient ``pi`` and excludes it from the polynomial variable order.
-    # Match that interpretation for facstd with the transcendental coefficient
-    # field Q(pi).  The older baseline modes retain their historical behavior.
-    coefficient_symbols = [s for s in symbols if task == "facstd" and str(s) == "pi"]
+def _singular_program(
+    polys: list[sp.Basic],
+    symbols: list[sp.Symbol],
+    task: str,
+    nonzero: list[str],
+    lex_min_fill: bool = False,
+    primdec: str = "primdecGTZ",
+) -> str:
+    # pi is transcendental, so it is a coefficient: the field is Q(pi).
+    coefficient_symbols = [s for s in symbols if str(s) == "pi"]
     polynomial_symbols = [s for s in symbols if s not in coefficient_symbols]
     coefficients = (
         f"(0,{','.join(str(s) for s in coefficient_symbols)})"
         if coefficient_symbols
         else "0"
     )
-    ordering = "dp" if task in {"facstd", "gb-dp"} else "lp"
-    ring_vars = ",".join(str(s) for s in polynomial_symbols)
+    ordering = "dp" if task in {"facstd", "gb-dp"} and not lex_min_fill else "lp"
+    names = [str(s) for s in polynomial_symbols]
+    ring_vars = ",".join(min_fill_variables(polys, names) if lex_min_fill else names)
     ideal_body = ",\n    ".join(poly_to_singular(p) for p in polys)
     # Singular's `printf` only accepts a literal format with no substitution;
     # we use `print("LABEL " + string(value))` instead, which auto-newlines.
@@ -707,7 +724,7 @@ def _singular_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str
         )
     elif task == "decompose":
         body = (
-            'list pd = primdecGTZ(I);\n'
+            f'list pd = {primdec}(I);\n'
             'int dt = rtimer - t0;\n'
             'print("SOLVE_MS " + string(dt));\n'
             'print("NUM_COMPONENTS " + string(size(pd)));\n'
@@ -769,12 +786,19 @@ def _poly_to_m2(poly: sp.Basic, rename: dict[str, str]) -> str:
     return text
 
 
-def _m2_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str, nonzero: list[str]) -> str:
+def _m2_program(
+    polys: list[sp.Basic], symbols: list[sp.Symbol], task: str, nonzero: list[str], lex_min_fill: bool = False
+) -> str:
     # M2 predefines several lower-case identifiers as mathematical constants
     # (e, pi, ii), and "_" is its indexed-variable operator. Use positional
     # alphanumeric names so both collisions and accidental indexing are impossible.
     rename = {str(symbol): f"v{index}" for index, symbol in enumerate(symbols)}
-    ring_vars = ",".join(rename[str(s)] for s in symbols)
+    # pi is transcendental, so it is a coefficient: the field is Q(pi). M2's decompose has no strategy
+    # over a fraction field, so there pi stays a variable.
+    coefficients = [rename[str(s)] for s in symbols if str(s) == "pi" and task == "gb"]
+    field = f"frac(QQ[{','.join(coefficients)}])" if coefficients else "QQ"
+    names = [str(s) for s in symbols if rename[str(s)] not in coefficients]
+    ring_vars = ",".join(rename[name] for name in (min_fill_variables(polys, names) if lex_min_fill else names))
     ideal_body = ",\n  ".join(_poly_to_m2(p, rename) for p in polys)
     saturation = f"I = saturate(I, {'*'.join(rename[name] for name in nonzero)});\n" if nonzero else ""
     # cpuTime() returns floating-point seconds; ``currentTime()`` is integer-second
@@ -804,7 +828,7 @@ def _m2_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str, nonz
     else:
         raise ValueError(f"unknown task: {task}")
     return (
-        f'R = QQ[{ring_vars}, MonomialOrder => Lex];\n'
+        f'R = {field}[{ring_vars}, MonomialOrder => Lex];\n'
         f'I = ideal(\n  {ideal_body}\n);\n'
         f'{body}'
         f'<< "DONE\\n";\n'
@@ -813,7 +837,7 @@ def _m2_program(polys: list[sp.Basic], symbols: list[sp.Symbol], task: str, nonz
 
 
 def singular_main(args: argparse.Namespace) -> int:
-    label = SINGULAR_LABELS[args.task]
+    label = "singular-primdecSY" if args.task == "decompose" and args.primdec == "primdecSY" else SINGULAR_LABELS[args.task]
 
     tool = require_tool("Singular", label)
     if tool is None:
@@ -834,7 +858,7 @@ def singular_main(args: argparse.Namespace) -> int:
         BaselineResult(baseline=label, status="error", error=f"--nonzero: no variable {', '.join(missing)}").emit()
         return 0
 
-    program = _singular_program(polys, symbols, args.task, args.nonzero)
+    program = _singular_program(polys, symbols, args.task, args.nonzero, args.lex_min_fill, args.primdec)
 
     try:
         rc, out, err, wall = run_subprocess(
@@ -892,7 +916,7 @@ def macaulay2_main(args: argparse.Namespace) -> int:
         BaselineResult(baseline=label, status="error", error=f"--nonzero: no variable {', '.join(missing)}").emit()
         return 0
 
-    program = _m2_program(polys, symbols, args.task, args.nonzero)
+    program = _m2_program(polys, symbols, args.task, args.nonzero, args.lex_min_fill)
 
     try:
         rc, out, err, wall = run_subprocess(
@@ -949,6 +973,17 @@ def parse_args() -> argparse.Namespace:
         type=lambda names: names.split(","),
         default=[],
         help="comma-separated variables assumed nonzero; the tool saturates by their product first",
+    )
+    parser.add_argument(
+        "--primdec",
+        choices=("primdecGTZ", "primdecSY"),
+        default="primdecGTZ",
+        help="the primary decomposition of the Singular decompose task",
+    )
+    parser.add_argument(
+        "--lex-min-fill",
+        action="store_true",
+        help="lex order with the variables in the min-fill order of the supports, for every task",
     )
     args = parser.parse_args()
     tasks = SINGULAR_LABELS if args.tool == "singular" else MACAULAY2_LABELS

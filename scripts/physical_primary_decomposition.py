@@ -9,12 +9,14 @@ is J = <P> : kappah^oo.
        set has a zero with kappah != 0, and every round keeps <Q> : kappah^oo = J
     2. J = sat(Q, kappah)
     3. the minimal primes of J: those of <Q>, by Alg. Branching with minAssGTZ, that omit kappah
-    4. primdecSY of J
-    5. a component is isolated iff its radical contains a minimal prime of its own dimension
+    4. the optional lines: the isolated components by separators, and whether they intersect to J
+    5. if they do not, primdecSY of J
+    6. a component is isolated iff its radical contains a minimal prime of its own dimension
 
-Coefficients lie in Q(pi). Interreduction, factorization, the branch solver of step 1, the saturation and
-primdecSY run in lex with the min-fill variable order of symbolica/factor_prep.rs. Components are written
-as reduced Gröbner bases in degrevlex with the variables in name order.
+Coefficients lie in Q(pi), and every step runs with _harness.PHYSICAL_SETTINGS: Singular's sat, lex with
+the min-fill variable order of symbolica/factor_prep.rs, primdecSY, and the separators. The times are
+internal: the seconds of each step inside the Singular session. Components are written as reduced Gröbner
+bases in degrevlex with the variables in name order.
 
 The output is checked: P lies in J, kappah is a nonzerodivisor modulo J, the components intersect to J,
 the isolated radicals are exactly the minimal primes, and no component is redundant. The exit status is
@@ -34,8 +36,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import factor_variants as fv
-from _harness import PHYSICAL_NONZERO, SolverSlot, physical_system, solver_slot
-from _systems import load_system, poly_to_singular
+from _harness import PHYSICAL_NONZERO, PHYSICAL_SETTINGS, SolverSlot, physical_system, solver_slot
+from _systems import load_system, min_fill_order, poly_to_singular
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -63,48 +65,6 @@ class Component:
     radical: tuple[str, ...]
 
 
-def hyperedge_fill(variable: int, supports: list[list[int]]) -> int:
-    containing = [i for i, s in enumerate(supports) if s and variable in s]
-    if len(containing) <= 1:
-        return 0
-    return min(
-        sum(sum(1 for v in supports[d] if v != variable and v not in supports[e]) for e in containing if e != d)
-        for d in containing
-    )
-
-
-def min_fill_order(count: int, supports: list[list[int]]) -> list[int]:
-    """The elimination order of `min_fill_order` in symbolica/factor_prep.rs."""
-    active_supports = [sorted(set(s)) for s in supports]
-    active = [True] * count
-    order: list[int] = []
-    while len(order) < count:
-        selected = min(
-            (v for v in range(count) if active[v]),
-            key=lambda v: (hyperedge_fill(v, active_supports), sum(1 for s in active_supports if s and v in s), v),
-        )
-        containing = [i for i, s in enumerate(active_supports) if s and selected in s]
-        if len(containing) > 1:
-            definer = min(
-                containing,
-                key=lambda d: sum(
-                    sum(1 for v in active_supports[d] if v != selected and v not in active_supports[e])
-                    for e in containing
-                    if e != d
-                ),
-            )
-            definer_vars = [v for v in active_supports[definer] if v != selected]
-            for e in containing:
-                if e != definer:
-                    active_supports[e] = sorted({v for v in active_supports[e] if v != selected} | set(definer_vars))
-            active_supports[definer] = []
-        elif len(containing) == 1:
-            active_supports[containing[0]] = []
-        active[selected] = False
-        order.append(selected)
-    return order
-
-
 def load(path: Path) -> PhysicalSystem:
     """Variables in name order, pi as the coefficient parameter, as the Rust loader reads the system."""
     polynomials, symbols = load_system(path)
@@ -128,16 +88,6 @@ def flag(lines: list[str], tag: str) -> bool:
     return fv.tagged(lines, tag) == ["1"]
 
 
-def omitting(session: fv.Session, primes: list[fv.Prime], nonzero: tuple[str, ...]) -> list[fv.Prime]:
-    """The primes that contain none of the `nonzero` polynomials: the minimal primes of the saturation."""
-    tests = "".join(
-        f'print("HAS {k} " + string(size(reduce(ideal({",".join(nonzero)}), std(ideal({prime.basis})))) < {len(nonzero)}));\n'
-        for k, prime in enumerate(primes)
-    )
-    lines = session.run(f"setring Rdp;\n{tests}")
-    return [prime for k, prime in enumerate(primes) if f"{k} 0" in fv.tagged(lines, "HAS")]
-
-
 def prime_labels(session: fv.Session, primes: list[fv.Prime]) -> list[str]:
     """The family of each minimal prime, by the polynomial of FAMILIES it contains, and its dimension."""
     tests = "".join(
@@ -152,11 +102,39 @@ def prime_labels(session: fv.Session, primes: list[fv.Prime]) -> list[str]:
     return [f"{families[k][0]}{prime.dim}" for k, prime in enumerate(primes)]
 
 
-def decompose(session: fv.Session, saturated: list[str]) -> tuple[list[Component], float]:
-    """Steps 4 and 5: primdecSY of J in lex, mapped to degrevlex, each radical tested against the primes `Ps`."""
-    _, secs = timed_run(session, f"setring Rlp; list DL = primdecSY({fv.ideal_literal(saturated)});")
+def separate(session: fv.Session, saturated: list[str], primes: list[fv.Prime]) -> tuple[bool, float]:
+    """Step 4 in the ring of the settings: the isolated component of each minimal prime by a separator, in
+    `DL` as (component, prime) pairs, and whether they intersect to J."""
+    ring = session.ring
+    procedure = "isolatedLine(G, Pr, {0})"
+    started = time.monotonic()
+    session.run(
+        f"setring {ring}; ideal G = canonical({fv.ideal_literal(saturated)});\n"
+        f"list Pr = {','.join(f'canonical(ideal({p.basis}))' for p in primes)};"
+    )
+    components = [
+        fv.tagged(session.run(f"setring {ring}; {procedure.format(index)};"), "COMPONENT")[0]
+        for index in range(1, len(primes) + 1)
+    ]
+    pairs = ",".join(f"list(ideal({c}), Pr[{k}])" for k, c in enumerate(components, 1))
     lines = session.run(
-        "setring Rdp; list D = imap(Rlp, DL); list Comps; int i; int j; int k; ideal Q; ideal P; string contains;\n"
+        f"setring {ring}; list DL = {pairs};\n"
+        "ideal X = DL[1][1]; int c; for (c = 2; c <= size(DL); c++) { X = intersect(X, DL[c][1]); }\n"
+        'print("UNMIXED " + string(size(reduce(X, G)) == 0)); kill X, c;'
+    )
+    return flag(lines, "UNMIXED"), time.monotonic() - started
+
+
+def decompose(session: fv.Session, saturated: list[str], unmixed: bool) -> tuple[list[Component], float]:
+    """Steps 5 and 6: unless the isolated components of `DL` intersect to J, `DL` becomes the primary
+    decomposition of J by the settings' command; mapped to degrevlex, each radical is tested against `Ps`."""
+    ring, command = session.ring, session.settings.primdec
+    secs = 0.0
+    if not unmixed:
+        _, secs = timed_run(session, f"setring {ring}; list DL = {command}({fv.ideal_literal(saturated)});")
+    imported = "DL" if ring == "Rdp" else f"imap({ring}, DL)"
+    lines = session.run(
+        f"setring Rdp; list D = {imported}; list Comps; int i; int j; int k; ideal Q; ideal P; string contains;\n"
         "for (i = 1; i <= size(D); i++) {\n"
         "  Q = std(D[i][1]); P = std(D[i][2]); Comps = insert(Comps, Q, size(Comps)); contains = \"\";\n"
         '  for (k = 1; k <= size(Ps); k++) { if (size(reduce(Ps[k], P)) == 0) { contains = contains + string(k - 1) + ","; } }\n'
@@ -241,6 +219,7 @@ def report(
     components: list[Component],
     secs: dict[str, float],
     verdicts: dict[str, bool],
+    session_settings: fv.Settings,
 ) -> str:
     order = sorted(components, key=lambda c: (not is_isolated(c, primes), -c.dim))
     nonzero = ", ".join(PHYSICAL_NONZERO)
@@ -257,13 +236,15 @@ def report(
             f"Alg. IdealReduce with {nonzero} nonzero turns the {len(system.polynomials)} equations into "
             f"{len(reduced)} generators in {rounds} rounds ({secs['reduce']:.1f} s), their saturation by {nonzero} "
             f"has {len(saturated)} generators ({secs['saturate']:.1f} s), Alg. Branching with `minAssGTZ` finds the "
-            f"{len(primes)} minimal primes ({secs['primes']:.1f} s), and Singular `primdecSY` decomposes the "
-            f"saturation ({secs['primdec']:.0f} s)."
+            f"{len(primes)} minimal primes ({secs['primes']:.1f} s), the separators give the isolated components "
+            f"({secs['separators']:.1f} s), and Singular `{session_settings.primdec}` decomposes the saturation "
+            f"({secs['primdec']:.0f} s)."
         ),
         (
-            "Interreduction, factorization, the branch solver of Alg. IdealReduce (saturation by "
-            f"{nonzero}), the saturation, and `primdecSY` run in the lexicographic order with the min-fill "
-            f"variable order of `symbolica/factor_prep.rs` ({' > '.join(system.min_fill)})."
+            f"Every step runs with `_harness.PHYSICAL_SETTINGS` ({session_settings}): coefficients in Q(pi), "
+            f"Singular's `{session_settings.saturation}`, and the lexicographic order with the min-fill variable "
+            f"order of `symbolica/factor_prep.rs` ({' > '.join(system.min_fill)}). Times are internal, inside "
+            "the Singular session, with the other physical experiments running concurrently."
         ),
         (
             f"Checks with a Gröbner basis of J ({secs['groebner']:.1f} s): "
@@ -298,7 +279,10 @@ def report(
 def decompose_and_report(out: Path, slot: SolverSlot) -> int:
     """Run Alg. PrimaryBranching, write the report to `out`, and return 1 if a check fails."""
     system = load(physical_system())
-    session = fv.Session(system.variables, system.parameters, factor_variables=system.min_fill, empty_ring="Rlp")
+    settings = fv.Settings(**PHYSICAL_SETTINGS)
+    session = fv.Session(
+        system.variables, system.parameters, factor_variables=system.min_fill, empty_ring="Rlp", settings=settings
+    )
     slot.track(session.pid)
     secs: dict[str, float] = {}
 
@@ -309,19 +293,23 @@ def decompose_and_report(out: Path, slot: SolverSlot) -> int:
           f"{secs['reduce']:.1f} s", flush=True)
 
     started = time.monotonic()
-    saturated = fv.saturation(session, reduced, PHYSICAL_NONZERO, "Rlp")
+    saturated = fv.saturation(session, reduced, PHYSICAL_NONZERO, session.ring)
     secs["saturate"] = time.monotonic() - started
     print(f"saturation: {len(saturated)} generators, {secs['saturate']:.1f} s", flush=True)
 
     started = time.monotonic()
-    primes = omitting(session, fv.prime_branching(session, reduced)[0], PHYSICAL_NONZERO)
+    primes = fv.omitting(session, fv.prime_branching(session, reduced)[0], PHYSICAL_NONZERO)
     secs["primes"] = time.monotonic() - started
     session.run("setring Rdp; list Ps = " + ",".join(f"std(ideal({p.basis}))" for p in primes) + ";")
     labels = prime_labels(session, primes)
     print(f"minimal primes: {', '.join(labels)}, {secs['primes']:.1f} s", flush=True)
 
-    components, secs["primdec"] = decompose(session, saturated)
-    print(f"primdecSY: {len(components)} components, {secs['primdec']:.0f} s", flush=True)
+    unmixed, secs["separators"] = separate(session, saturated, primes) if settings.separators else (False, 0.0)
+    print(f"separators: isolated components {'intersect' if unmixed else 'do not intersect'} to J, "
+          f"{secs['separators']:.1f} s", flush=True)
+
+    components, secs["primdec"] = decompose(session, saturated, unmixed)
+    print(f"{settings.primdec}: {len(components)} components, {secs['primdec']:.0f} s", flush=True)
 
     nonzero = "*".join(PHYSICAL_NONZERO)
     lines, secs["groebner"] = timed_run(
@@ -339,7 +327,8 @@ def decompose_and_report(out: Path, slot: SolverSlot) -> int:
     print(f"checks: {verdicts}", flush=True)
 
     out.write_text(
-        report(system, reduced, saturated, rounds, primes, labels, components, secs, verdicts), encoding="utf-8"
+        report(system, reduced, saturated, rounds, primes, labels, components, secs, verdicts, settings),
+        encoding="utf-8",
     )
     print(f"wrote {out}")
     return 0 if all(verdicts.values()) else 1

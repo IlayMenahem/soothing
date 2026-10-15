@@ -740,3 +740,51 @@ def poly_to_singular(poly: sp.Basic) -> str:
     """Convert a SymPy polynomial expression to Singular syntax."""
     text = sp.sstr(sp.expand(poly))
     return text.replace("**", "^")
+
+
+def hyperedge_fill(variable: int, supports: list[list[int]]) -> int:
+    containing = [i for i, s in enumerate(supports) if s and variable in s]
+    if len(containing) <= 1:
+        return 0
+    return min(
+        sum(sum(1 for v in supports[d] if v != variable and v not in supports[e]) for e in containing if e != d)
+        for d in containing
+    )
+
+
+def min_fill_order(count: int, supports: list[list[int]]) -> list[int]:
+    """The elimination order of `min_fill_order` in symbolica/factor_prep.rs."""
+    active_supports = [sorted(set(s)) for s in supports]
+    active = [True] * count
+    order: list[int] = []
+    while len(order) < count:
+        selected = min(
+            (v for v in range(count) if active[v]),
+            key=lambda v: (hyperedge_fill(v, active_supports), sum(1 for s in active_supports if s and v in s), v),
+        )
+        containing = [i for i, s in enumerate(active_supports) if s and selected in s]
+        if len(containing) > 1:
+            definer = min(
+                containing,
+                key=lambda d: sum(
+                    sum(1 for v in active_supports[d] if v != selected and v not in active_supports[e])
+                    for e in containing
+                    if e != d
+                ),
+            )
+            definer_vars = [v for v in active_supports[definer] if v != selected]
+            for e in containing:
+                if e != definer:
+                    active_supports[e] = sorted({v for v in active_supports[e] if v != selected} | set(definer_vars))
+            active_supports[definer] = []
+        elif len(containing) == 1:
+            active_supports[containing[0]] = []
+        active[selected] = False
+        order.append(selected)
+    return order
+
+
+def min_fill_variables(polynomials: list[sp.Basic], variables: list[str]) -> list[str]:
+    """`variables` in the min-fill order of the supports of `polynomials`."""
+    supports = [sorted(variables.index(str(s)) for s in p.free_symbols if str(s) in variables) for p in polynomials]
+    return [variables[i] for i in min_fill_order(len(variables), supports)]

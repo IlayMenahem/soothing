@@ -30,6 +30,7 @@ EXPERIMENTS: dict[str, tuple[str, ...]] = {
     "physical-table": ("physical_table.py", "--no-build"),
     "physical-zeroing-figure": ("physical_zeroing_figure.py", "--no-build"),
     "physical-primary": ("physical_primary_decomposition.py",),
+    "physical-decomposition": ("physical_decomposition_table.py", "--no-build"),
     "baselines": ("baseline_table.py", "--part", "baselines", "--no-build"),
     "branching": ("baseline_table.py", "--part", "branching", "--no-build"),
     "zeroing": ("baseline_table.py", "--part", "zeroing", "--no-build"),

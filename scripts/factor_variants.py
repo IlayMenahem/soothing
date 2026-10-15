@@ -14,6 +14,7 @@ process start-up. Each method reaches one cell of (object, decomposition):
     direct-minAssGTZ    minAssGTZ                                (sqrt I, irreducible)
     primary             Alg. PrimaryBranching                    (I, irreducible)
     direct-primdecGTZ   primdecGTZ                               (I, irreducible)
+    direct-primdec      the command of Settings.primdec          (I, irreducible)
 
 Refinement factors and interreduces in lex (Singular lp); every Gröbner basis is
 in degrevlex (Singular dp). Both rings set option(redSB) and option(redTail):
@@ -22,7 +23,13 @@ does, and Singular stores redTail per ring. Ideals are compared by hashes of the
 reduced, monic Gröbner bases, which are unique.
 
 Usage: factor_variants.py METHOD SYSTEM.json
-SYSTEM.json holds {"variables": [...], "polynomials": [...]} in Singular syntax.
+SYSTEM.json holds {"variables": [...], "polynomials": [...]} in Singular syntax, and optionally
+"parameters" (coefficients in Q(parameters)), "factor_variables" (the lex order of factorization;
+the emptiness test of Alg. IdealReduce then runs in that ring too), and "nonzero" (variables whose
+product u must not vanish), and "settings" (the fields of `Settings`). With "nonzero", the methods
+prime, direct-minAssGTZ, primary and direct-primdecGTZ describe <P> : u^oo: the direct commands
+saturate first, and the algorithms keep u nonzero in Alg. IdealReduce, saturate its output, and drop
+the minimal primes that contain u.
 Prints one JSON line.
 """
 
@@ -36,9 +43,38 @@ import time
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 Factorization = dict[str, int]
 Branch = frozenset[str]
+
+SATURATION_BODIES: dict[str, str] = {
+    # Singular 4.4's sat returns the saturation itself, older versions a list (ideal, exponent).
+    "sat": 'def S = sat(J, U); if (typeof(S) == "list") { return(S[1]); } return(S);',
+    "sat_with_exp": "list L = sat_with_exp(J, U); return(L[1]);",
+}
+
+
+@dataclass(frozen=True)
+class Settings:
+    """Choices for the Singular steps; the defaults are those of Table tab:scaling-decomposition.
+
+    `saturation` is the Singular command of every saturation by a nonzero product (sat or sat_with_exp),
+    `ring` the ring of the saturations, decompositions and Gröbner bases (Rdp, degrevlex on the variables in
+    name order, or Rlp, lex on `factor_variables`), `primdec` the primary decomposition of Alg.
+    PrimaryBranching and direct-primdecGTZ (primdecGTZ or primdecSY), and `separators` whether Alg.
+    PrimaryBranching runs its optional lines (separators and the zero-dimensional shortcut)."""
+
+    saturation: str = "sat_with_exp"
+    ring: str = "Rdp"
+    primdec: str = "primdecGTZ"
+    separators: bool = True
+
+
+def procedures(saturation: str) -> str:
+    """The Singular procedures, with `saturated(J, U)`, the saturation J : U^oo, computed by `saturation`."""
+    return f"proc saturated(ideal J, ideal U)\n{{\n  {SATURATION_BODIES[saturation]}\n}}\n" + PROCEDURES
+
 
 PROCEDURES = r"""
 // Singular's `continue` skips the increment of a for loop, so these procedures never use it.
@@ -71,15 +107,15 @@ proc saturatedEmptyLine(ideal H, poly u)
 {
   // V(H) is the union of the V(F[k]), so V(H) minus V(u) is empty iff every saturation F[k] : u^oo is <1>.
   list F = facstd(H);
-  int k; int empty = 1; list L;
+  int k; int empty = 1;
   for (k = 1; k <= size(F); k++) {
-    if (empty) { L = sat_with_exp(F[k], ideal(u)); if (dim(std(L[1])) >= 0) { empty = 0; } }
+    if (empty) { if (dim(std(saturated(F[k], ideal(u)))) >= 0) { empty = 0; } }
   }
   print("EMPTY " + string(empty));
 }
 proc saturationLines(ideal J, poly u)
 {
-  list L = sat_with_exp(J, ideal(u)); ideal S = simplify(L[1], 2); int k;
+  ideal S = simplify(saturated(J, ideal(u)), 2); int k;
   for (k = 1; k <= ncols(S); k++) { print("SAT " + string(S[k])); }
 }
 proc canonical(ideal J)
@@ -133,11 +169,11 @@ proc intersectionLine(list Leaves)
 proc isolatedLine(ideal G, list Ps, int i)
 {
   // I : p^oo lies in every other minimal prime but not in p, so a basis element outside p separates p.
-  ideal J = G; int k; poly s = 1; list L;
+  ideal J = G; int k; poly s = 1;
   if (size(Ps) > 1) {
-    L = sat_with_exp(G, Ps[i]); ideal T = std(L[1]);
+    ideal T = std(saturated(G, Ps[i]));
     for (k = 1; k <= ncols(T); k++) { if (s == 1 && reduce(T[k], Ps[i]) != 0) { s = T[k]; } }
-    L = sat_with_exp(G, ideal(s)); J = L[1];
+    J = saturated(G, ideal(s));
   }
   if (dim(Ps[i]) > 0) { J = equidimMax(J); }
   J = canonical(J);
@@ -161,7 +197,8 @@ class Session:
     """One Singular process; `run` sends code and returns the lines it prints.
 
     Coefficients lie in Q(parameters). `Rlp` is lex on `factor_variables` (default `variables`), `Rdp` is
-    degrevlex on `variables`, and the branch solver certifies emptiness in `empty_ring`.
+    degrevlex on `variables`, the branch solver certifies emptiness in `empty_ring`, and saturations,
+    decompositions and Gröbner bases run in `settings.ring` with `settings.saturation`.
     """
 
     def __init__(
@@ -170,6 +207,7 @@ class Session:
         parameters: Sequence[str] = (),
         factor_variables: Sequence[str] | None = None,
         empty_ring: str = "Rdp",
+        settings: Settings = Settings(),
     ) -> None:
         self._process = subprocess.Popen(
             ["Singular", "-q", "--no-rc", "--no-warn", "-t"],
@@ -181,13 +219,15 @@ class Session:
         )
         self._calls = 0
         self.empty_ring = empty_ring
+        self.settings = settings
+        self.ring = settings.ring
         field = f"(0,{','.join(parameters)})" if parameters else "0"
         options = "short = 0; option(redSB); option(redTail);"
         self.run(
             'LIB "primdec.lib";\n'
             f"ring Rlp = {field}, ({','.join(factor_variables or variables)}), lp; {options}\n"
             f"ring Rdp = {field}, ({','.join(variables)}), dp; {options}\n"
-            f"{PROCEDURES}"
+            f"{procedures(settings.saturation)}"
         )
 
     @property
@@ -333,7 +373,7 @@ def refine(session: Session, root: Factored) -> list[Branch]:
 
 
 def branch_dimension(session: Session, polynomials: Iterable[str]) -> int:
-    lines = session.run(f'setring Rdp; print("DIM " + string(dim(std({ideal_literal(polynomials)}))));')
+    lines = session.run(f'setring {session.ring}; print("DIM " + string(dim(std({ideal_literal(polynomials)}))));')
     return int(tagged(lines, "DIM")[0])
 
 
@@ -355,15 +395,28 @@ def saturation(session: Session, polynomials: list[str], nonzero: Sequence[str],
 
 
 def branch_primes(session: Session, branch: Branch) -> list[Prime]:
-    lines = session.run(f"setring Rdp; primeLines({ideal_literal(sorted(branch))});")
+    lines = session.run(f"setring {session.ring}; primeLines({ideal_literal(sorted(branch))});")
     return [Prime(int(dim), basis) for dim, basis in (line.split(" ", 1) for line in tagged(lines, "PRIME"))]
 
 
 def absorbed(session: Session, primes: list[Prime], branch: Branch) -> bool:
     """Some prime has every generator reducing to zero modulo the generators of the branch."""
     tests = " || ".join(f"size(reduce({ideal_literal([p.basis])}, H)) == 0" for p in primes)
-    lines = session.run(f'setring Rdp; ideal H = {ideal_literal(sorted(branch))}; print("ABSORBED " + string({tests}));')
+    lines = session.run(f'setring {session.ring}; ideal H = {ideal_literal(sorted(branch))}; print("ABSORBED " + string({tests}));')
     return tagged(lines, "ABSORBED") == ["1"]
+
+
+def omitting(session: Session, primes: list[Prime], nonzero: Sequence[str]) -> list[Prime]:
+    """The primes that contain none of `nonzero`: of the minimal primes of <P>, the minimal primes of the
+    saturation by their product."""
+    if not nonzero or not primes:
+        return primes
+    tests = "".join(
+        f'print("HAS {k} " + string(size(reduce(ideal({",".join(nonzero)}), std(ideal({prime.basis})))) < {len(nonzero)}));\n'
+        for k, prime in enumerate(primes)
+    )
+    lines = session.run(f"setring {session.ring};\n{tests}")
+    return [prime for k, prime in enumerate(primes) if f"{k} 0" in tagged(lines, "HAS")]
 
 
 def minimal_primes(session: Session, primes: list[Prime]) -> list[Prime]:
@@ -374,7 +427,7 @@ def minimal_primes(session: Session, primes: list[Prime]) -> list[Prime]:
         larger = [other for other in distinct if other.dim > prime.dim]
         if larger:
             tests = " || ".join(f"size(reduce({ideal_literal([o.basis])}, P)) == 0" for o in larger)
-            lines = session.run(f'setring Rdp; ideal P = {ideal_literal([prime.basis])}; print("INSIDE " + string({tests}));')
+            lines = session.run(f'setring {session.ring}; ideal P = {ideal_literal([prime.basis])}; print("INSIDE " + string({tests}));')
             if tagged(lines, "INSIDE") == ["1"]:
                 continue
         minimal.append(prime)
@@ -435,7 +488,7 @@ def ideal_reduce(
 
 def canonical_basis(session: Session, polynomials: list[str], name: str = "G") -> tuple[str, int]:
     lines = session.run(
-        f"setring Rdp; ideal {name} = canonical({ideal_literal(polynomials)});\n"
+        f"setring {session.ring}; ideal {name} = canonical({ideal_literal(polynomials)});\n"
         f'print("DIM " + string(dim({name}))); print("BASIS " + string({name}));'
     )
     return tagged(lines, "BASIS")[0], int(tagged(lines, "DIM")[0])
@@ -475,7 +528,7 @@ def ideal_refine(session: Session, polynomials: list[str], max_rounds: int = 50)
     after any round; only a final residual that is kept gets a Gröbner basis. The leaves stay in `Leaves`.
     """
     root = factorize(session, polynomials, interreduce=True)
-    session.run("setring Rdp; list Leaves;")
+    session.run(f"setring {session.ring}; list Leaves;")
     if root.unsatisfiable:
         return {"leaves": 0, "rounds": 0, "final_leaf": "none", "leaf_dims": []}
     base = list(root.factorizations)
@@ -490,7 +543,7 @@ def ideal_refine(session: Session, polynomials: list[str], max_rounds: int = 50)
             if certified_empty(session, seeds):
                 continue
             lines = session.run(
-                f"setring Rdp; ideal S = saturateLines({ideal_literal(seeds)}, {ideal_literal(sorted(unchosen))});\n"
+                f"setring {session.ring}; ideal S = saturateLines({ideal_literal(seeds)}, {ideal_literal(sorted(unchosen))});\n"
                 "if (dim(S) >= 0) { Leaves = insert(Leaves, S, size(Leaves)); }"
             )
             dim, exponent = int(tagged(lines, "DIM")[0]), int(tagged(lines, "EXP")[0])
@@ -502,11 +555,11 @@ def ideal_refine(session: Session, polynomials: list[str], max_rounds: int = 50)
         residual = list(root.generators) + [power_product(r) for r in residuals]
         outcome: dict[str, object] = {"rounds": rounds, "leaf_dims": leaf_dims}
         if certified_empty(session, residual) or tagged(
-            session.run(f"setring Rdp; coveredLine({ideal_literal(residual)}, Leaves);"), "COVERED"
+            session.run(f"setring {session.ring}; coveredLine({ideal_literal(residual)}, Leaves);"), "COVERED"
         ) == ["1"]:
             return {**outcome, "leaves": len(leaf_dims), "final_leaf": "redundant"}
         if not split:
-            session.run(f"setring Rdp; Leaves = insert(Leaves, canonical({ideal_literal(residual)}), size(Leaves));")
+            session.run(f"setring {session.ring}; Leaves = insert(Leaves, canonical({ideal_literal(residual)}), size(Leaves));")
             return {**outcome, "leaves": len(leaf_dims) + 1, "final_leaf": "kept"}
     raise RuntimeError("ideal refinement hit the round limit")
 
@@ -517,7 +570,7 @@ def verify_ideal_refine(session: Session, polynomials: list[str]) -> dict[str, o
     basis, _ = canonical_basis(session, polynomials)
     if not refined["leaves"]:
         return {**refined, "exact": basis == "1"}
-    intersection = tagged(session.run("setring Rdp; intersectionLine(Leaves);"), "BASIS")[0]
+    intersection = tagged(session.run(f"setring {session.ring}; intersectionLine(Leaves);"), "BASIS")[0]
     return {**refined, "exact": intersection == basis}
 
 
@@ -525,36 +578,45 @@ def zero_dimensional_radical(session: Session) -> bool:
     """For zero-dimensional G with minimal primes Ps: vdim G = sum of vdim of its components, each at least
     the vdim of its prime with equality only for the prime itself, so equal sums mean every component is prime."""
     lines = session.run(
-        "setring Rdp; int total = 0; int k;\n"
+        f"setring {session.ring}; int total = 0; int k;\n"
         "for (k = 1; k <= size(Ps); k++) { total = total + vdim(Ps[k]); }\n"
         'print("RADICAL " + string(vdim(G) == total));\nkill total, k;'
     )
     return tagged(lines, "RADICAL") == ["1"]
 
 
-def primary_branching(session: Session, polynomials: list[str]) -> dict[str, object]:
+def primary_branching(session: Session, polynomials: list[str], nonzero: Sequence[str] = ()) -> dict[str, object]:
     """Alg. PrimaryBranching: IdealReduce, minimal primes by prime branching, and isolated components by
-    separators; primdecGTZ of the reduced ideal only if embedded components exist, with each of its
-    components marked isolated when its radical contains a minimal prime of its own dimension."""
+    separators; the primary decomposition of `settings.primdec` of the reduced ideal only if embedded
+    components exist, with each of its components marked isolated when its radical contains a minimal
+    prime of its own dimension. Without `settings.separators`, the primary decomposition always runs.
+
+    With `nonzero`, IdealReduce keeps their product u nonzero, the decomposed ideal is the saturation of
+    the reduced system by u, and the minimal primes that contain u are dropped."""
     started = time.monotonic()
-    reduced, rounds = ideal_reduce(session, polynomials)
-    _, dim = canonical_basis(session, reduced)
+    reduced, rounds = ideal_reduce(session, polynomials, nonzero)
+    _, dim = canonical_basis(session, saturation(session, reduced, nonzero, session.ring) if nonzero else reduced)
     if dim < 0:
         return {"components": 0, "embedded": 0, "isolated_hashes": [], "reduce_rounds": rounds}
     primes, prime_stats = prime_branching(session, reduced)
-    session.run(f"setring Rdp; list Ps = {','.join(f'ideal({p.basis})' for p in primes)};")
+    primes = omitting(session, primes, nonzero)
+    session.run(f"setring {session.ring}; list Ps = {','.join(f'ideal({p.basis})' for p in primes)};")
+    if not session.settings.separators:
+        stats = {f"prime_{key}": value for key, value in prime_stats.items()}
+        general = primary_decomposition(session, "G", primes="Ps")
+        return {"reduce_rounds": rounds, "minimal_primes": len(primes), **stats, **general, "fallback": True}
     if dim == 0 and zero_dimensional_radical(session):
         components = [prime.basis for prime in primes]
     else:
         procedure = "pointComponentLine(G, Ps[{0}])" if dim == 0 else "isolatedLine(G, Ps, {0})"
         components = [
-            tagged(session.run(f"setring Rdp; {procedure.format(index)};"), "COMPONENT")[0]
+            tagged(session.run(f"setring {session.ring}; {procedure.format(index)};"), "COMPONENT")[0]
             for index in range(1, len(primes) + 1)
         ]
     unmixed = dim == 0
     if not unmixed:
         lines = session.run(
-            "setring Rdp; ideal X = intersect("
+            f"setring {session.ring}; ideal X = intersect("
             + ",".join(f"ideal({c})" for c in components)
             + '); print("UNMIXED " + string(size(reduce(X, G)) == 0));'
         )
@@ -576,7 +638,8 @@ def primary_branching(session: Session, polynomials: list[str]) -> dict[str, obj
 
 
 def primary_decomposition(session: Session, name: str, primes: str | None = None) -> dict[str, object]:
-    """primdecGTZ of `name`. With `primes`, the Singular list of minimal primes, a component is isolated when
+    """The primary decomposition of `name` by `settings.primdec`. With `primes`, the Singular list of minimal
+    primes, a component is isolated when
     its radical contains a minimal prime of its own dimension; without, when no radical of larger dimension
     lies inside its radical."""
     if primes is None:
@@ -594,7 +657,8 @@ def primary_decomposition(session: Session, name: str, primes: str | None = None
             "  }\n"
         )
     lines = session.run(
-        f"setring Rdp; list D = primdecGTZ({name}); int n = size(D); int i; int j; int embedded;\n"
+        f"setring {session.ring}; list D = {session.settings.primdec}({name}); int n = size(D); int i; int j;\n"
+        "int embedded;\n"
         "list Rad;\n"
         "for (i = 1; i <= n; i++) { Rad = insert(Rad, canonical(D[i][2]), size(Rad)); }\n"
         "for (i = 1; i <= n; i++) {\n"
@@ -611,14 +675,23 @@ def primary_decomposition(session: Session, name: str, primes: str | None = None
     }
 
 
-def run_method(method: str, session: Session, polynomials: list[str]) -> dict[str, object]:
+NONZERO_METHODS: frozenset[str] = frozenset(
+    {"prime", "direct-minAssGTZ", "primary", "direct-primdecGTZ", "direct-primdec"}
+)
+
+
+def run_method(method: str, session: Session, polynomials: list[str], nonzero: Sequence[str] = ()) -> dict[str, object]:
+    if nonzero and method not in NONZERO_METHODS:
+        raise SystemExit(f"{method} does not take nonzero variables")
+    if nonzero and method.startswith("direct-"):
+        polynomials = saturation(session, polynomials, nonzero, session.ring)
     if method == "branching":
         branches = refine(session, factorize(session, polynomials, interreduce=False))
         dims = [d for d in (branch_dimension(session, b) for b in branches) if d >= 0]
         return {"branches": len(branches), "sat": len(dims), "max_dim": max(dims, default=-1)}
     if method == "direct-facstd":
         lines = session.run(
-            f"setring Rdp; list F = facstd({ideal_literal(polynomials)}); int k;\n"
+            f"setring {session.ring}; list F = facstd({ideal_literal(polynomials)}); int k;\n"
             'for (k = 1; k <= size(F); k++) { print("DIM " + string(dim(std(F[k])))); }\nkill F, k;'
         )
         dims = [d for d in map(int, tagged(lines, "DIM")) if d >= 0]
@@ -645,19 +718,19 @@ def run_method(method: str, session: Session, polynomials: list[str]) -> dict[st
         return verify_ideal_refine(session, polynomials)
     if method == "prime":
         primes, stats = prime_branching(session, polynomials)
-        return {**stats, **prime_summary(primes)}
+        return {**stats, **prime_summary(omitting(session, primes, nonzero))}
     if method == "direct-minAssGTZ":
         lines = session.run(
-            f"setring Rdp; list L = minAssGTZ({ideal_literal(polynomials)}); int k; ideal P;\n"
+            f"setring {session.ring}; list L = minAssGTZ({ideal_literal(polynomials)}); int k; ideal P;\n"
             'for (k = 1; k <= size(L); k++) { P = canonical(L[k]); print("PRIME " + string(dim(P)) + " " + string(P)); }\n'
             "kill L, k, P;"
         )
         primes = [Prime(int(d), b) for d, b in (line.split(" ", 1) for line in tagged(lines, "PRIME"))]
         return prime_summary(primes)
     if method == "primary":
-        return primary_branching(session, polynomials)
-    if method == "direct-primdecGTZ":
-        session.run(f"setring Rdp; ideal I = {ideal_literal(polynomials)};")
+        return primary_branching(session, polynomials, nonzero)
+    if method in ("direct-primdecGTZ", "direct-primdec"):
+        session.run(f"setring {session.ring}; ideal I = {ideal_literal(polynomials)};")
         return primary_decomposition(session, "I")
     raise SystemExit(f"unknown method {method}")
 
@@ -672,11 +745,20 @@ def prime_summary(primes: list[Prime]) -> dict[str, object]:
 
 def main() -> int:
     method, path = sys.argv[1], Path(sys.argv[2])
-    system: dict[str, list[str]] = json.loads(path.read_text(encoding="utf-8"))
-    session = Session(system["variables"])
+    system: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    session = Session(
+        system["variables"],
+        system.get("parameters", []),
+        factor_variables=system.get("factor_variables"),
+        empty_ring="Rlp" if "factor_variables" in system else "Rdp",
+        settings=Settings(**system.get("settings", {})),
+    )
     started = time.monotonic()
     try:
-        outcome: dict[str, object] = {"status": "ok", **run_method(method, session, system["polynomials"])}
+        outcome: dict[str, object] = {
+            "status": "ok",
+            **run_method(method, session, system["polynomials"], system.get("nonzero", [])),
+        }
     except (SingularError, RuntimeError) as error:
         outcome = {"status": "error", "error": str(error)[:500]}
     outcome["internal_secs"] = time.monotonic() - started

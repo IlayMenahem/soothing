@@ -6,7 +6,8 @@ equation ``kappah*rRabKappah = 1`` (``_harness.physical_system``). Every run imp
 ``kappah != 0`` by saturation instead: Alg. Branching and Alg. ZeroingBranching start
 from the saturation by ``kappah`` (5 s limit, else the system itself) and keep
 ``kappah`` as a nonzero side condition; Singular and Macaulay2 saturate before their
-task; M4GB, F5, GVW and F4 cannot saturate and add ``1 - s*kappah``.
+task, in lex with the min-fill variable order and over Q(pi) (``PHYSICAL_SETTINGS``; Macaulay2's
+decompose cannot use Q(pi)); M4GB, F5, GVW and F4 cannot saturate and add ``1 - s*kappah``.
 
 Harnesses; all their runs start at once, each holding a solver slot of
 ``_harness.solver_slot`` shared with every other experiment script:
@@ -16,7 +17,7 @@ Harnesses; all their runs start at once, each holding a solver slot of
                 and 5 s per branch
     baselines   the nine standalone methods of the text, which all time out: M4GB,
                 F5, GVW and F4 in grevlex, Singular and Macaulay2 lex bases,
-                facstd, primdecGTZ and Macaulay2 decompose
+                facstd, primdecSY and Macaulay2 decompose
 
 The raw results go to ``results/physical.json``, one key per
 harness. Naming harnesses reruns only those and keeps the stored results of the
@@ -70,7 +71,7 @@ BASELINES: tuple[str, ...] = (
     "singular-gb-lex",
     "m2-gb-lex",
     "singular-facstd",
-    "singular-primdecGTZ",
+    "singular-primdecSY",
     "m2-decompose",
 )
 HARNESSES: tuple[str, ...] = ("branching", "zeroing", "baselines")
@@ -141,7 +142,7 @@ def run_baseline(label: str, system: Path) -> dict[str, object]:
     seconds = TOTAL_MS // 1000
     if label.endswith("-grevlex"):
         return run_direct(system, label.removesuffix("-grevlex"), seconds, PHYSICAL_NONZERO)
-    return run_external(label, system, seconds, PHYSICAL_NONZERO)
+    return run_external(label, system, seconds, PHYSICAL_NONZERO, lex_min_fill=True)
 
 
 def run_one(system: Path, harness: str, name: str) -> dict[str, object]:
