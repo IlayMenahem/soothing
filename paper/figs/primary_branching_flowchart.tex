@@ -9,6 +9,8 @@
     fill=green!60!teal!8, inner sep=1pt},
     return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
     fill=violet!6, inner sep=7pt},
+    optional frame/.style={draw=black!55, line width=0.8pt, dashed,
+    rounded corners=8pt, inner sep=4mm},
     arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
   ]
 
@@ -24,8 +26,8 @@
   Algorithm~\ref*{alg:Branching} with $\mathcal B_{\min}$};
 
   % ---- isolated components from separators (optional) ----
-  \node[loop box, text width=45mm, below=8mm of primes] (separate) {%
-    \textcolor{orange!75!black}{\bfseries Isolated components (optional)}\\
+  \node[loop box, text width=45mm, below=16mm of primes] (separate) {%
+    \textcolor{orange!75!black}{\bfseries Isolated components}\\
     $\mathfrak q_i\gets$ top-dimensional part of\\
   $\langle Q\rangle:w_i^\infty$, $w_i$ a separator of $\mathfrak p_i$};
 
@@ -35,8 +37,13 @@
     \textcolor{violet}{\bfseries Return $\mathfrak q_1,\ldots,\mathfrak q_r$}\\
   all isolated};
 
+  % ---- the optional lines 3--9 of the algorithm, as one block ----
+  \node[optional frame, fit=(separate)(unmixed)(isolated)] (optional) {};
+  \node[anchor=north west, font=\small\bfseries, text=black!65]
+  at ([shift={(3mm,-2mm)}]optional.north west) {Optional};
+
   % ---- the general decomposition, marked by the minimal primes ----
-  \node[blue box, text width=45mm, below=7mm of unmixed] (decompose) {%
+  \node[blue box, text width=45mm, below=11mm of unmixed] (decompose) {%
     \textcolor{blue}{\bfseries Primary decomposition}\\
     $\mathcal D\gets\mathcal B_{\mathrm{prim}}(Q)$; $\mathfrak
     q\in\mathcal D$ is\\
@@ -52,7 +59,11 @@
   \draw[arr] (primes) -- (separate);
   \draw[arr] (separate) -- (unmixed);
   \draw[arr] (unmixed) -- node[above] {yes} (isolated);
-  \draw[arr] (unmixed) -- node[right] {no} (decompose);
+  \draw[arr] (unmixed) -- node[right, pos=0.7] {no} (decompose);
   \draw[arr] (decompose) -- (done);
+  % without the optional lines, the minimal primes lead straight to the
+  % general decomposition
+  \draw[arr] (primes.east) -- ++(10mm,0) |- node[pos=0.25, right] {skip}
+  (decompose.east);
 
 \end{tikzpicture}

@@ -5,27 +5,14 @@
 Algorithm~\ref{alg:Branching} discards the exponents $e_{q,f}$ and hence only
 describes $V(P)$ and $\sqrt{\langle P\rangle}$. But ideal membership,
 multiplicities, and embedded components depend on $I=\langle P\rangle$ itself.
-
-% What this section contributes
-In this section, we keep $I$. We show that the SAT status of the branches,
-which Algorithm~\ref{alg:Branching} already computes, certifies members of
-$I$. Replacing generators by these members gives a smaller system for the
-same ideal (Algorithm~\ref{alg:IdealReduce}). We then decompose $I$ into
-primary components,
-\[
-  I=\mathfrak q_1\cap\cdots\cap\mathfrak q_t.
-\]
-The minimal primes of Theorem~\ref{thm:prime-branching} give the isolated
-components, so a general primary decomposition runs only when $I$ has embedded
-components, and they sort its components into isolated and embedded ones
-(Algorithm~\ref{alg:PrimaryBranching}).
+This section adapts factor branching so that it preserves the ideal.
 
 \subsection{Ideal reduction}
 \label{subsec:sat-reduction}
 
 % Notation shared by the section
-For a finite system $Q$ and $h\in C(Q)$, let
-$a_h=\max\{e_{q,h}:q\in Q,\ h\in C_q\}$ be the largest exponent of $h$.
+For a finite system $Q$ and $h\in C(Q)$, let $a_h=\max\{e_{q,h}:q\in Q,\ h\in C_q\}$ be
+the largest exponent of $h$.
 
 % The rule: a factor chosen by every SAT branch lies in the ideal
 Suppose that a factor $h$ lies in every SAT minimal hitting set of $Q$. Then
@@ -38,24 +25,18 @@ Gr\"obner basis of $\langle Q\rangle$.
 For example, $Q=\{xy,\,xz,\,yz-1\}$ is interreduced for every monomial order.
 Its factor sets $\{x,y\}$, $\{x,z\}$, and $\{yz-1\}$ have the minimal hitting
 sets $\{x,yz-1\}$ and $\{y,z,yz-1\}$. The second is UNSAT, since $y=z=0$
-contradicts $yz=1$. Hence $x$ lies in every SAT minimal hitting set, and
-$a_x=1$. Indeed, the cofactors $y$ and $z$ of $x$ have no common zero on
-$V(Q)$, and multiplying $1=z\cdot y-(yz-1)$ by $x$ gives
-\[
-  x=z\cdot xy-x\,(yz-1)\in\langle Q\rangle.
-\]
+contradicts $yz-1=0$. Hence $x$ and $yz-1$ are in every SAT minimal hitting
+set, $a_x = 1$ and $a_{yz-1} = 1$, and indeed $x^1,
+(yz-1)^1\in\langle Q\rangle$.
 
 % The reduction loop
-Algorithm~\ref{alg:IdealReduce} adds these powers to the generators, drops
-the generators they divide, and repeats on the new system
-(Figure~\ref{fig:ideal_reduce_flowchart}). We say that $\mathcal B$
-certifies $V(H)=\emptyset$ when Algorithm~\ref{alg:Branching} with
-$\mathcal B$ certifies every terminal branch of $H$ as UNSAT. A minimal
-hitting set whose status is unknown, for example after a time limit, counts
-as SAT, which can only shrink $\Delta$. If no minimal hitting set is
-SAT, the intersection is $C(Q)$, and Lemma~\ref{lem:sat-branches} still
-applies. On the example, the first round replaces $xy$ and $xz$ by $x$, and
-the second round finds no new member and returns $\{x,yz-1\}$.
+Algorithm~\ref{alg:IdealReduce} adds each $h^{a_h}$ to the generators, drops
+the generators they divide, and repeats on the new system. We say
+that $\mathcal B$ certifies $V(H)=\emptyset$ when Algorithm~\ref{alg:Branching}
+with $\mathcal B$ certifies every terminal branch of $H$ as UNSAT. If no
+minimal hitting set is SAT, the intersection is $C(Q)$, and
+Lemma~\ref{lem:sat-branches} still applies. On the example, the first round
+replaces $xy$ and $xz$ by $x$, giving $\{x,yz-1\}$.
 
 \begin{algorithm}[htbp]
   \caption{Ideal reduction}
@@ -83,96 +64,71 @@ the second round finds no new member and returns $\{x,yz-1\}$.
 \begin{figure}[pos=htbp]
   \centering
   \resizebox{0.62\textwidth}{!}{\input{figs/ideal_reduce_flowchart.tex}}
-  \caption{Ideal reduction of Algorithm~\ref{alg:IdealReduce}. Every factor
-    $h$ chosen by all SAT minimal hitting sets enters the system as $h^{a_h}$,
-    which replaces the generators it divides. The loop stops when no new power
-  appears, and $\langle Q\rangle=\langle P\rangle$ throughout.}
+  \caption{Ideal reduction of Algorithm~\ref{alg:IdealReduce}. Every factor $h$ chosen by
+    all SAT minimal hitting sets enters the system as $h^{a_h}$, which replaces
+    the generators it divides. The loop stops when no new power appears, and $
+    \langle Q\rangle=\langle P\rangle$ throughout.}
   \label{fig:ideal_reduce_flowchart}
 \end{figure}
 
 % What the reduced system is good for
-The output generates $\langle P\rangle$, with the powers that the rounds find
-in place of the products they divide.
-When a single minimal hitting set $H$ is SAT and every exponent is $1$, one
-round gives $\langle P\rangle=\langle H\rangle$, as in the example. The
-ideal-level and the variety-level descriptions then coincide, and a
-Gr\"obner basis of $\langle P\rangle$ costs no more than one of the branch.
+The output generates $\langle P\rangle$, with polynomials replaced by a
+factor to the largest exponent that appears in the system, yielding a simpler system.
 
 % Optimization: only the intersection is needed, so most solver calls
 % can be skipped
 Each round needs only the intersection of the SAT minimal hitting sets, so an
 implementation need not classify every minimal hitting set. It keeps the
-factors $F$ that lie in every SAT hitting set checked so far, starting from
-$F=C(Q)$, skips a hitting set that contains all of $F$, and stops checking
-once $F$ is empty. Each checked SAT hitting set replaces $F$ by its
-intersection with $F$, and each skipped one contains $F$, so the final $F$ is
+factors $F$ that lie in every SAT hitting set checked so far. Starting from
+$F=C(Q)$, it skips every hitting set that contains $F$, intersects $F$ with
+every other hitting set that is SAT, and stops once $F$ is empty.
+Each skipped hitting set contains $F$, so the final $F$ is
 $\bigcap\mathcal H_{\mathrm{sat}}$. Two disjoint SAT hitting sets already
 empty $F$, so a round that finds nothing often costs only a few solver calls.
-
-% Nonzero conditions: the rounds keep the saturation instead of the ideal
-A polynomial $u$ that must not vanish, such as $\kappa_h$ in
-Subsection~\ref{subsec:physical-system}, changes only the SAT test: a minimal
-hitting set $H$ counts as SAT when $V(H)\not\subseteq V(u)$. The proof of
-Lemma~\ref{lem:sat-branches} then shows that $Q$ and the cofactors of $h$
-have no common zero outside $V(u)$, so the Nullstellensatz gives
-$u^sh^{a_h}\in\langle Q\rangle$ for some $s\geq0$. Each round then keeps
-$\langle Q\rangle:u^\infty$ instead of $\langle Q\rangle$, and the termination
-argument of Theorem~\ref{thm:ideal-reduce} is unchanged.
-Algorithm~\ref{alg:PrimaryBranching} then decomposes
-$\langle Q\rangle:u^\infty$, whose minimal primes are those of
-$\langle Q\rangle$ that do not contain $u$.
 
 \subsection{Primary factor branching}
 \label{subsec:primary-decomposition}
 
 % What the earlier variants leave open
 Algorithm~\ref{alg:Branching} with $\mathcal B_{\min}$ describes only
-$\sqrt I$. A minimal primary decomposition of $I$
-(Subsection~\ref{subsec:decompositions}) also records the multiplicity of
-each component and the embedded components.
-
-% What this variant contributes
-Algorithm~\ref{alg:PrimaryBranching}
-(Figure~\ref{fig:primary_branching_flowchart}) computes the minimal
-primary decomposition. Let
-$\mathcal B_{\mathrm{prim}}$ be an algorithm that returns a minimal primary
-decomposition of its input, for
-instance~\cite{gianni1988primary,shimoyama1996localization}.
+$\sqrt I$. A minimal primary decomposition of $I$ also records the
+multiplicity of each component and embedded components.
+Algorithm~\ref{alg:PrimaryBranching} computes one with an algorithm
+$\mathcal B_{\mathrm{prim}}$ that returns a minimal primary decomposition of
+its input. Its other steps make $\mathcal B_{\mathrm{prim}}$ cheaper, skip it,
+or label its output.
 
 % Step 1: a smaller system for the same ideal
-% What each step contributes
 The algorithm first replaces $P$ by the output $Q$ of
 Algorithm~\ref{alg:IdealReduce}. By Theorem~\ref{thm:ideal-reduce},
-$\langle Q\rangle=I$, so every later step works on $I$, and
-$\mathcal B_{\mathrm{prim}}$ starts from a smaller input when
-Algorithm~\ref{alg:IdealReduce} replaces products by powers of their factors.
+$\langle Q\rangle=I$, so every later step works on a smaller description of $I$.
 
 % Step 2: the minimal primes
 % The reduced system gives a second route to the same primes
 % Optimizations: factor branching for the minimal primes
 It then computes the minimal primes $\mathfrak p_1,\ldots,\mathfrak p_r$ of
-$I$ with Algorithm~\ref{alg:Branching} on $Q$, the branch solver
-$\mathcal B_{\min}$, and the postprocessing of
-Subsection~\ref{subsec:minimal-prime-decomposition}. The minimal hitting sets
-of $Q$ that the last round of Algorithm~\ref{alg:IdealReduce} certified as
-UNSAT need not be revisited.
+$I$, which give the isolated components in the optional lines and mark the
+components of $\mathcal B_{\mathrm{prim}}$. Algorithm~\ref{alg:Branching} on
+$Q$ with the branch solver $\mathcal B_{\min}$ and the postprocessing of
+Subsection~\ref{subsec:minimal-prime-decomposition} finds them without
+decomposing $I$ itself, and it can skip the minimal hitting sets of $Q$ that
+the last round of Algorithm~\ref{alg:IdealReduce} certified as UNSAT.
 
 % Optimization: isolated components by separators, without the general solver
-Optionally, the minimal primes give the isolated components without
-$\mathcal B_{\mathrm{prim}}$. For each $\mathfrak p_i$, a \emph{separator} is
-a polynomial $w_i\in\bigcap_{j\neq i}\mathfrak p_j\setminus\mathfrak p_i$.
-One exists because $\mathfrak p_i$ contains no other minimal prime and hence,
+Optionally, the minimal primes give the isolated components
+$\mathfrak q_1,\ldots,\mathfrak q_r$ without $\mathcal B_{\mathrm{prim}}$.
+They intersect to $I$ exactly when $I$ has no embedded components, and the
+algorithm then returns them, so these lines pay off only on such ideals. Each
+$\mathfrak q_i$ comes from a \emph{separator} of $\mathfrak p_i$, a
+polynomial $w_i\in\bigcap_{j\neq i}\mathfrak p_j\setminus\mathfrak p_i$,
+which exists because $\mathfrak p_i$ contains no other minimal prime and hence,
 by Subsection~\ref{subsec:decompositions}, not their intersection. Saturating
 by $w_i$ removes every component whose radical does not contain
-$\mathfrak p_i$~\cite{shimoyama1996localization}, and the top-dimensional
-part of $I:w_i^\infty$, the intersection of its primary components of maximal
-dimension~\cite{eisenbud1992direct}, is the isolated
-$\mathfrak p_i$-primary component $\mathfrak q_i$
-(Lemma~\ref{lem:isolated-separator}). Both computations start from a
-Gr\"obner basis $G$ of $I$. If $\mathfrak q_1\cap\cdots\cap\mathfrak q_r=I$,
-which $G$ decides, then $I$ has no embedded components, and the algorithm
-returns $\mathfrak q_1,\ldots,\mathfrak q_r$ without running
-$\mathcal B_{\mathrm{prim}}$.
+$\mathfrak p_i$~\cite{shimoyama1996localization}, so $\mathfrak q_i$ is the
+top-dimensional part of $I:w_i^\infty$, the intersection of its primary
+components of maximal dimension~\cite{eisenbud1992direct}
+(Lemma~\ref{lem:isolated-separator}). A Gr\"obner basis of $I$ decides whether
+$\mathfrak q_1\cap\cdots\cap\mathfrak q_r=I$.
 
 % Step 3: one general primary decomposition of the reduced system
 Otherwise, $\mathcal B_{\mathrm{prim}}$ decomposes $\langle Q\rangle$, which
@@ -206,16 +162,17 @@ $\langle x,y\rangle$ strictly contains $\langle x\rangle$.
     Q\rangle=\langle P\rangle$}
     \State $\{\mathfrak p_1,\ldots,\mathfrak p_r\}\gets$ the minimal primes of
     $\langle Q\rangle$ \Comment{Theorem~\ref{thm:prime-branching}}
+    \par\vskip3pt\hrule\vskip3pt
     \ForAll{$i\in\{1,\ldots,r\}$} \Comment{Optional}
     \State $w_i\gets$ a separator of $\mathfrak p_i$
     \State $\mathfrak q_i\gets$ the top-dimensional part of
     $\langle Q\rangle:w_i^\infty$
     \EndFor
     \If{$\mathfrak q_1\cap\cdots\cap\mathfrak q_r=\langle Q\rangle$}
-    \Comment{Optional}
     \State \Return $\{\mathfrak q_1,\ldots,\mathfrak q_r\}$, all marked
     isolated
     \EndIf
+    \par\vskip3pt\hrule\vskip3pt
     \State $\mathcal D\gets\mathcal B_{\mathrm{prim}}(Q)$
     \ForAll{$\mathfrak q\in\mathcal D$}
     \State mark $\mathfrak q$ isolated if
@@ -243,38 +200,27 @@ $\langle x,y\rangle$ strictly contains $\langle x\rangle$.
 A separator also needs no intersection of primes. The saturation
 $I:\mathfrak p_i^\infty=\{g\in R:\mathfrak p_i^mg\subseteq I\text{
 for some }m\geq0\}$
-keeps exactly the components whose radicals do not
-contain $\mathfrak p_i$, so it lies in every other minimal prime but not in
-$\mathfrak p_i$. Hence every element of its Gr\"obner basis that does not
-reduce to zero modulo a Gr\"obner basis of $\mathfrak p_i$ is a separator.
-Which of the two constructions is cheaper depends on the ideal.
+keeps exactly the components whose radicals do not contain $\mathfrak p_i$,
+so it lies in every other minimal prime but not in $\mathfrak p_i$, and every
+element of its Gr\"obner basis outside $\mathfrak p_i$ is a separator.
 
 % Optimization: zero-dimensional ideals need no separators and have
 % no embedded components
-A zero-dimensional $I$ needs no separators. Its components are pairwise
-comaximal, so $\dim_K R/I$ is the sum of the $\dim_K R/\mathfrak q_i$, each at
-least $\dim_K R/\mathfrak p_i$ with equality only if
-$\mathfrak q_i=\mathfrak p_i$. If
-$\dim_KR/I=\sum_i\dim_KR/\mathfrak p_i$, every component is therefore prime.
-Otherwise $\mathfrak q_i=I+\mathfrak p_i^m$ for the first $m$ at which
-$\dim_K R/(I+\mathfrak p_i^m)$ stops growing, by Nakayama's
-lemma~\cite[Prop.~2.6]{atiyah1969introduction}. All primes of a
-zero-dimensional ideal are maximal, so it has no embedded components, and
-the intersection test can be skipped.
+A zero-dimensional $I$ needs neither separators nor the intersection test:
+its primes are maximal, so it has no embedded components. Its components are
+pairwise comaximal, so $\dim_K R/I$ is the sum of the $\dim_K R/\mathfrak q_i$,
+each at least $\dim_K R/\mathfrak p_i$ with equality only if
+$\mathfrak q_i=\mathfrak p_i$. If $\dim_KR/I=\sum_i\dim_KR/\mathfrak p_i$,
+every component is prime. Otherwise $\mathfrak q_i=I+\mathfrak p_i^m$ for the
+first $m$ at which $\dim_K R/(I+\mathfrak p_i^m)$ stops growing, by Nakayama's
+lemma~\cite[Prop.~2.6]{atiyah1969introduction}.
 
 % Implementation: comparing a radical with the minimal primes
 The mark needs no equality test of ideals. A prime that strictly contains
 $\mathfrak p_i$ has smaller dimension
 (Subsection~\ref{subsec:minimal-prime-decomposition}), so $\mathfrak q$ is
-isolated exactly when $\sqrt{\mathfrak q}$ contains some $\mathfrak p_i$ of its
-own dimension. Containment means that the generators of $\mathfrak p_i$ reduce
-to zero modulo a Gr\"obner basis of $\sqrt{\mathfrak q}$.
-
-% Implementation: checking the result
-Two properties of the output can also be checked independently. The
-components must intersect to $I$, which a Gr\"obner basis of
-$\langle P\rangle$ decides, and the isolated components must have exactly
-$\mathfrak p_1,\ldots,\mathfrak p_r$ as their radicals.
+isolated exactly when the generators of some $\mathfrak p_i$ of its dimension
+reduce to zero modulo a Gr\"obner basis of $\sqrt{\mathfrak q}$.
 
 \subsection{Theoretical analysis}
 \label{subsec:ideal-branching-analysis}
@@ -384,11 +330,7 @@ $\mathfrak p_1,\ldots,\mathfrak p_r$ as their radicals.
   \[
     \langle P\rangle=\bigcap_{\mathfrak q\in\mathcal D}\mathfrak q.
   \]
-  It marks a component isolated exactly when the component is an isolated
-  component of $\langle P\rangle$, and the radical of every embedded component
-  strictly contains a minimal prime of $\langle P\rangle$. If every component is
-  given by a Gr\"obner basis, then $g\in\langle P\rangle$ if and only if $g$
-  reduces to zero modulo the basis of every component.
+  It marks correctly each component isolated or embedded.
 \end{theorem}
 
 \begin{proof}

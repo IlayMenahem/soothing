@@ -66,8 +66,9 @@ zero-dimensional radical ideals \cite{kera2024learning}. Yet these works are
 limited to small and specific polynomial ideals.
 
 % What's the gap?
-Despite this progress, large systems such as a system that came up in our
-research of quantum gravity can remain inaccessible.
+Despite this progress, large systems remain inaccessible, such as a
+quantum-gravity system from our research on which every standalone method in
+our comparison times out (Subsection~\ref{subsec:physical-system}).
 
 % Technical description of the method - hitting sets
 Here, we introduce solver-agnostic methods for several of these
@@ -79,7 +80,10 @@ and $V(I)$ is the union of their solution sets. Interreducing and
 factoring a branch
 can split it further, and the methods repeat the split until it changes
 nothing. Each method then calls an exact solver on the branches and combines
-the results into its output.
+the results into its output. Unlike factorizing Gr\"obner-basis methods, which
+split on one factorization at a time inside a Gr\"obner-basis computation, the
+methods split on all equations at once before calling the solver, so any exact
+solver can serve.
 Since the worst-case complexity of computing a Gr\"obner basis is
 doubly exponential in the number of
 variables~\cite{mayr1982complexity}, breaking down a large system
@@ -118,6 +122,6 @@ systems within 60 seconds, against at most 16 and 20 for the direct
 Gr\"obner-basis and decomposition methods. On a system from quantum field
 theory, all nine standalone baselines time out, whereas factor branching with
 the \texttt{facstd} backend completes in under a second. Primary factor
-branching computes the primary decomposition of this system in under four
+branching computes the primary decomposition of this system in under five
 minutes, while Singular's \texttt{primdecSY} does not finish within 30
 minutes on the original equations.

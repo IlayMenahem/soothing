@@ -4,15 +4,19 @@
 We introduced a solver-agnostic framework that decomposes polynomial systems
 into smaller branches by enumerating minimal hitting sets of their factor sets.
 
-We proved that refinement terminates and preserves the full solution set.
+We proved that refinement terminates and preserves the full solution set, and
+that the variants return the minimal primes, a generating set of the ideal,
+and a minimal primary decomposition.
 
 On the baseline benchmarks, factor branching completed 19 of 20
 systems, compared with
 9 for direct Gr\"obner-basis methods and 16 for decomposition
-methods. On the QFT system, where one coupling must be nonzero, imposing this by
+methods, and on the size-graded families 27 of 31, with a lead that grew with
+the system size. On the QFT system, where one coupling must be nonzero,
+imposing this by
 saturation lets factor branching complete with all six
 backends in under one second, while all nine standalone baselines
 time out. Primary factor branching decomposes the same saturated system in
 under five minutes.
 
-Future work will test this benefit on other systems.
+Future work will test this benefit on other systems, and find additional ways to break down polynomial systems into smaller branches which apply to a wider range of systems.

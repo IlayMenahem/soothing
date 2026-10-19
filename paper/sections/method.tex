@@ -2,11 +2,9 @@
 \label{sec:method}
 
 % An overview of the section: motivation, what we found, how and why it works
-Polynomial-ideal computations can be intractable even for small
-systems~\cite{mayr1982complexity}. Thus in this section we describe a
-method to break down a polynomial system into simpler branches which
-are easier for solvers to get a description of $\sqrt{\langle
-P\rangle}$ and $V(P)$.
+This section we present a method that breaks a polynomial system $P$ into
+simpler branches, from which a solver describes $V(P)$ and $\sqrt{\langle P
+\rangle}$ more easily than from $P$ itself.
 
 \subsection{Framework description}
 \label{subsec:branching-framework}
@@ -46,7 +44,7 @@ certify to be contained in each other.
 % First interreduce?
 Interreducing $P$ first can expose factors that its generators hide,
 but interreducing can also eliminate factorizations without exposing new ones.
-So the decision on whether to interreduce first depends on $P$.
+So whether to interreduce first depends on $P$.
 
 % How branching is done
 Let $\mathcal L(P)$ denote the terminal branches returned by
@@ -61,7 +59,8 @@ correct output.
   \label{alg:Branching}
   \begin{algorithmic}[1]
     \Require A set of polynomials $P = \{p_1, \ldots, p_m\}$ and a
-    branch solver $\mathcal{B}$.
+    branch solver $\mathcal{B}$
+    \Ensure A decomposition of $V(P)$
 
     \State $S \gets \emptyset$ \Comment{Solution-set representations}
     \ForAll{$H\in\Call{Refine}{P}$}
@@ -83,12 +82,10 @@ correct output.
 \end{figure}
 
 % Optimizations: found primes absorb later branches
-A found branch solution can prune later branches. If this
-optimization is used, there are two reasons to start with branches
-that have fewer generators.
-First, they are likely to be solved faster. Secondly, they are likely
-to be higher dimensional and more likely to contain the probably
-lower dimensional later branches.
+A solved branch can prune the later branches whose solution sets it contains.
+Branches with fewer generators should then come first: they are likely to be
+solved faster and, being likely of higher dimension, to contain later
+branches.
 
 % Theoretical analysis of the method
 \subsection{Theoretical analysis}
@@ -139,7 +136,7 @@ lower dimensional later branches.
 
   Next, we show that the rounds started from $\{Q\}$ reach a fixed point. Since
   $R$ is Noetherian, it has no infinite strictly ascending chain of ideals, so
-  we may assume this for every branch $H$ with
+  by Noetherian induction we may assume this for every branch $H$ with
   $M(\widetilde Q)\subsetneq M(\widetilde H)$. A terminal $Q$ is a fixed point.
   Otherwise, each of the finitely many children $H$ of $Q$ is terminal or has
   $M(\widetilde Q)\subsetneq M(\widetilde H)$, so it reaches a fixed point after
@@ -156,8 +153,8 @@ lower dimensional later branches.
 
 % Simplicity: a child keeps at most one irreducible factor of each
 % parent generator
-Each child keeps at most one irreducible factor of each generator of its
-parent, which makes it a smaller and simpler system in the following sense.
+Each element of a child divides a different generator of its parent, which
+makes the child a smaller and simpler system in the following sense.
 
 \begin{theorem}[Refined branches are simpler]
   \label{thm:refine-simpler}
@@ -236,7 +233,7 @@ parent, which makes it a smaller and simpler system in the following sense.
 \subsection{Minimal primes}
 \label{subsec:minimal-prime-decomposition}
 
-Let $\mathcal B_{\min}$ be a branch solver which returns the minimal
+Let $\mathcal B_{\min}$ be a branch solver that returns the minimal
 primes of its input. If we run Algorithm~\ref{alg:Branching} with
 $\mathcal B_{\min}$ as a branch solver and apply the following
 postprocessing, we get the minimal primes of $\langle P\rangle$.

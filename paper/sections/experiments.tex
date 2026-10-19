@@ -56,7 +56,9 @@ selector branch and one nonlinear residual branch.
 \end{table}
 
 Table~\ref{tab:baseline-comparison} lists the fastest completed method of each
-class; ``timeout'' means that every method of the class timed out.
+class; ``timeout'' means that every method of the class timed out. Factor
+branching completes 19 of the 20 systems and is fastest on 16, against 9 and
+16 completed systems for the direct and decomposition classes.
 
 \begin{table}[pos=htbp]
   \centering
@@ -118,8 +120,10 @@ class; ``timeout'' means that every method of the class timed out.
       \hline
     \end{tabular}%
   }
-  \caption{Best completed baseline results across solver classes. All
-  times are in seconds.}
+  \caption{Fastest completed method of each class on the generated systems,
+    with a 60-second limit; the fastest overall is in bold. Factor branching
+    entries give the wall time $T$ and the time $F$ to the first SAT branch.
+  All times are in seconds.}
   \label{tab:baseline-comparison}
 \end{table}
 
@@ -140,7 +144,7 @@ dominates $T$.
 
 % [Families whose factors come from the problem, grown until every
 % method times out]
-The following five families inherit their factors from the problem, and we
+The following families inherit their factors from the problem, and we
 grow each until every method times out.
 \begin{itemize}
   \item The reduced cyclic $n$-roots systems \texttt{Singular.rcyclic\_$n$}, a
@@ -246,8 +250,8 @@ $n=8$, which refines into 6534 cheap branches.
 % engine alone]
 Factor branching can also use a decomposition method as its branch solver.
 Table~\ref{tab:scaling-decomposition} compares \texttt{facstd} as a backend
-with \texttt{facstd} alone, Algorithm~\ref{alg:PrimaryBranching} with primdec,
-and Algorithm~\ref{alg:Branching} with $\mathcal B_{\min}$ with
+against \texttt{facstd} alone, Algorithm~\ref{alg:PrimaryBranching} against
+primdec, and Algorithm~\ref{alg:Branching} with $\mathcal B_{\min}$ against
 \texttt{minAssGTZ}. Here $\mathcal B_{\min}$ computes a factorizing Gr\"obner
 basis~\cite{graebe1995factorized}, returns each linear piece as a prime, and
 decomposes the other pieces with \texttt{minAssGTZ}~\cite{gianni1988primary},
@@ -256,9 +260,8 @@ Algorithm~\ref{alg:PrimaryBranching} uses the factorizing Gr\"obner basis in
 Algorithm~\ref{alg:IdealReduce}, $\mathcal B_{\min}$ for the minimal primes,
 and the separators and zero-dimensional shortcut of
 Subsection~\ref{subsec:primary-decomposition}, so it runs primdec only when an
-embedded component exists. The last two pairs run in one Python process that
-drives one Singular process, with refinement in lex order and every Gr\"obner
-basis in degrevlex.
+embedded component exists. In the last two pairs, refinement uses lex order
+and every Gr\"obner basis degrevlex.
 
 \begin{table}[pos=htbp]
   \centering
@@ -344,8 +347,8 @@ basis in degrevlex.
 
 % [Which backend benefits: facstd on rcyclic and on the largest systems]
 Factor branching with \texttt{facstd} completes every rcyclic system in under
-$0.3$ seconds and the largest Nash and Lotka--Volterra systems it solves, of
-which \texttt{facstd} alone finishes only rcyclic-8. \texttt{facstd} alone wins on
+$0.3$ seconds, the Nash games with $n=5$, and Lotka--Volterra with $n=12$; of
+these, \texttt{facstd} alone finishes only rcyclic-8. \texttt{facstd} alone wins on
 box-QP, the $n=4$ Nash games, and the smaller Lotka--Volterra systems, where
 factor branching pays for starting Singular once per branch.
 
@@ -364,7 +367,7 @@ Algorithm~\ref{alg:PrimaryBranching} returns the same components as primdec
 wherever both finish. On box-QP with $n=5$ and $n=6$ and Lotka--Volterra with
 $n=8$, the separators find no embedded component, so primdec never runs; there
 it is faster, up to 23 times on box-QP with $n=5$, and the only one to finish
-Lotka--Volterra. With embedded components it pays for both, as on the
+Lotka--Volterra with $n=8$. With embedded components it pays for both, as on the
 degenerate Nash game with $n=4$, and on rcyclic-8 it finds the three
 isolated components in $0.37$ seconds before primdec times out.
 Algorithm~\ref{alg:IdealReduce} stops after one round on these systems, so the
@@ -376,7 +379,7 @@ although \texttt{std} does.
 % [IdealReduce: no factor lies in every SAT branch here; with skipped
 % checks it matches std]
 
-\subsection{Physical System}
+\subsection{Physical system}
 \label{subsec:physical-system}
 
 The physical system is an order-five approximation that constrains graviton
@@ -398,24 +401,37 @@ saturation uses Singular's \texttt{sat} or Macaulay2's \texttt{saturate}, every
 primary decomposition \texttt{primdecSY}~\cite{shimoyama1996localization}, and
 Algorithm~\ref{alg:PrimaryBranching} runs its separators. On the physical
 system, saturations and decompositions use lex order with the min-fill
-variable order, as refinement and Algorithm~\ref{alg:IdealReduce} always do.
+variable order, a greedy elimination order computed from the variable supports
+of the equations, as refinement and Algorithm~\ref{alg:IdealReduce} always do.
 Factor branching limits its saturation of the system to five seconds, removes
 $\kappa_h$ from every factor set, drops a branch once $\kappa_h$ reduces to
 zero modulo its generators, and adds $1-s\kappa_h$ to each terminal branch.
 
 All nine standalone baselines time out on the physical system, whereas factor
-branching refines the saturated system into 10 SAT terminal branches with
-every backend in 0.87 to 0.94 seconds, about 0.83 of them for the saturation
-by $\kappa_h$.
+branching, with every backend, refines the saturated system into 10 SAT
+terminal branches and solves them in 0.87 to 0.94 seconds, about 0.83 seconds
+of which go to the saturation by $\kappa_h$.
+
+% Nonzero conditions: the rounds keep the saturation instead of the ideal
+Keeping $\kappa_h$ nonzero changes only the SAT test of
+Algorithm~\ref{alg:IdealReduce}: a minimal hitting set $H$ counts as SAT when
+$V(H)\not\subseteq V(\kappa_h)$. The proof of Lemma~\ref{lem:sat-branches}
+then shows that $Q$ and the cofactors of $h$ have no common zero outside
+$V(\kappa_h)$, so the Nullstellensatz gives
+$\kappa_h^sh^{a_h}\in\langle Q\rangle$ for some $s\geq0$. Each round then
+keeps $\langle Q\rangle:\kappa_h^\infty$ instead of $\langle Q\rangle$, and
+the termination argument of Theorem~\ref{thm:ideal-reduce} is unchanged.
+Algorithm~\ref{alg:PrimaryBranching} then decomposes
+$\langle Q\rangle:\kappa_h^\infty$, whose minimal primes are those of
+$\langle Q\rangle$ that do not contain $\kappa_h$.
 
 % [PrimaryBranching: the primary decomposition of the physical system]
 Without a time limit, Algorithm~\ref{alg:PrimaryBranching} returns a minimal
 primary decomposition of the physical system over $\mathbb Q(\pi)$.
-Algorithm~\ref{alg:IdealReduce}, keeping $\kappa_h$ nonzero
-(Subsection~\ref{subsec:sat-reduction}), reduces the 28 equations to 18
+Algorithm~\ref{alg:IdealReduce}, keeping $\kappa_h$ nonzero, reduces the 28 equations to 18
 generators in three rounds and 0.6 seconds; Algorithm~\ref{alg:Branching} with
 $\mathcal B_{\min}$ finds the six minimal primes in 0.1 seconds; the
-separators give their isolated components in 1.6 seconds but do not
+separators give their isolated components in 1.6 seconds, but these do not
 intersect to the ideal; and \texttt{primdecSY} decomposes the saturation, with
 56 generators, in most of the time of Primary in
 Table~\ref{tab:physical-decomposition}, whereas on the unreduced system with a
@@ -435,8 +451,8 @@ For each $\alpha\in\{1,1/2,1/4,2,4\}$, we also derive two systems from the
 Einstein--Hilbert truncation of gravity coupled to fermions and scalars, each
 with 31 equations once the Rabinowitsch equation of \texttt{KappaRefFinal} is
 replaced by saturation. The graviton-only system sets $d_1=d_2=d_3=0$ (29 or
-30 variables), and the fermion-only system every variable whose name begins
-with $Dp$ or $p$ (15 variables). On these systems, saturations and
+30 variables), and the fermion-only system sets every variable whose name
+begins with $Dp$ or $p$ to zero (15 variables). On these systems, saturations and
 decompositions use degrevlex with the variables in name order, which is faster
 there. Table~\ref{tab:physical-decomposition} runs the pairs of
 Table~\ref{tab:scaling-decomposition} on them and on the physical system.
@@ -493,6 +509,6 @@ Table~\ref{tab:scaling-decomposition} on them and on the physical system.
 No method finishes a graviton-only system. On the fermion-only systems, every
 method finishes within 0.3 seconds with the same single prime and primary
 component, and the Singular commands alone win every pair; factor branching
-refines these systems into one branch. On the physical system, only factor
-branching with \texttt{facstd} and Prime finish, both in under a second, and
-Primary in 271 seconds; every command alone times out.
+refines these systems into one branch. On the physical system, every command alone times
+out, whereas factor branching with \texttt{facstd} and Prime finish in under a
+second and Primary in 271 seconds.
