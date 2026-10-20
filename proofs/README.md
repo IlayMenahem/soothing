@@ -17,18 +17,22 @@ lake env lean Audit.lean  # prints the axioms of every result
 |---|---|---|
 | Nullstellensatz, `V(Q)=∅ ⇔ ⟨Q⟩=⟨1⟩` (preliminaries) | `vanishing_V_eq_radical`, `V_eq_empty_iff`, `sat_iff_V_nonempty` | `Basic.lean` |
 | Interreduction does not shrink the leading-monomial ideal (preliminaries) | `IsInterRun.lmIdeal_le` | `Interreduce.lean` |
+| Interreduction does not increase the multiset of leading monomials (preliminaries) | `IsInterRun.lmMeasure_le` | `Simplicity.lean` |
+| A monic divisor `g` of `q ∈ Q`, `Q` interreduced, with `LM(g) ∈ M(Q)` is `q` (preliminaries) | `IsInterreduced.eq_of_dvd` | `Interreduce.lean` |
 | Interreduction keeps `⟨Q⟩` and gives an interreduced set | `IsInterRun.span_eq`, `IsInterRun.isInterreduced` | `Interreduce.lean` |
 | Interreduction terminates (multiset order) | `wellFounded_interStep`, `exists_isInterRun`, `Interreducer.ofTermination` | `InterreduceTermination.lean` |
 | Theorem `thm:branch-decomposition` | `Factorizer.V_eq_iUnion_minHitting` (radical form `radical_eq_iInf_minHitting`) | `Factorization.lean` |
 | Progress of one refinement step, `μ(Q) ⊊ μ(H)` (§`subsec:branching-theoretical-analysis`) | `Refiner.refinement_step` | `Refine.lean` |
 | Theorem `thm:refine-termination` | `Refiner.refine_terminates`, `Refiner.terminal_of_mem_refine` | `Refine.lean` |
+| Theorem `thm:refine-simpler` | `Refiner.refine_simpler` | `Simplicity.lean` |
 | Lemma `lem:recursive-refinement` | `Refiner.iUnion_V_round`, `Refiner.V_eq_iUnion_refine`, `Refiner.radical_eq_iInf_refine` | `Refine.lean` |
 | Theorem `thm:branching-correctness` | `Refiner.branching_correct` | `Refine.lean` |
 | Pruning keeps the union (§`subsec:pruning`) | `Refiner.iUnion_V_prune` | `Refine.lean` |
 | Theorem `thm:prime-branching` | `Refiner.primeBranching_eq_minimalPrimes` | `PrimeBranching.lean` |
 | Absorption optimization | `Refiner.primeBranching_with_absorption` | `PrimeBranching.lean` |
 | Lemma `lem:sat-branches` | `Factorizer.pow_maxMult_mem_span` (geometric SAT: `pow_maxMult_mem_span'`) | `IdealReduction.lean` |
-| Theorem `thm:ideal-reduce` | `Refiner.ideal_reduce_terminates`, `Refiner.ideal_reduce_span` | `IdealReduction.lean` |
+| Theorem `thm:ideal-reduce-termination` | `Refiner.ideal_reduce_terminates` | `IdealReduction.lean` |
+| Theorem `thm:ideal-reduce` | `Refiner.ideal_reduce_span` | `IdealReduction.lean` |
 | Gröbner bases decide membership (preliminaries) | `mem_iff_remainder_eq_zero`, `exists_isRemainder` | `IdealRefinement.lean` |
 | Separators exist (§`subsec:primary-decomposition`) | `exists_separator` | `PrimaryBranching.lean` |
 | Saturation keeps components, `J:u^∞ = ⋂_{u∉𝔭_j} 𝔮_j` | `saturation_finsetInf_primary` | `PrimaryBranching.lean` |
@@ -65,8 +69,9 @@ that carries exactly what the paper assumes, and each theorem holds for every ad
   the paper's multiset argument (`wellFounded_interStep`, using the Dershowitz–Manna order), so
   an interreducer exists (`Interreducer.ofTermination`).
 - **Refinement.** One round replaces each branch `Q` by `𝓗(Q̃)`, and `refine P` is the work set
-  at the first round that changes nothing. Termination is proved by well-founded induction on
-  `μ(Q)`, using that `R` is Noetherian, instead of Dickson's and König's lemmas. The radical
+  at the first round that changes nothing. As in the paper, termination is proved by well-founded
+  induction on `μ(Q)`, using that `R` is Noetherian: every branch becomes terminal after finitely
+  many rounds, and a round leaves a set of terminal branches unchanged. The radical
   identities come from a prime-ideal form of the branch decomposition (a prime contains `Q` iff
   it contains a minimal hitting set), so they don't need the Nullstellensatz.
 - **Solvers.** `BranchOutcome` either gives an exact representation of `V(H)` or certifies it

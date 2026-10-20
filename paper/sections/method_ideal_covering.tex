@@ -108,9 +108,10 @@ $\langle Q\rangle=I$, so every later step works on a smaller description of $I$.
 % Optimizations: factor branching for the minimal primes
 It then computes the minimal primes $\mathfrak p_1,\ldots,\mathfrak p_r$ of
 $I$, which give the isolated components in the optional lines and mark the
-components of $\mathcal B_{\mathrm{prim}}$. Algorithm~\ref{alg:Branching} on
-$Q$ with the branch solver $\mathcal B_{\min}$ and the postprocessing of
-Subsection~\ref{subsec:minimal-prime-decomposition} finds them without
+components of $\mathcal B_{\mathrm{prim}}$. Any algorithm $\mathcal B_{\min}$
+that returns the minimal primes of its input works here, and we use
+Theorem~\ref{thm:prime-branching} in the experiments
+(Section~\ref{sec:experiments}). It finds the minimal primes without
 decomposing $I$ itself, and it can skip the minimal hitting sets of $Q$ that
 the last round of Algorithm~\ref{alg:IdealReduce} certified as UNSAT.
 
@@ -160,8 +161,7 @@ $\langle x,y\rangle$ strictly contains $\langle x\rangle$.
     \State $Q\gets\Call{IdealReduce}{P,\mathcal B}$
     \Comment{Algorithm~\ref{alg:IdealReduce}, $\langle
     Q\rangle=\langle P\rangle$}
-    \State $\{\mathfrak p_1,\ldots,\mathfrak p_r\}\gets$ the minimal primes of
-    $\langle Q\rangle$ \Comment{Theorem~\ref{thm:prime-branching}}
+    \State $\{\mathfrak p_1,\ldots,\mathfrak p_r\}\gets\mathcal B_{\min}(Q)$
     \par\vskip3pt\hrule\vskip3pt
     \ForAll{$i\in\{1,\ldots,r\}$} \Comment{Optional}
     \State $w_i\gets$ a separator of $\mathfrak p_i$
@@ -225,13 +225,22 @@ reduce to zero modulo a Gr\"obner basis of $\sqrt{\mathfrak q}$.
 \subsection{Theoretical analysis}
 \label{subsec:ideal-branching-analysis}
 
+We need to show that Algorithm~\ref{alg:PrimaryBranching} terminates and
+returns a minimal primary decomposition of $\langle P\rangle$ with each
+component marked correctly. This will be done by first showing that
+Algorithm~\ref{alg:IdealReduce} terminates and keeps $\langle P\rangle$, and
+then that the separators give the isolated components.
+
+Lemma~\ref{lem:sat-branches} justifies the powers that
+Algorithm~\ref{alg:IdealReduce} adds: each lies in the ideal. Its proof shows
+that the cofactors of $h$ have no common zero on $V(Q)$ and then applies the
+Nullstellensatz.
+
 \begin{lemma}[SAT branches]
   \label{lem:sat-branches}
-  Let $\mathcal H_{\mathrm{sat}}\subseteq\mathcal H(Q)$ contain every
-  SAT minimal
-  hitting set, and let $h\in C(Q)$ lie in every $H\in\mathcal
-  H_{\mathrm{sat}}$. Then
-  $h^{a_h}\in\langle Q\rangle$.
+  Let $\mathcal H_{\mathrm{sat}}\subseteq\mathcal H(Q)$ contain every SAT
+  minimal hitting set, and let $h\in C(Q)$ lie in every
+  $H\in\mathcal H_{\mathrm{sat}}$. Then $h^{a_h}\in\langle Q\rangle$.
 \end{lemma}
 
 \begin{proof}
@@ -249,6 +258,36 @@ reduce to zero modulo a Gr\"obner basis of $\sqrt{\mathfrak q}$.
   $h^{a_h}$ gives $h^{a_h}\in\langle Q\rangle$.
 \end{proof}
 
+Algorithm~\ref{alg:IdealReduce} terminates for the same reason as
+Algorithm~\ref{alg:Refine} (Theorem~\ref{thm:refine-termination}): $M(Q)$
+grows strictly in every round that does not return, since every new power has
+a leading monomial outside $M(Q)$.
+
+\begin{theorem}[Termination of ideal reduction]
+  \label{thm:ideal-reduce-termination}
+  If $\mathcal B$ terminates on every finite polynomial system, then
+  Algorithm~\ref{alg:IdealReduce} terminates on every finite polynomial system.
+\end{theorem}
+
+\begin{proof}
+  Consider a round with $\Delta\neq\emptyset$, and let
+  $Q_0=\Delta\cup\{q\in Q:\text{no element of $\Delta$ divides $q$}\}$, so that
+  the round ends with $\Call{Interreduce}{Q_0}$. Every $q\in Q$ is kept or is a
+  multiple of an element of $\Delta$, so $M(Q)\subseteq M(Q_0)$. The inclusion
+  is strict. Indeed, let $\delta=h^{a_h}\in\Delta$, and let $q\in Q$ have
+  $e_{q,h}=a_h$, so that the monic $\delta$ divides $q$. Since $Q$ is
+  interreduced at the start of every round and $\delta\notin Q$,
+  Subsection~\ref{subsec:groebner} gives $\operatorname{LM}(\delta)\notin M(Q)$.
+  Since interreduction does not shrink $M$, $M(Q)$ grows strictly in every
+  round that does not return. Since $R$ is Noetherian, there are finitely many
+  rounds. Each round runs Algorithm~\ref{alg:Branching} with $\mathcal B$ on the
+  finitely many $H\in\mathcal H(Q)$, which terminates by
+  Theorem~\ref{thm:branching-termination}.
+\end{proof}
+
+Using Lemma~\ref{lem:sat-branches}, we show that
+Algorithm~\ref{alg:IdealReduce} keeps the ideal.
+
 \begin{theorem}[Ideal reduction]
   \label{thm:ideal-reduce}
   Algorithm~\ref{alg:IdealReduce} terminates and returns a finite
@@ -256,36 +295,19 @@ reduce to zero modulo a Gr\"obner basis of $\sqrt{\mathfrak q}$.
 \end{theorem}
 
 \begin{proof}
+  The algorithm terminates by Theorem~\ref{thm:ideal-reduce-termination}.
   Every round keeps $\langle Q\rangle$. Indeed, $\mathcal B$ certifies
   $V(H)=\emptyset$ only when it holds (Lemma~\ref{lem:recursive-refinement}), so
   $\mathcal H_{\mathrm{sat}}$ contains every SAT minimal hitting set. Hence
   $\Delta\subseteq\langle Q\rangle$ by Lemma~\ref{lem:sat-branches}, the dropped
   generators are multiples of elements of $\Delta$, and interreduction keeps the
   ideal.
-
-  For termination, let $M(G)=\langle\operatorname{LM}(g):g\in G\rangle$ as in
-  the proof of Theorem~\ref{thm:refine-termination}. Consider a round with
-  $\Delta\neq\emptyset$, and let $Q_0=\Delta\cup\{q\in Q:\text{no
-      element of $\Delta$ divides
-  $q$}\}$, so that the round ends with $\Call{Interreduce}{Q_0}$. At
-  the start of
-  every round, $Q$ is interreduced, and in particular monic. Every $q\in Q$ is
-  kept or is a multiple of an element of $\Delta$, so $M(Q)\subseteq
-  M(Q_0)$. Let
-  $\delta=h^{a_h}\in\Delta$ and let $q\in Q$ have $e_{q,h}=a_h$, so
-  that $\delta\mid q$. If
-  $\operatorname{LM}(\delta)\in M(Q)$, some $q'\in Q$ has
-  $\operatorname{LM}(q')\mid\operatorname{LM}(\delta)\mid\operatorname{LM}(q)$,
-  so
-  $q'=q$ since $Q$ is interreduced. Then $q/\delta$ has leading
-  monomial $1$, and
-  $\delta=q\in Q$ since both are monic, which contradicts
-  $\delta\notin Q$. Hence
-  $M(Q)\subsetneq M(Q_0)$, and since interreduction does not shrink the
-  leading-monomial ideal, $M(Q)$ grows strictly in every round that does not
-  return. Since $R$ is Noetherian, there are finitely many rounds, and each
-  makes finitely many calls of $\mathcal B$.
 \end{proof}
+
+The optional lines of Algorithm~\ref{alg:PrimaryBranching} rest on the
+following lemma. Saturating by a separator of $\mathfrak p$ keeps only
+components whose radicals contain $\mathfrak p$, and among them the
+$\mathfrak p$-primary one is the only one of maximal dimension.
 
 \begin{lemma}[Isolated components by separators]
   \label{lem:isolated-separator}
@@ -303,24 +325,37 @@ reduce to zero modulo a Gr\"obner basis of $\sqrt{\mathfrak q}$.
   minimal, since a $\mathfrak q_j$ that contained the intersection of the other
   kept components would contain the smaller intersection of all other
   components. For $j\in T$, the prime $\mathfrak p_j$ contains $I$, hence
-  $\sqrt I$, the intersection of the minimal primes of $I$, and hence one of
-  them~\cite[Prop.~1.11]{atiyah1969introduction}. This minimal prime is
-  $\mathfrak p$, since every other one contains $w$.
-  The $\mathfrak p$-primary component $\mathfrak q$ of $I$ is kept, since
-  $w\notin\mathfrak p$, so $\mathfrak p$ contains $I:w^\infty$. Every prime
-  that contains $I:w^\infty$ contains some kept
-  $\mathfrak q_j$~\cite[Prop.~1.11]{atiyah1969introduction}, hence
-  $\mathfrak p_j\supseteq\mathfrak p$, so $\mathfrak p$ is the only minimal
-  prime of $I:w^\infty$.
-
-  It follows that $\mathfrak q$ is the isolated $\mathfrak p$-primary component
-  of $I:w^\infty$, which is the same in every minimal primary decomposition of
-  $I:w^\infty$. Every other component of such a decomposition has a radical
-  that contains $I:w^\infty$, hence $\mathfrak p$, and differs from
-  $\mathfrak p$. A prime that strictly contains $\mathfrak p$ has smaller
-  dimension (Subsection~\ref{subsec:minimal-prime-decomposition}), so
-  $\mathfrak q$ is the only component of maximal dimension.
+  $\sqrt I$, and hence a minimal prime of
+  $I$~\cite[Prop.~1.11]{atiyah1969introduction}. This minimal prime does not
+  contain $w$, so it is $\mathfrak p$. The $\mathfrak p$-primary component
+  $\mathfrak q$ of $I$ is kept, since $w\notin\mathfrak p$. So $\mathfrak p$ is
+  the only minimal prime of $I:w^\infty$, and every other kept $\mathfrak p_j$
+  strictly contains $\mathfrak p$ and therefore has smaller dimension
+  (Subsection~\ref{subsec:minimal-prime-decomposition}). Every minimal primary
+  decomposition of $I:w^\infty$ has these radicals and the isolated component
+  $\mathfrak q$, so $\mathfrak q$ is its only component of maximal dimension.
 \end{proof}
+
+Termination of Algorithm~\ref{alg:PrimaryBranching} follows from that of its
+steps.
+
+\begin{theorem}[Termination of primary factor branching]
+  \label{thm:primary-branching-termination}
+  If $\mathcal B$, $\mathcal B_{\min}$, and $\mathcal B_{\mathrm{prim}}$
+  terminate on every finite polynomial system, then
+  Algorithm~\ref{alg:PrimaryBranching} terminates on every finite polynomial
+  system.
+\end{theorem}
+
+\begin{proof}
+  By Theorem~\ref{thm:ideal-reduce-termination}, Algorithm~\ref{alg:IdealReduce}
+  terminates. The remaining lines make finitely many solver calls, each of
+  which terminates.
+\end{proof}
+
+Finally, the previous results give the correctness of
+Algorithm~\ref{alg:PrimaryBranching}. It remains to show that the components
+the optional lines return are not redundant.
 
 \begin{theorem}[Primary factor branching]
   \label{thm:primary-branching}
@@ -334,11 +369,11 @@ reduce to zero modulo a Gr\"obner basis of $\sqrt{\mathfrak q}$.
 \end{theorem}
 
 \begin{proof}
-  By Theorem~\ref{thm:ideal-reduce}, Algorithm~\ref{alg:IdealReduce} terminates
-  and returns $Q$ with $\langle Q\rangle=\langle P\rangle=I$, so by
-  Theorem~\ref{thm:prime-branching} the $\mathfrak p_i$ are the minimal primes
-  of $I$. The remaining lines make finitely many solver calls, so the algorithm
-  terminates.
+  The algorithm terminates by
+  Theorem~\ref{thm:primary-branching-termination}. By
+  Theorem~\ref{thm:ideal-reduce}, $\langle Q\rangle=\langle P\rangle=I$, so
+  the $\mathfrak p_i$ that $\mathcal B_{\min}$ returns on $Q$ are the minimal
+  primes of $I$.
 
   Suppose that the optional lines return. By
   Lemma~\ref{lem:isolated-separator}, each $\mathfrak q_i$ is the isolated
@@ -353,10 +388,7 @@ reduce to zero modulo a Gr\"obner basis of $\sqrt{\mathfrak q}$.
 
   Otherwise, $\mathcal B_{\mathrm{prim}}$ decomposes $\langle Q\rangle=I$. A
   component is isolated exactly when its radical is a minimal prime of $I$, that
-  is, one of the $\mathfrak p_i$, which is the mark. The radical of an embedded
-  component is a prime that contains $I$, hence some $\mathfrak p_i$ as in the
-  proof of Lemma~\ref{lem:isolated-separator}, and it differs from
-  $\mathfrak p_i$.
+  is, one of the $\mathfrak p_i$, which is the mark.
 
   In both cases, $g\in\langle P\rangle$ if and only if $g$ lies in every
   component, and a Gr\"obner basis decides membership by reduction

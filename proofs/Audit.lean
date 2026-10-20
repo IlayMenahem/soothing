@@ -9,12 +9,15 @@ open FactorBranching
 #print axioms FactorBranching.vanishing_V_eq_radical
 #print axioms FactorBranching.V_eq_empty_iff
 #print axioms FactorBranching.IsInterRun.lmIdeal_le
+#print axioms FactorBranching.IsInterRun.lmMeasure_le
+#print axioms FactorBranching.IsInterreduced.eq_of_dvd
 -- Section "Factor branching framework"
 #print axioms FactorBranching.Factorizer.V_eq_iUnion_minHitting
 #print axioms FactorBranching.Factorizer.radical_eq_iInf_minHitting
 #print axioms FactorBranching.Refiner.refinement_step
 #print axioms FactorBranching.Refiner.refine_terminates
 #print axioms FactorBranching.Refiner.terminal_of_mem_refine
+#print axioms FactorBranching.Refiner.refine_simpler
 #print axioms FactorBranching.Refiner.V_eq_iUnion_refine
 #print axioms FactorBranching.Refiner.radical_eq_iInf_refine
 #print axioms FactorBranching.Refiner.branching_correct

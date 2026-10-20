@@ -91,13 +91,23 @@ branches.
 \subsection{Theoretical analysis}
 \label{subsec:branching-theoretical-analysis}
 
-\begin{theorem}[One-round branch decomposition]
+We need to show that Algorithm~\ref{alg:Branching} terminates and returns a
+decomposition of $V(P)$ and $\sqrt{\langle P\rangle}$. This will be done by
+first showing that Algorithm~\ref{alg:Refine} terminates and returns branches
+whose varieties have union $V(P)$ and whose radicals intersect to
+$\sqrt{\langle P\rangle}$.
+Later we show that the branches Algorithm~\ref{alg:Refine} returns are simpler to solve than the original system.
+
+First we need to show that the minimal hitting sets of the factor sets of a
+polynomial system $P$ cover its solution set.
+
+\begin{lemma}[One-round branch decomposition]
   \label{thm:branch-decomposition}
   For every finite $Q\subseteq R\setminus\{0\}$,
   \[
     V(Q) = \bigcup_{H \in \mathcal{H}(Q)} V(H).
   \]
-\end{theorem}
+\end{lemma}
 
 \begin{proof}
   Let $a\in V(Q)$. Every $q\in Q$ vanishes at $a$, so some factor in $C_q$
@@ -107,82 +117,10 @@ branches.
   vanishes at $a$, so $a\in V(Q)$.
 \end{proof}
 
-\begin{theorem}[Termination of refinement]
-  \label{thm:refine-termination}
-  Algorithm~\ref{alg:Refine} terminates on every finite polynomial system.
-\end{theorem}
-
-\begin{proof}
-  One round replaces each branch $Q$ by its children
-  $\mathcal H(\widetilde Q)$, where $\widetilde Q=\Call{Interreduce}{Q}$,
-  independently of the other branches. For a finite set $G$, write
-  $M(G)=\langle\operatorname{LM}(g):g\in G\rangle$.
-
-  We first show that every child $H$ of $Q$ is terminal or satisfies
-  $M(\widetilde Q)\subsetneq M(\widetilde H)$. Every $q\in\widetilde Q$ is a
-  multiple of some $h\in H$, so $\operatorname{LM}(h)\mid\operatorname{LM}(q)$
-  and $M(\widetilde Q)\subseteq M(H)$. Suppose that equality holds, and let
-  $h\in H$ divide $q\in\widetilde Q$. Since
-  $\operatorname{LM}(h)\in M(\widetilde Q)$, some $q'\in\widetilde Q$ has
-  $\operatorname{LM}(q')\mid\operatorname{LM}(h)\mid\operatorname{LM}(q)$.
-  Since $\widetilde Q$ is interreduced, $q'=q$, so $q/h$ has leading
-  monomial $1$, and $h=q$ because both are monic. Every
-  element of $H$ is a factor of an element of $\widetilde Q$, and every element
-  of $\widetilde Q$ has a factor in $H$, so $H=\widetilde Q$. Then $H$ is
-  interreduced and consists of monic irreducible polynomials, so
-  $\widetilde H=H$ and $\mathcal H(H)=\{H\}$, that is, $H$ is terminal.
-  Otherwise $M(\widetilde Q)\subsetneq M(H)\subseteq M(\widetilde H)$, since
-  interreduction does not shrink the leading-monomial ideal.
-
-  Next, we show that the rounds started from $\{Q\}$ reach a fixed point. Since
-  $R$ is Noetherian, it has no infinite strictly ascending chain of ideals, so
-  by Noetherian induction we may assume this for every branch $H$ with
-  $M(\widetilde Q)\subsetneq M(\widetilde H)$. A terminal $Q$ is a fixed point.
-  Otherwise, each of the finitely many children $H$ of $Q$ is terminal or has
-  $M(\widetilde Q)\subsetneq M(\widetilde H)$, so it reaches a fixed point after
-  some $k_H$ rounds, and $\{Q\}$ reaches one after $1+\max_Hk_H$ rounds. Since
-  rounds act on each branch separately, $W=\mathcal H(P)$ reaches a fixed point,
-  and the loop stops.
-
-  Finally, every branch of the final $W$ is terminal. Otherwise, choose a
-  nonterminal $Q\in W$ whose $M(\widetilde Q)$ is minimal among the nonterminal
-  branches of $W$. Since $W$ is a fixed point, $Q$ is a child of some $Q'\in W$.
-  A terminal $Q'$ has only the child $Q'$, so $Q'$ is nonterminal, and
-  $M(\widetilde Q')\subsetneq M(\widetilde Q)$ contradicts the choice of $Q$.
-\end{proof}
-
-% Simplicity: a child keeps at most one irreducible factor of each
-% parent generator
-Each element of a child divides a different generator of its parent, which
-makes the child a smaller and simpler system in the following sense.
-
-\begin{theorem}[Refined branches are simpler]
-  \label{thm:refine-simpler}
-  Let $H\in\mathcal H(\widetilde Q)$ with $H\neq\widetilde Q$, where
-  $\widetilde Q=\Call{Interreduce}{Q}$. Each element of $H$ divides a different
-  element of $\widetilde Q$. The leading monomials of $H$ are smaller than those
-  of $\widetilde Q$ in the multiset extension of $\prec$, yet generate a
-  strictly larger monomial ideal.
-\end{theorem}
-
-\begin{proof}
-  Let $h\in H$. Since $H$ is a minimal hitting set, $H\setminus\{h\}$ is not
-  one, so some $q\in\widetilde Q$ has $C_q\cap H=\{h\}$. Let $\iota(h)$ be such
-  a $q$. Then $h\mid\iota(h)$, and $\iota$ is injective, since
-  $C_{\iota(h)}\cap H=\{h\}$ determines $h$. If $h\neq\iota(h)$, then
-  $\iota(h)/h$ is not constant, since both polynomials are monic, so
-  $\operatorname{LM}(h)\prec\operatorname{LM}(h)\operatorname{LM}(\iota(h)/h)
-  =\operatorname{LM}(\iota(h))$, since $1\prec v$ for every monomial
-  $v\neq1$~\cite[Ch.~2, \S4]{cox2015ideals}. The multiset of
-  the leading monomials of $H$ arises from that of $\widetilde Q$ by replacing
-  $\operatorname{LM}(\iota(h))$ with $\operatorname{LM}(h)$ for every $h\in H$
-  and deleting $\operatorname{LM}(q)$ for every
-  $q\in\widetilde Q\setminus\iota(H)$. Since $H\neq\widetilde Q$, some $h$ has
-  $h\neq\iota(h)$, or some $q$ lies outside $\iota(H)$, so the multiset
-  decreases strictly. Finally, with $M$ as in the proof of
-  Theorem~\ref{thm:refine-termination}, that proof shows that
-  $M(\widetilde Q)\subseteq M(H)$, with equality only if $H=\widetilde Q$.
-\end{proof}
+Using Lemma~\ref{thm:branch-decomposition}, we show that every round of
+Algorithm~\ref{alg:Refine} preserves the solution set of the original system,
+and by that Algorithm~\ref{alg:Refine} preserves the solution set of the
+original system and its radical.
 
 \begin{lemma}[Refinement preserves solutions]
   \label{lem:recursive-refinement}
@@ -196,16 +134,80 @@ makes the child a smaller and simpler system in the following sense.
 \end{lemma}
 
 \begin{proof}
-  Interreduction keeps $V(Q)$, so Theorem~\ref{thm:branch-decomposition} gives
+  Interreduction keeps $V(Q)$, so Lemma~\ref{thm:branch-decomposition} gives
   $V(Q)=\bigcup_{H\in\mathcal H(\widetilde Q)}V(H)$ for every branch $Q$, with
   $\widetilde Q=\Call{Interreduce}{Q}$, and a round keeps the union.
   The optional $\Call{Prune}{}$ removes only branches
   whose solution sets lie in that of a kept branch. The loop starts from
-  $W=\mathcal H(P)$, so Theorem~\ref{thm:branch-decomposition} and induction on
+  $W=\mathcal H(P)$, so Lemma~\ref{thm:branch-decomposition} and induction on
   the rounds give the first identity. By the Nullstellensatz,
   $\sqrt{\langle P\rangle}=I(V(P))$ and $\sqrt{\langle H\rangle}=I(V(H))$, and
   the vanishing ideal of a finite union is the intersection of the vanishing
   ideals, which gives the second.
+\end{proof}
+
+Next we show that Algorithm~\ref{alg:Refine} terminates. First note that each
+generator of an interreduced branch is a multiple of an element of each child,
+so the leading monomials of a child generate a larger monomial ideal, strictly
+unless the child is terminal, and interreducing the child keeps this ideal from
+shrinking. Since $R$ is Noetherian, these ideals cannot grow forever, so every
+branch eventually becomes terminal, and a round changes no terminal branch.
+
+\begin{theorem}[Termination of refinement]
+  \label{thm:refine-termination}
+  Algorithm~\ref{alg:Refine} terminates on every finite polynomial system.
+\end{theorem}
+
+\begin{proof}
+  One round replaces each branch $Q$ by its children
+  $\mathcal H(\widetilde Q)$, where $\widetilde Q=\Call{Interreduce}{Q}$,
+  independently of the other branches. It leaves a set of terminal branches
+  unchanged, and once it leaves $W$ unchanged, so does every later round.
+
+  We first show that every child $H$ of $Q$ is terminal or satisfies
+  $M(\widetilde Q)\subsetneq M(\widetilde H)$. Every $q\in\widetilde Q$ is a
+  multiple of some $h\in H$, so $\operatorname{LM}(h)\mid\operatorname{LM}(q)$
+  and $M(\widetilde Q)\subseteq M(H)$. If equality holds, every $h\in H$ is
+  monic, divides some $q\in\widetilde Q$, and has
+  $\operatorname{LM}(h)\in M(\widetilde Q)$, so $h=q$
+  (Subsection~\ref{subsec:groebner}). Hence $H\subseteq\widetilde Q$, and every
+  $q\in\widetilde Q$ equals its factor in $H$, so $H=\widetilde Q$. Then $H$ is
+  interreduced and consists of monic irreducible polynomials, so
+  $\widetilde H=H$ and $\mathcal H(H)=\{H\}$, that is, $H$ is terminal.
+  Otherwise $M(\widetilde Q)\subsetneq M(H)\subseteq M(\widetilde H)$, since
+  interreduction does not shrink $M$.
+
+  Next, we show that the rounds started from $\{Q\}$ reach a set of terminal
+  branches. Since $R$ is Noetherian, it has no infinite strictly ascending
+  chain of ideals, so by Noetherian induction we may assume this for every
+  branch $H$ with $M(\widetilde Q)\subsetneq M(\widetilde H)$. A terminal $Q$
+  needs no round. Otherwise, each of the finitely many children $H$ of $Q$ is
+  terminal or has $M(\widetilde Q)\subsetneq M(\widetilde H)$, so its rounds
+  reach terminal branches after some $k_H$ rounds, and those of $\{Q\}$ after
+  $1+\max_Hk_H$ rounds.
+
+  Hence, after some $k$ rounds, $W$ consists of terminal branches, and the next
+  round leaves it unchanged, so the loop stops. Every later round leaves the
+  returned $W$ unchanged, so it equals the work set after round $k$ or later,
+  and its branches are terminal.
+\end{proof}
+
+Since Algorithm~\ref{alg:Branching} involves only calling
+Algorithm~\ref{alg:Refine} and the branch solver $\mathcal B$ on each branch,
+we can easily show that it terminates and returns a decomposition of $V(P)$ and
+$\sqrt{\langle P\rangle}$.
+
+\begin{theorem}[Termination of factor branching]
+  \label{thm:branching-termination}
+  If $\mathcal B$ terminates on every finite polynomial system, then
+  Algorithm~\ref{alg:Branching} terminates on every finite polynomial system.
+\end{theorem}
+
+\begin{proof}
+  By Theorem~\ref{thm:refine-termination}, Algorithm~\ref{alg:Refine}
+  terminates and returns a finite set $\mathcal L(P)$, so
+  Algorithm~\ref{alg:Branching} makes finitely many calls of $\mathcal B$, each
+  of which terminates.
 \end{proof}
 
 \begin{theorem}[Factor branching]
@@ -220,14 +222,51 @@ makes the child a smaller and simpler system in the following sense.
 \end{theorem}
 
 \begin{proof}
-  By Theorem~\ref{thm:refine-termination}, $\Call{Refine}{P}$ returns the finite
-  set $\mathcal L(P)$, so the algorithm makes finitely many solver
-  calls, each of
-  which returns. The branches that $\mathcal B$ certifies UNSAT have empty
+  The algorithm terminates by Theorem~\ref{thm:branching-termination}, and it
+  calls $\mathcal B$ on every $H\in\mathcal L(P)$. The branches that
+  $\mathcal B$ certifies UNSAT have empty
   solution sets, and $\mathcal B$ represents every other branch exactly, so the
   first identity follows from Lemma~\ref{lem:recursive-refinement}, and the
   second follows from the first by the Nullstellensatz, as in the proof of
   Lemma~\ref{lem:recursive-refinement}.
+\end{proof}
+
+% Simplicity: a child keeps at most one irreducible factor of each
+% parent generator
+For Algorithm~\ref{alg:Refine} to be useful, it should be proven that the
+branches it returns are simpler than those of the original system.
+Each element of a child divides a different generator of its parent, which
+makes the child a smaller and simpler system in the following sense.
+
+\begin{theorem}[Refined branches are simpler]
+  \label{thm:refine-simpler}
+  Let $H\in\mathcal H(\widetilde Q)$ with $H\neq\widetilde Q$. The leading
+  monomials of $H$ are smaller than those of $Q$ in the multiset extension of
+  $\prec$, yet generate a strictly larger monomial ideal.
+\end{theorem}
+
+\begin{proof}
+  We first compare $H$ with $\widetilde Q$, then $\widetilde Q$ with $Q$.
+  Let $h\in H$. Since $H$ is a minimal hitting set, $H\setminus\{h\}$ is not
+  one, so some $q\in\widetilde Q$ has $C_q\cap H=\{h\}$. Let $\iota(h)$ be such
+  a $q$. Then $h\mid\iota(h)$, and $\iota$ is injective, since
+  $C_{\iota(h)}\cap H=\{h\}$ determines $h$. If $h\neq\iota(h)$, then
+  $\iota(h)/h$ is not constant, since both polynomials are monic, so
+  $\operatorname{LM}(h)\prec\operatorname{LM}(h)\operatorname{LM}(\iota(h)/h)
+  =\operatorname{LM}(\iota(h))$, since $1\prec v$ for every monomial
+  $v\neq1$~\cite[Ch.~2, \S4]{cox2015ideals}. The multiset of
+  the leading monomials of $H$ arises from that of $\widetilde Q$ by replacing
+  $\operatorname{LM}(\iota(h))$ with $\operatorname{LM}(h)$ for every $h\in H$
+  and deleting $\operatorname{LM}(q)$ for every
+  $q\in\widetilde Q\setminus\iota(H)$. Since $H\neq\widetilde Q$, some $h$ has
+  $h\neq\iota(h)$, or some $q$ lies outside $\iota(H)$, so the multiset
+  decreases strictly.
+
+  Interreduction does not increase this multiset and does not shrink $M$
+  (Subsection~\ref{subsec:groebner}). Hence the multiset of $H$ is strictly
+  smaller than that of $Q$, and
+  $M(Q)\subseteq M(\widetilde Q)\subsetneq M(H)$, where the strict inclusion is
+  shown in the proof of Theorem~\ref{thm:refine-termination}.
 \end{proof}
 
 \subsection{Minimal primes}
@@ -243,13 +282,9 @@ The output $S$ is then the set of primes that $\mathcal B_{\min}$ returns on
 the branches in $\mathcal L(P)$, and the postprocessing keeps its minimal
 elements under inclusion in two steps.
 \begin{enumerate}
-  \item Represent each prime by its reduced Gr\"obner basis. Equal primes
-    have the same reduced Gr\"obner basis, so this merges the copies of a
-    prime that several branches return.
-  \item Remove every $\mathfrak p\in S$ that contains another
-    element $\mathfrak p'$ of $S$. The inclusion
-    $\mathfrak p'\subseteq\mathfrak p$ holds exactly when every generator of
-    $\mathfrak p'$ reduces to zero modulo the Gr\"obner basis of $\mathfrak p$.
+  \item Represent each prime by its reduced Gr\"obner basis.
+  \item Remove ideals which their variety is included in the variety of another
+    ideal. Ideal containment can be easily tested for Gr\"obner bases.
 \end{enumerate}
 A prime that strictly contains $\mathfrak p'$ has smaller dimension than
 $\mathfrak p'$, so the second step tests $\mathfrak p'\subseteq\mathfrak p$
@@ -258,9 +293,9 @@ only when $\mathfrak p'$ has the larger dimension.
 % Correctness
 \begin{theorem}[Prime factor branching]
   \label{thm:prime-branching}
-  With the branch solver $\mathcal B_{\min}$, the output
-  $S$ of Algorithm~\ref{alg:Branching} after the postprocessing is the minimal
-  primes of $\langle P\rangle$.
+  With the branch solver $\mathcal B_{\min}$, the output $S$ of
+  Algorithm~\ref{alg:Branching} after the postprocessing is the minimal primes
+  of $\langle P\rangle$.
 \end{theorem}
 
 \begin{proof}
@@ -273,22 +308,13 @@ only when $\mathfrak p'$ has the larger dimension.
     =\bigcap_{H\in\mathcal L(P)}\sqrt{\langle H\rangle}
     =\sqrt{\langle P\rangle}.
   \]
-  In particular, every $\mathfrak p\in S$ contains $\langle P\rangle$.
-
-  Let $\mathfrak q$ be a minimal prime of $\langle P\rangle$. Every
-  $\mathfrak p\in S$ with $\mathfrak p\subseteq\mathfrak q$ is a prime
-  containing $\langle P\rangle$, so $\mathfrak p=\mathfrak q$ by the minimality
-  of $\mathfrak q$. Such a $\mathfrak p$ exists, because a prime that contains a
-  finite intersection of ideals contains one of
-  them~\cite[Prop.~1.11]{atiyah1969introduction}, and $\mathfrak q$ contains
-  $\bigcap_{\mathfrak p\in S}\mathfrak p$. Hence
-  $\mathfrak q\in S$, no other element of $S$ lies in
-  $\mathfrak q$, and $\mathfrak q$ is a minimal element of $S$.
-
-  Conversely, let $\mathfrak p$ be a minimal element of $S$. It contains
-  $\sqrt{\langle P\rangle}$, the intersection of the finitely many minimal
-  primes of $\langle P\rangle$, so by the same proposition it contains one of
-  them, $\mathfrak q$. By the previous paragraph $\mathfrak q\in S$, and
-  the minimality of $\mathfrak p$ in $S$ gives
-  $\mathfrak p=\mathfrak q$.
+  Hence every element of $S$ is a prime containing $\langle P\rangle$, and
+  every prime containing $\langle P\rangle$ contains
+  $\sqrt{\langle P\rangle}$, hence some element of $S$ and some minimal prime
+  of $\langle P\rangle$~\cite[Prop.~1.11]{atiyah1969introduction}. So a
+  minimal prime $\mathfrak q$ of $\langle P\rangle$ contains an element of $S$
+  and, by its minimality, equals every element of $S$ that it contains; hence
+  $\mathfrak q$ is a minimal element of $S$. Conversely, a minimal element of
+  $S$ contains a minimal prime of $\langle P\rangle$, which lies in $S$, so the
+  two are equal.
 \end{proof}

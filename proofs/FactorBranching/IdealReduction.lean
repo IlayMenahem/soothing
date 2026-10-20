@@ -4,7 +4,7 @@ import FactorBranching.Refine
 # Ideal reduction
 
 Subsection `subsec:sat-reduction`: Algorithm `alg:IdealReduce`, Lemma `lem:sat-branches` and
-Theorem `thm:ideal-reduce`.
+Theorems `thm:ideal-reduce-termination` and `thm:ideal-reduce`.
 
 The branch solver is modelled by the family `𝓗_sat` it leaves uncertified: any subfamily of
 `𝓗(Q)` that contains every SAT minimal hitting set is admissible ("unknown counts as SAT").
@@ -213,14 +213,7 @@ theorem lmIdeal_lt (hs : ρ.ReduceStep Q Q') : lmIdeal m Q < lmIdeal m Q' := by
       exact ⟨_, Factorizer.eq_pow_mul_cofactor (hne q hq) hhq⟩
     have hmonic : m.Monic (h ^ ρ.F.maxMult Q h) :=
       monic_pow (Factorizer.monic_of_mem (hne q hq) hhq) _
-    obtain ⟨q', hq', hq'n⟩ := hge _ (Finset.mem_union_left _ hn)
-    have hdeg := degree_le_of_dvd (m := m) hdvd (hne q hq)
-    have hq'q : q' = q := by
-      by_contra hne'
-      exact hQ.2.2 q hq q' hq' (Ne.symm hne') (m.degree q)
-        (m.degree_mem_support (hne q hq)) (hq'n.trans hdeg)
-    subst hq'q
-    exact hnQ (eq_of_dvd_of_degree_le hmonic (hQ.2.1 q' hq) hdvd hq'n ▸ hq)
+    exact hnQ (hQ.eq_of_dvd hq hmonic hdvd (hge _ (Finset.mem_union_left _ hn)) ▸ hq)
   exact lt_of_lt_of_le (lt_of_le_not_ge hle hnot)
     (ρ.I.lmIdeal_le_ired (zero_notMem_reduceInput hQ.1 hN))
 
@@ -233,7 +226,7 @@ end ReduceStep
 
 variable (ρ)
 
-/-- **Theorem `thm:ideal-reduce` (Ideal reduction), termination.** For any answers of the branch
+/-- **Theorem `thm:ideal-reduce-termination` (Termination of ideal reduction).** For any answers of the branch
 solver, Algorithm `alg:IdealReduce` makes finitely many rounds: there is no infinite chain of
 rounds, since each strictly enlarges `⟨LM(q) : q ∈ Q⟩` and `R` is Noetherian. -/
 theorem ideal_reduce_terminates [Finite σ] :

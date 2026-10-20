@@ -11,3 +11,4 @@ import FactorBranching.PrimaryBranching
 import FactorBranching.Vars
 import FactorBranching.VariableZeroing
 import FactorBranching.AuxGenerators
+import FactorBranching.Simplicity

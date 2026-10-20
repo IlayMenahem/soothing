@@ -287,6 +287,19 @@ theorem IsInterRun.eq_of_isInterreduced (hr : IsInterRun m Q Q') (hQ : IsInterre
 
 end Run
 
+/-- If `Q` is interreduced and a monic `g` divides `q ∈ Q` with `LM(g) ∈ ⟨LM(Q)⟩`, then `g = q`
+(Preliminaries). -/
+theorem IsInterreduced.eq_of_dvd {Q : Finset (MvPolynomial σ K)} (hQ : IsInterreduced m Q)
+    {g q : MvPolynomial σ K} (hq : q ∈ Q) (hg : m.Monic g) (hgq : g ∣ q)
+    (hlm : ∃ q' ∈ Q, m.degree q' ≤ m.degree g) : g = q := by
+  obtain ⟨q', hq', hq'g⟩ := hlm
+  have hq0 : q ≠ 0 := fun h0 => hQ.1 (h0 ▸ hq)
+  obtain rfl : q' = q := by
+    by_contra hne
+    exact hQ.2.2 q hq q' hq' (Ne.symm hne) (m.degree q) (m.degree_mem_support hq0)
+      (hq'g.trans (degree_le_of_dvd hgq hq0))
+  exact eq_of_dvd_of_degree_le hg (hQ.2.1 q' hq) hgq hq'g
+
 namespace Interreducer
 
 variable (I : Interreducer K m) {Q : Finset (MvPolynomial σ K)}

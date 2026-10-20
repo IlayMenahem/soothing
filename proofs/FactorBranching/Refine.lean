@@ -120,14 +120,12 @@ theorem minHitting_of_monic_irreducible {H : Finset (MvPolynomial σ K)}
 
 /-! ### Lemma `lem:refinement-step` -/
 
-/-- **Lemma `lem:refinement-step` (Progress of one refinement step).**
-Let `H ∈ 𝓗(Q̃)`. Then `H` is terminal, or `μ(Q) ⊊ μ(H)`. -/
-theorem refinement_step {Q H : Finset (MvPolynomial σ K)} (hH : H ∈ ρ.children Q) :
-    ρ.Terminal H ∨ ρ.μ Q < ρ.μ H := by
+/-- For a child `H ≠ Q̃`, `⟨LM(q) : q ∈ Q̃⟩ ⊊ ⟨LM(h) : h ∈ H⟩`. -/
+theorem lmIdeal_tilde_lt {Q H : Finset (MvPolynomial σ K)} (hH : H ∈ ρ.children Q)
+    (hEq : H ≠ ρ.tilde Q) : lmIdeal m (ρ.tilde Q) < lmIdeal m H := by
   have hmi : ∀ h ∈ H, m.Monic h ∧ Irreducible h := fun h hh => by
     obtain ⟨-, -, -, hm, hirr⟩ := monic_irreducible_of_mem_children hH hh
     exact ⟨hm, hirr⟩
-  have hH0 : (0 : MvPolynomial σ K) ∉ H := zero_notMem_of_mem_children hH
   have hQi := isInterreduced_tilde (ρ := ρ) Q
   set Q' := ρ.tilde Q with hQ'
   -- `H` meets the factor set of every element of `Q̃`
@@ -135,16 +133,6 @@ theorem refinement_step {Q H : Finset (MvPolynomial σ K)} (hH : H ∈ ρ.childr
     obtain ⟨h, hh, hhq⟩ := (Factorizer.isHitting_of_mem_minHitting hH).2 q hq
     have hq0 : q ≠ 0 := fun h0 => hQi.1 (h0 ▸ hq)
     exact ⟨h, hh, hhq, Factorizer.dvd_of_mem hq0 hhq⟩
-  by_cases hEq : H = Q'
-  · -- `H` is interreduced, so `H̃ = H` and its only minimal hitting set is `H`
-    left
-    have htilde : ρ.tilde H = H := by
-      rw [tilde, Finset.erase_eq_of_notMem hH0, hEq]
-      exact ρ.I.ired_eq_self hQi
-    rw [Terminal, children, htilde]
-    exact minHitting_of_monic_irreducible hmi
-  right
-  -- first step: `μ(Q) ⊊ ⟨LM(h) : h ∈ H⟩`
   have hle : lmIdeal m Q' ≤ lmIdeal m H := by
     rw [lmIdeal_le_iff]
     intro q hq
@@ -154,17 +142,8 @@ theorem refinement_step {Q H : Finset (MvPolynomial σ K)} (hH : H ∈ ρ.childr
     intro hge
     rw [lmIdeal_le_iff] at hge
     -- an element of `H` that divides `q ∈ Q̃` equals `q`
-    have key : ∀ h ∈ H, ∀ q ∈ Q', h ∣ q → h = q := by
-      intro h hh q hq hdvd
-      have hq0 : q ≠ 0 := fun h0 => hQi.1 (h0 ▸ hq)
-      obtain ⟨q', hq', hq'h⟩ := hge h hh
-      have hhq := degree_le_of_dvd (m := m) hdvd hq0
-      have hq'q : q' = q := by
-        by_contra hne
-        exact hQi.2.2 q hq q' hq' (Ne.symm hne) (m.degree q)
-          (m.degree_mem_support hq0) (hq'h.trans hhq)
-      subst hq'q
-      exact eq_of_dvd_of_degree_le (hmi h hh).1 (hQi.2.1 q' hq) hdvd hq'h
+    have key : ∀ h ∈ H, ∀ q ∈ Q', h ∣ q → h = q := fun h hh q hq hdvd =>
+      hQi.eq_of_dvd hq (hmi h hh).1 hdvd (hge h hh)
     apply hEq
     apply le_antisymm
     · intro h hh
@@ -174,20 +153,40 @@ theorem refinement_step {Q H : Finset (MvPolynomial σ K)} (hH : H ∈ ρ.childr
     · intro q hq
       obtain ⟨h, hh, -, hdvd⟩ := hmeet q hq
       rwa [← key h hh q hq hdvd]
-  -- second step: `⟨LM(h) : h ∈ H⟩ ⊆ μ(H)` by Lemma `lem:lm-monotone`
+  exact lt_of_le_not_ge hle hnot
+
+/-- **Lemma `lem:refinement-step` (Progress of one refinement step).**
+Let `H ∈ 𝓗(Q̃)`. Then `H` is terminal, or `μ(Q) ⊊ μ(H)`. -/
+theorem refinement_step {Q H : Finset (MvPolynomial σ K)} (hH : H ∈ ρ.children Q) :
+    ρ.Terminal H ∨ ρ.μ Q < ρ.μ H := by
+  have hmi : ∀ h ∈ H, m.Monic h ∧ Irreducible h := fun h hh => by
+    obtain ⟨-, -, -, hm, hirr⟩ := monic_irreducible_of_mem_children hH hh
+    exact ⟨hm, hirr⟩
+  have hH0 : (0 : MvPolynomial σ K) ∉ H := zero_notMem_of_mem_children hH
+  have hQi := isInterreduced_tilde (ρ := ρ) Q
+  by_cases hEq : H = ρ.tilde Q
+  · -- `H` is interreduced, so `H̃ = H` and its only minimal hitting set is `H`
+    left
+    have htilde : ρ.tilde H = H := by
+      rw [tilde, Finset.erase_eq_of_notMem hH0, hEq]
+      exact ρ.I.ired_eq_self hQi
+    rw [Terminal, children, htilde]
+    exact minHitting_of_monic_irreducible hmi
+  right
+  -- `⟨LM(h) : h ∈ H⟩ ⊆ μ(H)` by Lemma `lem:lm-monotone`
   have hstep2 : lmIdeal m H ≤ ρ.μ H := by
     rw [μ, tilde, Finset.erase_eq_of_notMem hH0]
     exact ρ.I.lmIdeal_le_ired hH0
-  exact lt_of_lt_of_le (lt_of_le_not_ge hle hnot) hstep2
+  exact lt_of_lt_of_le (lmIdeal_tilde_lt hH hEq) hstep2
 
 /-! ### Theorem `thm:refine-termination` -/
 
 section Termination
 
 
-/-- `W` reaches a fixed point under iterated rounds. -/
-def Stabilizes (ρ : Refiner K m) (W : Finset (Finset (MvPolynomial σ K))) : Prop :=
-  ∃ k, ∀ j, k ≤ j → ρ.round^[j] W = ρ.round^[k] W
+/-- After some number of rounds, `W` consists of terminal branches. -/
+def EventuallyTerminal (ρ : Refiner K m) (W : Finset (Finset (MvPolynomial σ K))) : Prop :=
+  ∃ k, ∀ Q ∈ ρ.round^[k] W, ρ.Terminal Q
 
 theorem round_biUnion (W : Finset (Finset (MvPolynomial σ K)))
     (g : Finset (MvPolynomial σ K) → Finset (Finset (MvPolynomial σ K))) :
@@ -204,54 +203,39 @@ theorem iterate_round_eq_biUnion (W : Finset (Finset (MvPolynomial σ K))) (j : 
 theorem round_singleton (Q : Finset (MvPolynomial σ K)) : ρ.round {Q} = ρ.children Q := by
   simp [round]
 
-theorem stabilizes_of_terminal {Q : Finset (MvPolynomial σ K)} (hQ : ρ.Terminal Q) :
-    Stabilizes ρ {Q} :=
-  ⟨0, fun j _ => by
-    rw [Function.iterate_fixed (by rw [round_singleton]; exact hQ)]
-    rfl⟩
+/-- A round leaves a set of terminal branches unchanged. -/
+theorem round_eq_self {W : Finset (Finset (MvPolynomial σ K))} (hW : ∀ Q ∈ W, ρ.Terminal Q) :
+    ρ.round W = W := by
+  rw [round, Finset.biUnion_congr rfl hW, Finset.biUnion_singleton_eq_self]
 
-theorem stabilizes_of_forall {W : Finset (Finset (MvPolynomial σ K))}
-    (h : ∀ Q ∈ W, Stabilizes ρ {Q}) : Stabilizes ρ W := by
+/-- Once the work set consists of terminal branches, later rounds leave it unchanged. -/
+theorem iterate_round_eq_of_terminal {W : Finset (Finset (MvPolynomial σ K))} {k j : ℕ}
+    (hk : ∀ Q ∈ ρ.round^[k] W, ρ.Terminal Q) (hj : k ≤ j) : ρ.round^[j] W = ρ.round^[k] W := by
+  obtain ⟨j, rfl⟩ := Nat.exists_eq_add_of_le hj
+  rw [add_comm, Function.iterate_add_apply, Function.iterate_fixed (round_eq_self hk)]
+
+theorem eventuallyTerminal_of_forall {W : Finset (Finset (MvPolynomial σ K))}
+    (h : ∀ Q ∈ W, EventuallyTerminal ρ {Q}) : EventuallyTerminal ρ W := by
   choose! k hk using h
-  refine ⟨W.sup k, fun j hj => ?_⟩
-  rw [iterate_round_eq_biUnion, iterate_round_eq_biUnion]
-  refine Finset.biUnion_congr rfl fun Q hQ => ?_
-  have hkQ : k Q ≤ W.sup k := Finset.le_sup hQ
-  rw [hk Q hQ j (hkQ.trans hj), hk Q hQ _ hkQ]
+  refine ⟨W.sup k, fun H hH => ?_⟩
+  obtain ⟨Q, hQ, hHQ⟩ := Finset.mem_biUnion.mp ((iterate_round_eq_biUnion W _) ▸ hH)
+  rw [iterate_round_eq_of_terminal (hk Q hQ) (Finset.le_sup hQ)] at hHQ
+  exact hk Q hQ H hHQ
 
 variable [Finite σ] in
-/-- Every branch reaches a fixed point: `μ` strictly increases along chains of nonterminal
-branches (Lemma `lem:refinement-step`), and `R` is Noetherian. This replaces the paper's
-Dickson/König argument by well-founded induction on `μ`. -/
-theorem stabilizes_singleton (Q : Finset (MvPolynomial σ K)) : Stabilizes ρ {Q} := by
+/-- Every branch becomes terminal: `μ` strictly increases along chains of nonterminal branches
+(Lemma `lem:refinement-step`), and `R` is Noetherian, so well-founded induction on `μ` applies. -/
+theorem eventuallyTerminal_singleton (Q : Finset (MvPolynomial σ K)) :
+    EventuallyTerminal ρ {Q} := by
   have wf : WellFounded fun A B : Finset (MvPolynomial σ K) => ρ.μ B < ρ.μ A :=
     InvImage.wf ρ.μ wellFounded_gt
   induction Q using wf.induction with
   | _ Q ih =>
     by_cases hQ : ρ.Terminal Q
-    · exact stabilizes_of_terminal hQ
-    obtain ⟨k, hk⟩ : Stabilizes ρ (ρ.children Q) := stabilizes_of_forall fun H hH =>
-      (refinement_step hH).elim stabilizes_of_terminal fun hlt => ih H hlt
-    refine ⟨k + 1, fun j hj => ?_⟩
-    obtain ⟨j, rfl⟩ : ∃ j', j = j' + 1 := ⟨j - 1, by omega⟩
-    rw [Function.iterate_succ_apply, Function.iterate_succ_apply, round_singleton,
-      hk j (by omega)]
-
-/-- A fixed point of a round consists of terminal branches. -/
-theorem terminal_of_round_eq {W : Finset (Finset (MvPolynomial σ K))} (hW : ρ.round W = W) :
-    ∀ Q ∈ W, ρ.Terminal Q := by
-  by_contra! hex
-  obtain ⟨Q, hQW, hmin⟩ :=
-    Finset.exists_minimalFor ρ.μ (W.filter fun Q => ¬ ρ.Terminal Q)
-      (by obtain ⟨Q, hQ, hQt⟩ := hex; exact ⟨Q, Finset.mem_filter.mpr ⟨hQ, hQt⟩⟩)
-  rw [Finset.mem_filter] at hQW
-  obtain ⟨Q', hQ'W, hQQ'⟩ := Finset.mem_biUnion.mp (hW.symm ▸ hQW.1 : Q ∈ ρ.round W)
-  by_cases hQ't : ρ.Terminal Q'
-  · rw [hQ't, Finset.mem_singleton] at hQQ'
-    exact hQW.2 (hQQ' ▸ hQ't)
-  · rcases refinement_step hQQ' with ht | hlt
-    · exact hQW.2 ht
-    · exact absurd (hmin (Finset.mem_filter.mpr ⟨hQ'W, hQ't⟩) hlt.le) (not_le_of_gt hlt)
+    · exact ⟨0, by simpa using hQ⟩
+    obtain ⟨k, hk⟩ : EventuallyTerminal ρ (ρ.children Q) := eventuallyTerminal_of_forall
+      fun H hH => (refinement_step hH).elim (fun ht => ⟨0, by simpa using ht⟩) (ih H)
+    exact ⟨k + 1, by rwa [Function.iterate_succ_apply, round_singleton]⟩
 
 variable (ρ)
 
@@ -261,12 +245,16 @@ variable [Finite σ]
 def initial (P : Finset (MvPolynomial σ K)) : Finset (Finset (MvPolynomial σ K)) :=
   ρ.F.minHitting P
 
+theorem eventuallyTerminal_initial (P : Finset (MvPolynomial σ K)) :
+    EventuallyTerminal ρ (ρ.initial P) :=
+  eventuallyTerminal_of_forall fun Q _ => eventuallyTerminal_singleton Q
+
 /-- **Theorem `thm:refine-termination` (Termination of refinement).** Algorithm `alg:Refine`
 terminates on every finite polynomial system: some round leaves the work set unchanged. -/
 theorem refine_terminates (P : Finset (MvPolynomial σ K)) :
     ∃ k, ρ.round^[k + 1] (ρ.initial P) = ρ.round^[k] (ρ.initial P) := by
-  obtain ⟨k, hk⟩ := stabilizes_of_forall (W := ρ.initial P) fun Q _ => stabilizes_singleton Q
-  exact ⟨k, hk (k + 1) (Nat.le_succ k)⟩
+  obtain ⟨k, hk⟩ := ρ.eventuallyTerminal_initial P
+  exact ⟨k, iterate_round_eq_of_terminal hk k.le_succ⟩
 
 /-- `𝓛(P)`: the work set at the first round that leaves it unchanged, which
 Algorithm `alg:Refine` returns. -/
@@ -277,10 +265,15 @@ theorem round_refine (P : Finset (MvPolynomial σ K)) : ρ.round (ρ.refine P) =
   have := Nat.find_spec (ρ.refine_terminates P)
   rwa [Function.iterate_succ_apply'] at this
 
-/-- The output of Algorithm `alg:Refine` is a finite set of terminal branches. -/
+/-- The output of Algorithm `alg:Refine` is a finite set of terminal branches: later rounds leave
+it unchanged, and from some round on the work set is terminal. -/
 theorem terminal_of_mem_refine {P H : Finset (MvPolynomial σ K)} (hH : H ∈ ρ.refine P) :
-    ρ.Terminal H :=
-  terminal_of_round_eq (ρ.round_refine P) H hH
+    ρ.Terminal H := by
+  obtain ⟨k, hk⟩ := ρ.eventuallyTerminal_initial P
+  have hfix : ρ.round^[k] (ρ.refine P) = ρ.refine P := Function.iterate_fixed (ρ.round_refine P) k
+  rw [refine, ← Function.iterate_add_apply,
+    iterate_round_eq_of_terminal hk (Nat.le_add_right k _)] at hfix
+  exact hk H (hfix ▸ hH)
 
 end Termination
 
