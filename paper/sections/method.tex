@@ -34,6 +34,16 @@ fixed point. We call a branch \emph{terminal} if one round leaves it unchanged.
   \end{algorithmic}
 \end{algorithm}
 
+% A flow chart of refinement
+\begin{figure}[pos=htbp]
+  \centering
+  \resizebox{0.62\textwidth}{!}{\input{figs/refine_flowchart.tex}}
+  \caption{Refinement of Algorithm~\ref{alg:Refine}. Each round replaces every
+    branch by the minimal hitting sets of its interreduction, until a round
+  leaves $W$ unchanged.}
+  \label{fig:refine_flowchart}
+\end{figure}
+
 % All about pruning
 Hitting sets are minimal only among the children of one branch, so the loop
 of Algorithm~\ref{alg:Refine} can end with distinct branches $H$ and $H'$
@@ -70,16 +80,6 @@ correct output.
     \State \Return $S$
   \end{algorithmic}
 \end{algorithm}
-
-% A flow chart of the method
-\begin{figure}[pos=htbp]
-  \centering
-  \resizebox{0.72\textwidth}{!}{\input{figs/branching_flowchart.tex}}
-  \caption{Factor branching procedure of
-    Algorithm~\ref{alg:Branching}. Refinement produces terminal
-  branches, which the exact solver either represents or certifies as UNSAT.}
-  \label{fig:branching_flowchart}
-\end{figure}
 
 % Optimizations: found primes absorb later branches
 A solved branch can prune the later branches whose solution sets it contains.

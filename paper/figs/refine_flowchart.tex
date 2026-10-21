@@ -1,0 +1,49 @@
+\begin{tikzpicture}[
+    font=\small,
+    every node/.style={align=center},
+    blue box/.style={draw=blue!70!cyan, line width=1pt, rounded corners=6pt,
+    fill=blue!50!cyan!4, inner sep=7pt},
+    loop box/.style={draw=orange!85!black, line width=1pt, rounded corners=6pt,
+    fill=yellow!40!orange!12, inner sep=7pt},
+    decision/.style={draw=green!55!black, line width=1pt, diamond, aspect=1.8,
+    fill=green!60!teal!8, inner sep=1pt},
+    return box/.style={draw=violet, line width=1pt, rounded corners=6pt,
+    fill=violet!6, inner sep=7pt},
+    arr/.style={-{Stealth[length=2.6mm]}, line width=1pt},
+  ]
+
+  % ---- initialization ----
+  \node[blue box] (init) {%
+    \textcolor{blue}{\bfseries Initialize}\\
+  $W\gets\mathcal H(P)$};
+
+  % ---- one round over every branch ----
+  \node[loop box, below=8mm of init] (round) {%
+    \textcolor{orange!75!black}{\bfseries Round}\\
+    $W_{\mathrm{prev}}\gets W$, then replace each $Q\in W$\\
+  by $\mathcal H(\Call{Interreduce}{Q})$};
+
+  % ---- fixed-point test ----
+  \node[decision, below=7mm of round] (fixed) {$W=W_{\mathrm{prev}}$?};
+
+  % ---- optional pruning and return ----
+  \node[blue box, dashed, below=7mm of fixed] (prune) {%
+    \textcolor{blue}{\bfseries Prune (optional)}\\
+    Drop $H$ if $V(H)\subseteq V(H')$\\
+  for a kept $H'\neq H$};
+  \node[return box, right=10mm of prune] (return)
+  {\textcolor{violet}{\bfseries Return $W$}};
+
+  % ---- arrows: pipeline ----
+  \draw[arr] (init) -- (round);
+  \draw[arr] (round) -- (fixed);
+  \draw[arr] (fixed) -- node[right] {yes} (prune);
+  \draw[arr] (prune) -- (return);
+
+  % ---- feedback: a changed work set starts another round ----
+  \coordinate (fbcol) at ($(round.west)+(-8mm,0)$);
+  \draw[line width=1pt, rounded corners=5pt]
+  (fixed.west) -- node[below] {no} (fixed.west -| fbcol) -- (fbcol);
+  \draw[arr] (fbcol) -- (round.west);
+
+\end{tikzpicture}
