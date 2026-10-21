@@ -12,7 +12,7 @@ F5, GVW, F4, or Singular 4.4.1~\cite{makarim2017m4gb,faugere2002f5,
 gao2016gvw,faugere1999f4,singular2025}; a basis containing $1$ certifies
 UNSAT. The baselines are six whole-ideal Gr\"obner-basis configurations and
 three decomposition methods from Singular and Macaulay2
-1.26.06~\cite{singular2025,macaulay2}. Every entry is one run on an Apple M4
+1.26.06~\cite{singular2025,macaulay2}. Unless stated otherwise, every entry is one run on an Apple M4
 Pro (14 cores, 24 GB) with a 60-second limit, and TO marks a timeout. For factor branching, $T$ is the
 wall time and $F$ the time from the start of the hitting-set search to the
 first SAT branch. The measurements are in the \texttt{results} directory of the
@@ -21,7 +21,7 @@ repository listed under Data availability.
 \subsection{Baseline systems}
 \label{subsec:baseline-systems}
 
-The baseline has 20 generated systems in six families
+The baseline benchmark has 20 generated systems in six families
 (Table~\ref{tab:benchmark-families}): signed-distance cycles and affine-factor
 hypergraphs with many cheap branches, overlapping random multiples whose dense
 quadratic factors recur across equations, and gated systems, which multiply
@@ -386,7 +386,7 @@ Every run on the physical systems has a 120-second limit, or 300 seconds in
 Table~\ref{tab:physical-decomposition}, runs concurrently with the others, and
 reports its internal solver time. Singular and Macaulay2
 compute over $\mathbb Q(\pi)$, except Macaulay2's \texttt{decompose}, which
-cannot, and the Rust programs, which take $\pi$ as a variable. Every
+cannot; the Rust programs take $\pi$ as a variable. Every
 saturation uses Singular's \texttt{sat} or Macaulay2's \texttt{saturate}, every
 primary decomposition \texttt{primdecSY}~\cite{shimoyama1996localization}, and
 Algorithm~\ref{alg:PrimaryBranching} runs its separators. On the physical
@@ -462,15 +462,7 @@ Table~\ref{tab:scaling-decomposition} on them and on the physical system.
       Physical & & $\mathbf{0.954}$ & TO & $\mathbf{271.3}$ & TO &
       $\mathbf{0.962}$ & TO \\
       \hline
-      Graviton only & $1$ & TO & TO & TO & TO &
-      TO & TO \\
-      & $1/2$ & TO & TO & TO & TO &
-      TO & TO \\
-      & $1/4$ & TO & TO & TO & TO &
-      TO & TO \\
-      & $2$ & TO & TO & TO & TO &
-      TO & TO \\
-      & $4$ & TO & TO & TO & TO &
+      Graviton only & all & TO & TO & TO & TO &
       TO & TO \\
       \hline
       Fermion only & $1$ & $0.035$ & $\mathbf{0.001}$ & $0.059$ &

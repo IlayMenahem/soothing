@@ -50,7 +50,7 @@ algebra, while F5 uses signatures to avoid many reductions to zero
 Primary-decomposition algorithms use Gr\"obner bases and
 factorization to separate components \cite{gianni1988primary}.
 Factorizing Gr\"obner-basis methods split on individual polynomial
-factorizations and preserve the solution set; earlier methods also interreduce
+factorizations and preserve the solution set; these methods also interreduce
 and prune redundant branches~\cite{graebe1995factorized,singular2025}.
 Numerical algebraic geometry takes a different route: homotopy continuation
 computes isolated roots numerically, while witness sets represent
@@ -59,10 +59,10 @@ positive-dimensional components
 
 % Mention recent works in a sentence; emphasize that the field is still active
 Recent work has also explored machine-learning methods for polynomial systems.
-Peifer et al.\ trained a reinforcement-learning policy for pair selection in
-Buchberger's algorithm \cite{peifer2020learning}. Kera et al.\ trained
+\citet{peifer2020learning} trained a reinforcement-learning policy for pair
+selection in Buchberger's algorithm. \citet{kera2024learning} trained
 transformers to compute Gr\"obner bases directly for a restricted class of
-zero-dimensional radical ideals \cite{kera2024learning}. Yet these works are
+zero-dimensional radical ideals. Yet these works are
 limited to small and specific polynomial ideals.
 
 % What's the gap?
@@ -117,8 +117,8 @@ minimal primes and a minimal primary decomposition of $I$. Every numbered
 result is also formalized in Lean~4 with Mathlib, in the repository listed
 under Data availability. On generated systems with factor structure and on
 size-graded families from SymbolicData and from applications, factor
-branching with the best of its backends completes 19 of 20 and 27 of 31
-systems within 60 seconds, against at most 16 and 20 for the direct
+branching with the best of its backends completes 19 of 20 and 21 of 25
+systems within 60 seconds, against at most 16 and 14 for the direct
 Gr\"obner-basis and decomposition methods. On a system from quantum field
 theory, all nine standalone baselines time out, whereas factor branching with
 the \texttt{facstd} backend completes in under a second. Primary factor

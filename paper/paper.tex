@@ -20,7 +20,6 @@
 \newtheorem{lemma}{Lemma}
 \newproof{proof}{Proof}
 \newtheorem{theorem}{Theorem}
-\newtheorem{corollary}{Corollary}
 
 % Existing citations are parenthetical references following manuscript prose.
 \let\cite\citep
@@ -102,9 +101,9 @@ country={Israel}}
   describes satisfiable (SAT) branches and certifies unsatisfiable (UNSAT) ones.
   Its variants return the minimal primes and a minimal primary decomposition
   of the ideal, and we prove every variant exact.
-  In our experiments, we use Gr\"obner-basis solvers. On 20 generated and 31
-  size-graded benchmark systems, factor branching completes 19 and 27 within
-  60 seconds, against at most 16 and 20 for the baselines. On a system arising
+  In our experiments, we use Gr\"obner-basis solvers. On 20 generated and 25
+  size-graded benchmark systems, factor branching completes 19 and 21 within
+  60 seconds, against at most 16 and 14 for the baselines. On a system arising
   from research in quantum field theory, all nine baselines time out, whereas
   factor branching finishes in under a second and its primary variant computes
   a primary decomposition in under five minutes.

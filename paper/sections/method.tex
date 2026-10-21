@@ -2,7 +2,7 @@
 \label{sec:method}
 
 % An overview of the section: motivation, what we found, how and why it works
-This section we present a method that breaks a polynomial system $P$ into
+In this section, we present a method that breaks a polynomial system $P$ into
 simpler branches, from which a solver describes $V(P)$ and $\sqrt{\langle P
 \rangle}$ more easily than from $P$ itself.
 
@@ -38,8 +38,8 @@ fixed point. We call a branch \emph{terminal} if one round leaves it unchanged.
 Hitting sets are minimal only among the children of one branch, so the loop
 of Algorithm~\ref{alg:Refine} can end with distinct branches $H$ and $H'$
 such that $V(H)\subseteq V(H')$. Solving $H$ then adds no solutions.
-$\Call{Prune}{W}$ returns the branches whose solution sets it cannot
-certify to be contained in each other.
+$\Call{Prune}{W}$ removes each branch whose solution set it certifies to lie
+in that of another kept branch.
 
 % First interreduce?
 Interreducing $P$ first can expose factors that its generators hide,
@@ -91,12 +91,11 @@ branches.
 \subsection{Theoretical analysis}
 \label{subsec:branching-theoretical-analysis}
 
-We need to show that Algorithm~\ref{alg:Branching} terminates and returns a
-decomposition of $V(P)$ and $\sqrt{\langle P\rangle}$. This will be done by
-first showing that Algorithm~\ref{alg:Refine} terminates and returns branches
-whose varieties have union $V(P)$ and whose radicals intersect to
-$\sqrt{\langle P\rangle}$.
-Later we show that the branches Algorithm~\ref{alg:Refine} returns are simpler to solve than the original system.
+We show that Algorithm~\ref{alg:Branching} terminates and returns a
+decomposition of $V(P)$ and $\sqrt{\langle P\rangle}$ by first showing that
+Algorithm~\ref{alg:Refine} terminates and returns branches whose varieties
+have union $V(P)$ and whose radicals intersect to $\sqrt{\langle P\rangle}$.
+We then show that these branches are simpler than $P$.
 
 First we need to show that the minimal hitting sets of the factor sets of a
 polynomial system $P$ cover its solution set.
@@ -117,10 +116,9 @@ polynomial system $P$ cover its solution set.
   vanishes at $a$, so $a\in V(Q)$.
 \end{proof}
 
-Using Lemma~\ref{thm:branch-decomposition}, we show that every round of
-Algorithm~\ref{alg:Refine} preserves the solution set of the original system,
-and by that Algorithm~\ref{alg:Refine} preserves the solution set of the
-original system and its radical.
+By Lemma~\ref{thm:branch-decomposition}, every round of
+Algorithm~\ref{alg:Refine} preserves the solution set, so the terminal
+branches describe $V(P)$ and $\sqrt{\langle P\rangle}$.
 
 \begin{lemma}[Refinement preserves solutions]
   \label{lem:recursive-refinement}
@@ -192,10 +190,8 @@ branch eventually becomes terminal, and a round changes no terminal branch.
   and its branches are terminal.
 \end{proof}
 
-Since Algorithm~\ref{alg:Branching} involves only calling
-Algorithm~\ref{alg:Refine} and the branch solver $\mathcal B$ on each branch,
-we can easily show that it terminates and returns a decomposition of $V(P)$ and
-$\sqrt{\langle P\rangle}$.
+Algorithm~\ref{alg:Branching} only calls Algorithm~\ref{alg:Refine} and then
+$\mathcal B$ on each branch, so its termination and correctness follow.
 
 \begin{theorem}[Termination of factor branching]
   \label{thm:branching-termination}
@@ -233,10 +229,10 @@ $\sqrt{\langle P\rangle}$.
 
 % Simplicity: a child keeps at most one irreducible factor of each
 % parent generator
-For Algorithm~\ref{alg:Refine} to be useful, it should be proven that the
-branches it returns are simpler than those of the original system.
-Each element of a child divides a different generator of its parent, which
-makes the child a smaller and simpler system in the following sense.
+Refinement is useful only if its branches are simpler than the system it
+starts from. Each element of a child divides a different generator of its
+parent, which makes the child a smaller and simpler system in the following
+sense.
 
 \begin{theorem}[Refined branches are simpler]
   \label{thm:refine-simpler}
@@ -283,8 +279,8 @@ the branches in $\mathcal L(P)$, and the postprocessing keeps its minimal
 elements under inclusion in two steps.
 \begin{enumerate}
   \item Represent each prime by its reduced Gr\"obner basis.
-  \item Remove ideals which their variety is included in the variety of another
-    ideal. Ideal containment can be easily tested for Gr\"obner bases.
+  \item Remove every prime that strictly contains another, testing containment
+    by reduction (Subsection~\ref{subsec:groebner}).
 \end{enumerate}
 A prime that strictly contains $\mathfrak p'$ has smaller dimension than
 $\mathfrak p'$, so the second step tests $\mathfrak p'\subseteq\mathfrak p$

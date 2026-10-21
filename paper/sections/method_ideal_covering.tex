@@ -31,12 +31,12 @@ set, $a_x = 1$ and $a_{yz-1} = 1$, and indeed $x^1,
 
 % The reduction loop
 Algorithm~\ref{alg:IdealReduce} adds each $h^{a_h}$ to the generators, drops
-the generators they divide, and repeats on the new system. We say
+the generators they divide, and repeats on the new system. On the example,
+the first round replaces $xy$ and $xz$ by $x$, giving $\{x,yz-1\}$. We say
 that $\mathcal B$ certifies $V(H)=\emptyset$ when Algorithm~\ref{alg:Branching}
 with $\mathcal B$ certifies every terminal branch of $H$ as UNSAT. If no
 minimal hitting set is SAT, the intersection is $C(Q)$, and
-Lemma~\ref{lem:sat-branches} still applies. On the example, the first round
-replaces $xy$ and $xz$ by $x$, giving $\{x,yz-1\}$.
+Lemma~\ref{lem:sat-branches} still applies.
 
 \begin{algorithm}[htbp]
   \caption{Ideal reduction}
@@ -72,8 +72,9 @@ replaces $xy$ and $xz$ by $x$, giving $\{x,yz-1\}$.
 \end{figure}
 
 % What the reduced system is good for
-The output generates $\langle P\rangle$, with polynomials replaced by a
-factor to the largest exponent that appears in the system, yielding a simpler system.
+The output generates $\langle P\rangle$, and each round replaces generators
+by powers of their factors, which makes the system simpler
+(Theorem~\ref{thm:ideal-reduce-simpler}).
 
 % Optimization: only the intersection is needed, so most solver calls
 % can be skipped
@@ -109,8 +110,8 @@ $\langle Q\rangle=I$, so every later step works on a smaller description of $I$.
 It then computes the minimal primes $\mathfrak p_1,\ldots,\mathfrak p_r$ of
 $I$, which give the isolated components in the optional lines and mark the
 components of $\mathcal B_{\mathrm{prim}}$. Any algorithm $\mathcal B_{\min}$
-that returns the minimal primes of its input works here, and we use
-Theorem~\ref{thm:prime-branching} in the experiments
+that returns the minimal primes of its input works here, and we use prime
+factor branching (Theorem~\ref{thm:prime-branching}) in the experiments
 (Section~\ref{sec:experiments}). It finds the minimal primes without
 decomposing $I$ itself, and it can skip the minimal hitting sets of $Q$ that
 the last round of Algorithm~\ref{alg:IdealReduce} certified as UNSAT.
