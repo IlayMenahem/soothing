@@ -30,6 +30,8 @@ open FactorBranching
 #print axioms FactorBranching.Factorizer.pow_maxMult_mem_span'
 #print axioms FactorBranching.Refiner.ideal_reduce_terminates
 #print axioms FactorBranching.Refiner.ideal_reduce_span
+#print axioms FactorBranching.Refiner.ideal_reduce_simpler
+#print axioms FactorBranching.Refiner.ideal_reduce_simpler_output
 -- Subsection "Primary decomposition"
 #print axioms FactorBranching.exists_separator
 #print axioms FactorBranching.isolated_separator

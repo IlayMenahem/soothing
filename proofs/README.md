@@ -33,6 +33,7 @@ lake env lean Audit.lean  # prints the axioms of every result
 | Lemma `lem:sat-branches` | `Factorizer.pow_maxMult_mem_span` (geometric SAT: `pow_maxMult_mem_span'`) | `IdealReduction.lean` |
 | Theorem `thm:ideal-reduce-termination` | `Refiner.ideal_reduce_terminates` | `IdealReduction.lean` |
 | Theorem `thm:ideal-reduce` | `Refiner.ideal_reduce_span` | `IdealReduction.lean` |
+| Theorem `thm:ideal-reduce-simpler` | `Refiner.ideal_reduce_simpler` (one round), `Refiner.ideal_reduce_simpler_output` (output and `P`) | `Simplicity.lean` |
 | Gröbner bases decide membership (preliminaries) | `mem_iff_remainder_eq_zero`, `exists_isRemainder` | `IdealRefinement.lean` |
 | Separators exist (§`subsec:primary-decomposition`) | `exists_separator` | `PrimaryBranching.lean` |
 | Saturation keeps components, `J:u^∞ = ⋂_{u∉𝔭_j} 𝔮_j` | `saturation_finsetInf_primary` | `PrimaryBranching.lean` |

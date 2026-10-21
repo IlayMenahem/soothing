@@ -1,8 +1,8 @@
 import FactorBranching.InterreduceTermination
-import FactorBranching.Refine
+import FactorBranching.IdealReduction
 
 /-!
-# Refined branches are simpler
+# Refined branches and reduced systems are simpler
 
 Theorem `thm:refine-simpler` (Section "Factor branching framework"): for a child
 `H ∈ 𝓗(Q̃)` with `H ≠ Q̃`, the leading monomials of `H` are smaller than those of `Q` in the
@@ -11,6 +11,10 @@ multiset extension of `≺`, yet generate a strictly larger monomial ideal.
 The multiset of leading monomials (`lmMeasure`) decreases strictly from `Q̃` to `H`, because each
 element of `H` divides a different element of `Q̃`, and it does not increase under
 interreduction.
+
+Theorem `thm:ideal-reduce-simpler` (Section "Ideal-preserving factor branching"): the same holds
+for a round of Algorithm `alg:IdealReduce` with `Δ ≠ ∅`, since each new power divides a
+generator it replaces, and for its output and `P` unless the output is `Interreduce(P)`.
 -/
 
 open MvPolynomial
@@ -219,6 +223,95 @@ theorem refine_simpler {Q H : Finset (MvPolynomial σ K)} (h0 : (0 : MvPolynomia
     exact ρ.I.isRun Q h0
   exact ⟨DMLE.lt_of_lt (lmMeasure_lt_tilde hH hne) (hrun.lmMeasure_le h0),
     lt_of_le_of_lt (hrun.lmIdeal_le h0) (lmIdeal_tilde_lt hH hne)⟩
+
+/-! ### Theorem `thm:ideal-reduce-simpler` -/
+
+namespace ReduceStep
+
+variable {Q Q' : Finset (MvPolynomial σ K)}
+
+/-- One round of Algorithm `alg:IdealReduce` that does not return strictly decreases the multiset
+of leading monomials: each new power `h^{a_h}` has a smaller leading monomial than a generator it
+divides, and that generator is dropped. -/
+theorem lmMeasure_lt (hs : ρ.ReduceStep Q Q') :
+    Multiset.IsDershowitzMannaLT (lmMeasure m Q') (lmMeasure m Q) := by
+  obtain ⟨hQ, Hsat, -, ⟨n₀, hn₀⟩, rfl⟩ := hs
+  set N := ρ.newMembers Q Hsat
+  have hN : ∀ n ∈ N, n ≠ 0 := fun n hn => newMembers_ne_zero hQ.1 hn
+  have hne : ∀ q ∈ Q, q ≠ 0 := fun q hq h => hQ.1 (h ▸ hq)
+  set keep : MvPolynomial σ K → Prop := fun q => ∀ n ∈ N, ¬ n ∣ q
+  -- each new power properly divides a dropped generator
+  have hlt : ∀ n ∈ N, ∃ q ∈ Q, ¬ keep q ∧ m.toSyn (m.degree n) < m.toSyn (m.degree q) := by
+    intro n hn
+    obtain ⟨⟨h, hhC, -, rfl⟩, hnQ⟩ := mem_newMembers.mp hn
+    have hfil : (Q.filter fun q => h ∈ ρ.F.factors q).Nonempty := by
+      obtain ⟨q, hq, hhq⟩ := Factorizer.mem_allFactors.mp hhC
+      exact ⟨q, Finset.mem_filter.mpr ⟨hq, hhq⟩⟩
+    obtain ⟨q, hqf, hqmax⟩ := Finset.exists_mem_eq_sup _ hfil fun q => ρ.F.mult q h
+    obtain ⟨hq, hhq⟩ := Finset.mem_filter.mp hqf
+    have hdvd : h ^ ρ.F.maxMult Q h ∣ q := by
+      rw [Factorizer.maxMult, hqmax]
+      exact ⟨_, Factorizer.eq_pow_mul_cofactor (hne q hq) hhq⟩
+    have hmonic : m.Monic (h ^ ρ.F.maxMult Q h) :=
+      monic_pow (Factorizer.monic_of_mem (hne q hq) hhq) _
+    refine ⟨q, hq, fun hk => hk _ hn hdvd, lt_of_le_of_ne
+      (m.toSyn_monotone (degree_le_of_dvd hdvd (hne q hq))) fun hdeg => hnQ ?_⟩
+    rw [eq_of_dvd_of_degree_le hmonic (hQ.2.1 q hq) hdvd (m.toSyn.injective hdeg).ge]
+    exact hq
+  set S := N ∪ Q.filter keep
+  have hdisj : Disjoint N (Q.filter keep) := Finset.disjoint_left.mpr fun n hn hnQ =>
+    (mem_newMembers.mp hn).2 (Finset.mem_of_mem_filter _ hnQ)
+  have hS : Multiset.IsDershowitzMannaLT (lmMeasure m S) (lmMeasure m Q) := by
+    obtain ⟨q₀, hq₀, hk₀, -⟩ := hlt n₀ hn₀
+    refine ⟨lmMeasure m (Q.filter keep), lmMeasure m N,
+      (Q.val.filter fun q => ¬ keep q).map fun p => m.toSyn (m.degree p), ?_, ?_, ?_, ?_⟩
+    · intro hZ
+      rw [Multiset.empty_eq_zero, Multiset.map_eq_zero, Multiset.filter_eq_nil] at hZ
+      exact hZ q₀ (Finset.mem_val.mpr hq₀) hk₀
+    · rw [add_comm, lmMeasure, lmMeasure, lmMeasure, ← Multiset.map_add,
+        show S = N.disjUnion (Q.filter keep) hdisj from (Finset.disjUnion_eq_union _ _ _).symm]
+      rfl
+    · rw [lmMeasure, lmMeasure, Finset.filter_val, ← Multiset.map_add, Multiset.filter_add_not]
+    · intro y hy
+      obtain ⟨n, hn, rfl⟩ := Multiset.mem_map.mp hy
+      obtain ⟨q, hq, hk, hdeg⟩ := hlt n (Finset.mem_val.mp hn)
+      exact ⟨_, Multiset.mem_map_of_mem _ (Multiset.mem_filter.mpr ⟨Finset.mem_val.mpr hq, hk⟩),
+        hdeg⟩
+  have h0S : (0 : MvPolynomial σ K) ∉ S := zero_notMem_reduceInput hQ.1 hN
+  rcases (ρ.I.isRun S h0S).lmMeasure_le h0S with heq | hlt'
+  · rw [reduceNext, heq]
+    exact hS
+  · exact hlt'.trans hS
+
+end ReduceStep
+
+/-- **Theorem `thm:ideal-reduce-simpler` (Reduced systems are simpler).** Let a round of
+Algorithm `alg:IdealReduce` with `Δ ≠ ∅` replace `Q` by `Q'`. The leading monomials of `Q'` are
+smaller than those of `Q` in the multiset extension of `≺`, yet generate a strictly larger
+monomial ideal. -/
+theorem ideal_reduce_simpler {Q Q' : Finset (MvPolynomial σ K)} (hs : ρ.ReduceStep Q Q') :
+    Multiset.IsDershowitzMannaLT (lmMeasure m Q') (lmMeasure m Q) ∧
+      lmIdeal m Q < lmIdeal m Q' :=
+  ⟨hs.lmMeasure_lt, hs.lmIdeal_lt⟩
+
+/-- Theorem `thm:ideal-reduce-simpler`, second claim: the same holds for every system `Q` that
+Algorithm `alg:IdealReduce` reaches from `Interreduce(P)`, in particular its output, and `P`,
+unless `Q` is `Interreduce(P)`. -/
+theorem ideal_reduce_simpler_output {P Q : Finset (MvPolynomial σ K)}
+    (h0 : (0 : MvPolynomial σ K) ∉ P)
+    (hrun : Relation.ReflTransGen ρ.ReduceStep (ρ.I.ired P) Q) (hne : Q ≠ ρ.I.ired P) :
+    Multiset.IsDershowitzMannaLT (lmMeasure m Q) (lmMeasure m P) ∧
+      lmIdeal m P < lmIdeal m Q := by
+  have htrans : Relation.TransGen ρ.ReduceStep (ρ.I.ired P) Q :=
+    (Relation.reflTransGen_iff_eq_or_transGen.mp hrun).resolve_left hne
+  clear hrun hne
+  have key : Multiset.IsDershowitzMannaLT (lmMeasure m Q) (lmMeasure m (ρ.I.ired P)) ∧
+      lmIdeal m (ρ.I.ired P) < lmIdeal m Q := by
+    induction htrans with
+    | single hs => exact ideal_reduce_simpler hs
+    | tail _ hs ih => exact ⟨hs.lmMeasure_lt.trans ih.1, ih.2.trans hs.lmIdeal_lt⟩
+  exact ⟨DMLE.lt_of_lt key.1 ((ρ.I.isRun P h0).lmMeasure_le h0),
+    lt_of_le_of_lt (ρ.I.lmIdeal_le_ired h0) key.2⟩
 
 end Refiner
 
