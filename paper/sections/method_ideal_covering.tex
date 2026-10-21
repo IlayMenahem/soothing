@@ -304,6 +304,46 @@ Algorithm~\ref{alg:IdealReduce} keeps the ideal.
   ideal.
 \end{proof}
 
+% Simplicity: each new power divides the generators it replaces
+Like the branches of Algorithm~\ref{alg:Refine}, the output of
+Algorithm~\ref{alg:IdealReduce} should be simpler than $P$. Each new power
+divides the generators it replaces, which makes every round simpler in the
+sense of Theorem~\ref{thm:refine-simpler}.
+
+\begin{theorem}[Reduced systems are simpler]
+  \label{thm:ideal-reduce-simpler}
+  Let a round of Algorithm~\ref{alg:IdealReduce} with $\Delta\neq\emptyset$
+  replace $Q$ by $Q'$. The leading monomials of $Q'$ are smaller than those of
+  $Q$ in the multiset extension of $\prec$, yet generate a strictly larger
+  monomial ideal. The same holds for the output and $P$, unless the output is
+  $\Call{Interreduce}{P}$.
+\end{theorem}
+
+\begin{proof}
+  Let $Q_0$ be as in the proof of Theorem~\ref{thm:ideal-reduce-termination},
+  so that $Q'=\Call{Interreduce}{Q_0}$, and let $D$ be the set of $q\in Q$ that
+  some element of $\Delta$ divides. Then $Q_0=\Delta\cup(Q\setminus D)$, and
+  $\Delta\cap Q=\emptyset$. Let $\delta=h^{a_h}\in\Delta$, and let $q\in Q$
+  have $e_{q,h}=a_h$. Then $\delta\mid q$, so $q\in D$, and $\delta\neq q$,
+  since $\delta\notin Q$. Both polynomials are monic, so $q/\delta$ is not
+  constant, and $\operatorname{LM}(\delta)\prec\operatorname{LM}(q)$ as in the
+  proof of Theorem~\ref{thm:refine-simpler}. Assign each $\delta\in\Delta$ to
+  one such $q$. The multiset of the leading monomials of $Q_0$ arises from
+  that of $Q$ by replacing $\operatorname{LM}(q)$, for every $q\in D$, with
+  the leading monomials of the elements of $\Delta$ assigned to $q$, which are
+  finitely many and smaller. Since $\Delta\neq\emptyset$, $D$ is nonempty, so
+  the multiset decreases strictly.
+
+  Interreduction does not increase this multiset and does not shrink $M$
+  (Subsection~\ref{subsec:groebner}). Hence the multiset of $Q'$ is strictly
+  smaller than that of $Q$, and $M(Q)\subsetneq M(Q')$ by the proof of
+  Theorem~\ref{thm:ideal-reduce-termination}. The loop starts from
+  $\Call{Interreduce}{P}$, whose multiset is at most that of $P$ and whose
+  $M$ contains $M(P)$, and it changes $Q$ only in rounds with
+  $\Delta\neq\emptyset$. If the output is not $\Call{Interreduce}{P}$, at
+  least one such round runs, which gives the second claim.
+\end{proof}
+
 The optional lines of Algorithm~\ref{alg:PrimaryBranching} rest on the
 following lemma. Saturating by a separator of $\mathfrak p$ keeps only
 components whose radicals contain $\mathfrak p$, and among them the
