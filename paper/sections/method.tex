@@ -44,6 +44,19 @@ fixed point. We call a branch \emph{terminal} if one round leaves it unchanged.
   \label{fig:refine_flowchart}
 \end{figure}
 
+% The refinement tree of the physical system
+\begin{figure}[pos=htbp]
+  \centering
+  \resizebox{0.55\textwidth}{!}{\input{figs/refine_tree.tex}}
+  \caption{Refinement tree of the physical system
+    (Section~\ref{sec:experiments}), as in the \texttt{facstd} row of
+    Table~\ref{tab:physical-decomposition}. Each gray dot interreduces and
+    factors a branch and branches on its minimal hitting sets, and the leaves
+    are terminal. The red branches are the ones removed by \textproc{Prune}.
+    Gray branches are dropped due to side conditions.}
+  \label{fig:refine_tree}
+\end{figure}
+
 % All about pruning
 Hitting sets are minimal only among the children of one branch, so the loop
 of Algorithm~\ref{alg:Refine} can end with distinct branches $H$ and $H'$

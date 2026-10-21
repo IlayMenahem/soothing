@@ -1,0 +1,145 @@
+% Input: physical_system.txt with kappah != 0 and a 5 s saturation, as in the
+% facstd row of tab:physical-decomposition (bin/branching.rs).
+% Source: the refinement of refine.rs recorded node by node; the dropped
+% children of each branch are merged into one gray node.
+\begin{tikzpicture}[
+    every node/.style={inner sep=1.5pt},
+    node/.style={},
+    pruned/.style={text=red!80!black},
+    dropped/.style={text=gray, font=\footnotesize\itshape},
+    junction/.style={circle, fill=gray!75, inner sep=0pt, minimum size=4pt},
+    edge/.style={line width=0.4pt},
+    arrow/.style={-{To[length=1.3mm]}, line width=0.4pt, shorten >=1pt},
+    pruned edge/.style={arrow, draw=red!80!black},
+    dropped edge/.style={arrow, draw=gray!70},
+  ]
+  \node[pruned] (n2) at (7.40,0.00) {$H_{1,1}$};
+  \node[pruned] (n3) at (7.40,-0.46) {$H_{1,2}$};
+  \node[node] (n1) at (4.60,-0.23) {$H_{1}$};
+  \node[node] (n7) at (4.60,-0.92) {$H_{2}$};
+  \node[dropped, anchor=west] (nk8) at (7.40,-1.38) {6 dropped};
+  \node[node] (n8) at (4.60,-1.38) {$H_{3}$};
+  \node[pruned] (n16) at (7.40,-1.84) {$H_{4,1}$};
+  \node[node] (n15) at (4.60,-1.84) {$H_{4}$};
+  \node[pruned] (n22) at (7.40,-2.30) {$H_{5,1}$};
+  \node[pruned] (n23) at (7.40,-2.76) {$H_{5,2}$};
+  \node[node] (n21) at (4.60,-2.53) {$H_{5}$};
+  \node[node] (n24) at (4.60,-3.22) {$H_{6}$};
+  \node[pruned] (n31) at (7.40,-3.68) {$H_{7,1}$};
+  \node[pruned] (n32) at (7.40,-4.14) {$H_{7,2}$};
+  \node[node] (n30) at (4.60,-3.91) {$H_{7}$};
+  \node[node] (n38) at (4.60,-4.60) {$H_{8}$};
+  \node[node] (n39) at (4.60,-5.06) {$H_{9}$};
+  \node[node] (n41) at (7.40,-5.52) {$H_{10,1}$};
+  \node[node] (n40) at (4.60,-5.52) {$H_{10}$};
+  \node[pruned] (n47) at (7.40,-5.98) {$H_{11,1}$};
+  \node[dropped, anchor=west] (nk42) at (7.40,-6.44) {5 dropped};
+  \node[node] (n42) at (4.60,-6.21) {$H_{11}$};
+  \node[node] (n54) at (7.40,-6.90) {$H_{12,1}$};
+  \node[node] (n55) at (7.40,-7.36) {$H_{12,2}$};
+  \node[dropped, anchor=west] (nk49) at (7.40,-7.82) {6 dropped};
+  \node[node] (n49) at (4.60,-7.36) {$H_{12}$};
+  \node[pruned] (n72) at (7.40,-8.28) {$H_{13,1}$};
+  \node[node] (n71) at (4.60,-8.28) {$H_{13}$};
+  \node[pruned] (n74) at (7.40,-8.74) {$H_{14,1}$};
+  \node[node] (n73) at (4.60,-8.74) {$H_{14}$};
+  \node[pruned] (n79) at (7.40,-9.20) {$H_{15,1}$};
+  \node[pruned] (n80) at (7.40,-9.66) {$H_{15,2}$};
+  \node[node] (n78) at (4.60,-9.43) {$H_{15}$};
+  \node[pruned] (n82) at (7.40,-10.12) {$H_{16,1}$};
+  \node[node] (n81) at (4.60,-10.12) {$H_{16}$};
+  \node[pruned] (n95) at (7.40,-10.58) {$H_{17,1}$};
+  \node[node] (n94) at (4.60,-10.58) {$H_{17}$};
+  \node[node] (n97) at (7.40,-11.04) {$H_{18,1}$};
+  \node[node] (n96) at (4.60,-11.04) {$H_{18}$};
+  \node[node] (n99) at (7.40,-11.50) {$H_{19,1}$};
+  \node[node] (n98) at (4.60,-11.50) {$H_{19}$};
+  \node[pruned] (n104) at (7.40,-11.96) {$H_{20,1}$};
+  \node[node] (n103) at (4.60,-11.96) {$H_{20}$};
+  \node[node] (n106) at (7.40,-12.42) {$H_{21,1}$};
+  \node[node] (n105) at (4.60,-12.42) {$H_{21}$};
+  \node[dropped, anchor=west] (nk0) at (4.60,-12.88) {55 dropped};
+  \node[node] (n0) at (0.00,-6.56) {$P$};
+  \node[junction] (d1) at (5.50,-0.23) {};
+  \draw[edge] (n1) -- (d1);
+  \draw[pruned edge] (d1) -- (n2.west);
+  \draw[pruned edge] (d1) -- (n3.west);
+  \node[junction] (d8) at (5.50,-1.38) {};
+  \draw[edge] (n8) -- (d8);
+  \draw[dropped edge] (d8) -- (nk8.west);
+  \node[junction] (d15) at (5.50,-1.84) {};
+  \draw[edge] (n15) -- (d15);
+  \draw[pruned edge] (d15) -- (n16.west);
+  \node[junction] (d21) at (5.50,-2.53) {};
+  \draw[edge] (n21) -- (d21);
+  \draw[pruned edge] (d21) -- (n22.west);
+  \draw[pruned edge] (d21) -- (n23.west);
+  \node[junction] (d30) at (5.50,-3.91) {};
+  \draw[edge] (n30) -- (d30);
+  \draw[pruned edge] (d30) -- (n31.west);
+  \draw[pruned edge] (d30) -- (n32.west);
+  \node[junction] (d40) at (5.50,-5.52) {};
+  \draw[edge] (n40) -- (d40);
+  \draw[arrow] (d40) -- (n41.west);
+  \node[junction] (d42) at (5.50,-6.21) {};
+  \draw[edge] (n42) -- (d42);
+  \draw[pruned edge] (d42) -- (n47.west);
+  \draw[dropped edge] (d42) -- (nk42.west);
+  \node[junction] (d49) at (5.50,-7.36) {};
+  \draw[edge] (n49) -- (d49);
+  \draw[arrow] (d49) -- (n54.west);
+  \draw[arrow] (d49) -- (n55.west);
+  \draw[dropped edge] (d49) -- (nk49.west);
+  \node[junction] (d71) at (5.50,-8.28) {};
+  \draw[edge] (n71) -- (d71);
+  \draw[pruned edge] (d71) -- (n72.west);
+  \node[junction] (d73) at (5.50,-8.74) {};
+  \draw[edge] (n73) -- (d73);
+  \draw[pruned edge] (d73) -- (n74.west);
+  \node[junction] (d78) at (5.50,-9.43) {};
+  \draw[edge] (n78) -- (d78);
+  \draw[pruned edge] (d78) -- (n79.west);
+  \draw[pruned edge] (d78) -- (n80.west);
+  \node[junction] (d81) at (5.50,-10.12) {};
+  \draw[edge] (n81) -- (d81);
+  \draw[pruned edge] (d81) -- (n82.west);
+  \node[junction] (d94) at (5.50,-10.58) {};
+  \draw[edge] (n94) -- (d94);
+  \draw[pruned edge] (d94) -- (n95.west);
+  \node[junction] (d96) at (5.50,-11.04) {};
+  \draw[edge] (n96) -- (d96);
+  \draw[arrow] (d96) -- (n97.west);
+  \node[junction] (d98) at (5.50,-11.50) {};
+  \draw[edge] (n98) -- (d98);
+  \draw[arrow] (d98) -- (n99.west);
+  \node[junction] (d103) at (5.50,-11.96) {};
+  \draw[edge] (n103) -- (d103);
+  \draw[pruned edge] (d103) -- (n104.west);
+  \node[junction] (d105) at (5.50,-12.42) {};
+  \draw[edge] (n105) -- (d105);
+  \draw[arrow] (d105) -- (n106.west);
+  \node[junction] (d0) at (0.90,-6.56) {};
+  \draw[edge] (n0) -- (d0);
+  \draw[arrow] (d0) -- (n1.west);
+  \draw[arrow] (d0) -- (n7.west);
+  \draw[arrow] (d0) -- (n8.west);
+  \draw[arrow] (d0) -- (n15.west);
+  \draw[arrow] (d0) -- (n21.west);
+  \draw[arrow] (d0) -- (n24.west);
+  \draw[arrow] (d0) -- (n30.west);
+  \draw[arrow] (d0) -- (n38.west);
+  \draw[arrow] (d0) -- (n39.west);
+  \draw[arrow] (d0) -- (n40.west);
+  \draw[arrow] (d0) -- (n42.west);
+  \draw[arrow] (d0) -- (n49.west);
+  \draw[arrow] (d0) -- (n71.west);
+  \draw[arrow] (d0) -- (n73.west);
+  \draw[arrow] (d0) -- (n78.west);
+  \draw[arrow] (d0) -- (n81.west);
+  \draw[arrow] (d0) -- (n94.west);
+  \draw[arrow] (d0) -- (n96.west);
+  \draw[arrow] (d0) -- (n98.west);
+  \draw[arrow] (d0) -- (n103.west);
+  \draw[arrow] (d0) -- (n105.west);
+  \draw[dropped edge] (d0) -- (nk0.west);
+\end{tikzpicture}
