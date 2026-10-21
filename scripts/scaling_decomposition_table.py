@@ -117,7 +117,11 @@ def measure(family: str, size: int, name: str, system: Path, timeout: int, metho
 
 def benchmark_family(family: str, output: Path, timeout: int) -> None:
     make, sizes, _ = FAMILIES[family]
-    done = {(row["size"], row["label"]): row for row in load_rows(RESULTS_FILE) if row["family"] == family}
+    done = {
+        (row["size"], row["label"]): row
+        for row in load_rows(RESULTS_FILE)
+        if row["family"] == family and row["size"] in sizes
+    }
     failed_at: dict[str, int] = {}
     for (size, label), row in sorted(done.items()):
         if gave_up(row):

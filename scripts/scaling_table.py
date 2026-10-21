@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Table ``tab:scaling-classes``: grow each size-graded family until every method times out.
 
-Families: reduced cyclic n-roots from SymbolicData (``Singular.rcyclic_n``)
-and the generators of ``_systems.py`` (Nash
+Families: reduced cyclic n-roots from SymbolicData (``Singular.rcyclic_n``, which
+stops at n=19; n=20 from ``rcyclic_polynomials``) and the generators of ``_systems.py`` (Nash
 equilibria of binary games, box-QP faces, Lotka--Volterra supports).
 
 Families run concurrently. Within a family the sizes run in order and the methods
@@ -36,7 +36,14 @@ from _harness import (
     run_direct,
     run_external,
 )
-from _systems import box_qp, lotka_volterra, nash_game, symbolicdata_system
+from _systems import (
+    box_qp,
+    lotka_volterra,
+    nash_game,
+    rcyclic_polynomials,
+    symbolicdata_system,
+    write_system,
+)
 
 RESULTS_FILE = RESULTS / "scaling.jsonl"
 REPORT_FILE = RESULTS / "scaling.md"
@@ -67,6 +74,10 @@ SystemMaker = Callable[[Path, int], Path]
 
 
 def rcyclic(output: Path, size: int) -> Path:
+    if size > 19:
+        path = output / f"rcyclic_{size}.txt"
+        write_system(path, rcyclic_polynomials(size))
+        return path
     path = symbolicdata_system(output, f"Singular.rcyclic_{size}.xml")
     if path is None:
         raise SystemExit(f"SymbolicData has no Singular.rcyclic_{size}")
@@ -78,7 +89,7 @@ def from_instance(output: Path, instance_path: str) -> Path:
 
 
 FAMILIES: dict[str, tuple[SystemMaker, range, tuple[str, ...]]] = {
-    "rcyclic": (rcyclic, range(8, 20), BASELINES),
+    "rcyclic": (rcyclic, range(8, 21, 2), BASELINES),
     "nash_generic": (
         lambda output, n: from_instance(output, nash_game(output, n, 1000 + n, 9).path),
         range(3, 9),
@@ -91,7 +102,7 @@ FAMILIES: dict[str, tuple[SystemMaker, range, tuple[str, ...]]] = {
     ),
     "box_qp": (
         lambda output, n: from_instance(output, box_qp(output, n, 3000 + n, 0.5).path),
-        range(4, 13),
+        range(5, 13),
         BASELINES,
     ),
     "lotka_volterra": (
@@ -128,7 +139,11 @@ def measure(
 
 def benchmark_family(family: str, output: Path, timeout: int, condition: str | None) -> None:
     make, sizes, baselines = FAMILIES[family]
-    done = {(row["size"], row["label"]): row for row in load_rows(RESULTS_FILE) if row["family"] == family}
+    done = {
+        (row["size"], row["label"]): row
+        for row in load_rows(RESULTS_FILE)
+        if row["family"] == family and row["size"] in sizes
+    }
     # The smallest size at which each method timed out or failed; it is not run above it.
     failed_at: dict[str, int] = {}
     for (size, label), row in sorted(done.items()):

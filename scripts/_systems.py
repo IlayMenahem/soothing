@@ -5,7 +5,7 @@
 * The size-graded families of Table ``tab:scaling-classes``: Nash equilibria of
   binary games, box-QP faces and Lotka--Volterra supports (``nash_game``,
   ``box_qp``, ``lotka_volterra``), and the reduced cyclic n-roots systems of
-  SymbolicData (``symbolicdata_system``).
+  SymbolicData (``symbolicdata_system``), extended past n=19 by ``rcyclic_polynomials``.
 * Loading a Mathematica-format system file into SymPy (``load_system``) and
   writing a polynomial in Singular syntax (``poly_to_singular``).
 
@@ -70,6 +70,16 @@ def cyclic_polynomials(order: int) -> list[str]:
         ]
         polynomials.append(" + ".join(terms))
     polynomials.append("*".join(variables) + " - 1")
+    return polynomials
+
+
+def rcyclic_polynomials(order: int) -> list[str]:
+    """``Singular.rcyclic_n`` as ``symbolicdata_system`` writes it: for each degree below n,
+    the sum of the three cyclic windows of that length starting at x0, x1 and x2."""
+    polynomials = []
+    for degree in range(1, order):
+        windows = sorted(sorted((start + offset) % order for offset in range(degree)) for start in range(3))
+        polynomials.append("+".join("*".join(f"x{index}" for index in window) for window in windows))
     return polynomials
 
 

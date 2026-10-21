@@ -13,7 +13,7 @@ gao2016gvw,faugere1999f4,singular2025}; a basis containing $1$ certifies
 UNSAT. The baselines are six whole-ideal Gr\"obner-basis configurations and
 three decomposition methods from Singular and Macaulay2
 1.26.06~\cite{singular2025,macaulay2}. Every entry is one run on an Apple M4
-Pro (14 cores, 24 GB) with a 60-second limit. For factor branching, $T$ is the
+Pro (14 cores, 24 GB) with a 60-second limit, and TO marks a timeout. For factor branching, $T$ is the
 wall time and $F$ the time from the start of the hitting-set search to the
 first SAT branch. The measurements are in the \texttt{results} directory of the
 repository listed under Data availability.
@@ -56,7 +56,7 @@ selector branch and one nonlinear residual branch.
 \end{table}
 
 Table~\ref{tab:baseline-comparison} lists the fastest completed method of each
-class; ``timeout'' means that every method of the class timed out. Factor
+class; TO means that every method of the class timed out. Factor
 branching completes 19 of the 20 systems and is fastest on 16, against 9 and
 16 completed systems for the direct and decomposition classes.
 
@@ -65,58 +65,59 @@ branching completes 19 of the 20 systems and is fastest on 16, against 9 and
   \scriptsize
   \setlength{\tabcolsep}{4pt}
   \resizebox{\textwidth}{!}{%
-    \begin{tabular}{l l l l}
+    \begin{tabular}{l r l l l}
       \hline
-      System & Best factor branching $T/F$ & Best direct GB & Best
+      System & Size & Best factor branching $T/F$ & Best direct GB & Best
       decomposition \\
       \hline
-      Signed distance, $n=12$ & F5 $2.669/0.006$ & \textbf{F4}
+      Signed distance & $12$ & F5 $2.669/0.006$ & \textbf{F4}
       $\mathbf{0.443}$ & primdec $3.056$ \\
-      Signed distance, $n=14$ & GVW $9.824/0.006$ & \textbf{Singular}
+      & $14$ & GVW $9.824/0.006$ & \textbf{Singular}
       $\mathbf{7.421}$ & primdec $29.894$ \\
-      Signed distance, $n=16$ & \textbf{M4GB} $\mathbf{37.391/0.006}$
-      & timeout & timeout \\
+      & $16$ & \textbf{M4GB} $\mathbf{37.391/0.006}$
+      & TO & TO \\
       \hline
-      Overlapping $(4,6,2)$ & \textbf{F5} $\mathbf{0.014/0.003}$ & F4
+      Overlapping & $(4,6,2)$ & \textbf{F5} $\mathbf{0.014/0.003}$ & F4
       $0.429$ & facstd $0.265$ \\
-      Overlapping $(6,8,3)$ & \textbf{F5} $\mathbf{0.160/0.006}$ &
-      timeout & timeout \\
-      Overlapping $(8,10,3)$ & \textbf{Singular}
-      $\mathbf{2.671/0.013}$ & timeout & timeout \\
+      & $(6,8,3)$ & \textbf{F5} $\mathbf{0.160/0.006}$ &
+      TO & TO \\
+      & $(8,10,3)$ & \textbf{Singular}
+      $\mathbf{2.671/0.013}$ & TO & TO \\
       \hline
-      Positive affine $(8,6,4)$ & \textbf{M4GB}
-      $\mathbf{0.180/0.003}$ & timeout & facstd $0.368$ \\
-      Positive affine $(10,8,5)$ & \textbf{F4} $\mathbf{0.703/0.003}$
-      & timeout & facstd $1.836$ \\
-      Positive affine $(12,10,6)$ & \textbf{F4}
-      $\mathbf{2.398/0.003}$ & timeout & facstd $53.318$ \\
+      Positive affine & $(8,6,4)$ & \textbf{M4GB}
+      $\mathbf{0.180/0.003}$ & TO & facstd $0.368$ \\
+      & $(10,8,5)$ & \textbf{F4} $\mathbf{0.703/0.003}$
+      & TO & facstd $1.836$ \\
+      & $(12,10,6)$ & \textbf{F4}
+      $\mathbf{2.398/0.003}$ & TO & facstd $53.318$ \\
       \hline
-      Gated Cyclic-5 & F4 $0.011/0.003$ & \textbf{GVW}
+      Gated Cyclic & $5$ & F4 $0.011/0.003$ & \textbf{GVW}
       $\mathbf{0.009}$ & facstd $0.181$ \\
-      Gated Cyclic-6 & \textbf{Singular} $\mathbf{0.043/0.010}$ &
+      & $6$ & \textbf{Singular} $\mathbf{0.043/0.010}$ &
       Singular $0.309$ & M2 $2.620$ \\
-      Gated Cyclic-7 & timeout & timeout & timeout \\
+      & $7$ & TO & TO & TO \\
       \hline
-      Gated Katsura-6 & \textbf{Singular} $\mathbf{0.047/0.010}$ &
+      Gated Katsura & $6$ & \textbf{Singular} $\mathbf{0.047/0.010}$ &
       GVW $0.226$ & facstd $0.233$ \\
-      Gated Katsura-7 & \textbf{Singular} $\mathbf{0.283/0.010}$ &
+      & $7$ & \textbf{Singular} $\mathbf{0.283/0.010}$ &
       GVW $3.176$ & facstd $0.539$ \\
-      Gated Katsura-8 & \textbf{Singular} $\mathbf{2.575/0.010}$ &
-      timeout & facstd $3.596$ \\
-      Gated dense, $n=5$ & \textbf{Singular} $\mathbf{0.025/0.010}$ &
+      & $8$ & \textbf{Singular} $\mathbf{2.575/0.010}$ &
+      TO & facstd $3.596$ \\
+      \hline
+      Gated dense & $5$ & \textbf{Singular} $\mathbf{0.025/0.010}$ &
       M4GB $0.171$ & facstd $0.198$ \\
-      Gated dense, $n=6$ & \textbf{Singular} $\mathbf{0.552/0.010}$ &
+      & $6$ & \textbf{Singular} $\mathbf{0.552/0.010}$ &
       M4GB $4.736$ & facstd $0.755$ \\
-      Gated dense, $n=7$ & \textbf{Singular} $\mathbf{42.670/0.010}$
-      & timeout & facstd $48.820$ \\
+      & $7$ & \textbf{Singular} $\mathbf{42.670/0.010}$
+      & TO & facstd $48.820$ \\
       \hline
-      Square affine $(8,4)$ & \textbf{M4GB} $\mathbf{0.532/0.003}$ &
-      timeout & facstd $0.601$ \\
-      Square affine $(10,5)$ & \textbf{F4} $\mathbf{0.920/0.003}$ &
-      timeout & facstd $2.141$ \\
+      Square affine & $(8,4)$ & \textbf{M4GB} $\mathbf{0.532/0.003}$ &
+      TO & facstd $0.601$ \\
+      & $(10,5)$ & \textbf{F4} $\mathbf{0.920/0.003}$ &
+      TO & facstd $2.141$ \\
       \hline
-      \#systems solved & $19$ & $9$ & $16$ \\
-      \#fastest (ties counted) & $16$ & $3$ & $0$ \\
+      \multicolumn{2}{l}{\#systems solved} & $19$ & $9$ & $16$ \\
+      \multicolumn{2}{l}{\#fastest (ties counted)} & $16$ & $3$ & $0$ \\
       \hline
     \end{tabular}%
   }
@@ -151,7 +152,8 @@ grow each until every method times out.
     variant of the cyclic $n$-roots problem~\cite{bjorck1991cyclic}, taken
     unchanged from
     SymbolicData\footnote{\url{https://github.com/symbolicdata/data},
-    commit \texttt{a5cdf53}.}.
+    commit \texttt{a5cdf53}.} for $n\leq19$ and extended to $n=20$ by the
+    same pattern.
   \item Nash equilibria of $n$-player games with two pure strategies per
     player~\cite{sturmfels2002solving}.  Each player $i$ either plays a pure
     strategy, $p_i(p_i-1)=0$, or is indifferent, so its payoff difference
@@ -172,69 +174,62 @@ standalone F4, and a method that times out is not run at larger sizes.
   \scriptsize
   \setlength{\tabcolsep}{4pt}
   \resizebox{\textwidth}{!}{%
-    \begin{tabular}{l l l l}
+    \begin{tabular}{l r l l l}
       \hline
-      System & Best factor branching $T$ & Best direct GB & Best
+      System & $n$ & Best factor branching $T$ & Best direct GB & Best
       decomposition \\
       \hline
-      rcyclic-8 & F4 $0.019$ & \textbf{GVW} $\mathbf{0.008}$ & facstd $0.425$ \\
-      rcyclic-10 & \textbf{F4} $\mathbf{0.018}$ & M4GB $0.041$ & timeout \\
-      rcyclic-12 & \textbf{F4} $\mathbf{0.021}$ & M4GB $0.198$ & timeout \\
-      rcyclic-14 & \textbf{F4} $\mathbf{0.029}$ & Singular dp $0.676$
-      & timeout \\
-      rcyclic-16 & \textbf{Singular} $\mathbf{0.062}$ & Singular dp
-      $7.154$ & timeout \\
-      rcyclic-17 & \textbf{Singular} $\mathbf{0.091}$ & M2 $19.76$ & timeout \\
-      rcyclic-18 & \textbf{Singular} $\mathbf{0.093}$ & M2 $34.60$ & timeout \\
-      rcyclic-19 & \textbf{Singular} $\mathbf{0.113}$ & timeout & timeout \\
+      rcyclic & $8$ & F4 $0.019$ & \textbf{GVW} $\mathbf{0.008}$ & facstd $0.425$ \\
+      & $10$ & \textbf{F4} $\mathbf{0.018}$ & M4GB $0.041$ & TO \\
+      & $12$ & \textbf{F4} $\mathbf{0.021}$ & M4GB $0.198$ & TO \\
+      & $14$ & \textbf{F4} $\mathbf{0.029}$ & Singular dp $0.676$
+      & TO \\
+      & $16$ & \textbf{Singular} $\mathbf{0.062}$ & Singular dp
+      $7.154$ & TO \\
+      & $18$ & \textbf{Singular} $\mathbf{0.093}$ & M2 $34.60$ & TO \\
+      & $20$ & \textbf{Singular} $\mathbf{0.132}$ & TO & TO \\
       \hline
-      Nash generic, $n=3$ & F5 $0.044$ & \textbf{F5} $\mathbf{0.006}$
+      Nash generic & $3$ & F5 $0.044$ & \textbf{F5} $\mathbf{0.006}$
       & facstd $0.197$ \\
-      Nash generic, $n=4$ & \textbf{GVW} $\mathbf{0.136}$ & Singular
+      & $4$ & \textbf{GVW} $\mathbf{0.136}$ & Singular
       dp $0.262$ & facstd $0.262$ \\
-      Nash generic, $n=5$ & \textbf{Singular} $\mathbf{1.382}$ &
-      timeout & timeout \\
-      Nash generic, $n=6$ & timeout & timeout & timeout \\
+      & $5$ & \textbf{Singular} $\mathbf{1.382}$ &
+      TO & TO \\
+      & $6$ & TO & TO & TO \\
       \hline
-      Nash degenerate, $n=3$ & M4GB $0.043$ & \textbf{GVW}
+      Nash degenerate & $3$ & M4GB $0.043$ & \textbf{GVW}
       $\mathbf{0.005}$ & facstd $0.179$ \\
-      Nash degenerate, $n=4$ & \textbf{F5} $\mathbf{0.086}$ &
+      & $4$ & \textbf{F5} $\mathbf{0.086}$ &
       Singular lex $0.215$ & facstd $0.203$ \\
-      Nash degenerate, $n=5$ & \textbf{Singular} $\mathbf{0.714}$ &
-      timeout & timeout \\
-      Nash degenerate, $n=6$ & timeout & timeout & timeout \\
+      & $5$ & \textbf{Singular} $\mathbf{0.714}$ &
+      TO & TO \\
+      & $6$ & TO & TO & TO \\
       \hline
-      Box-QP, $n=4$ & F4 $0.237$ & \textbf{F5} $\mathbf{0.005}$ &
-      facstd $0.179$ \\
-      Box-QP, $n=5$ & F5 $0.700$ & \textbf{Singular dp}
+      Box-QP & $5$ & F5 $0.700$ & \textbf{Singular dp}
       $\mathbf{0.216}$ & facstd $0.297$ \\
-      Box-QP, $n=6$ & M4GB $2.174$ & \textbf{F5} $\mathbf{0.033}$ &
+      & $6$ & M4GB $2.174$ & \textbf{F5} $\mathbf{0.033}$ &
       primdec $0.939$ \\
-      Box-QP, $n=7$ & \textbf{F5} $\mathbf{6.494}$ & timeout & facstd $12.63$ \\
-      Box-QP, $n=8$ & \textbf{F5} $\mathbf{20.42}$ & timeout & timeout \\
-      Box-QP, $n=9$ & timeout & timeout & timeout \\
+      & $7$ & \textbf{F5} $\mathbf{6.494}$ & TO & facstd $12.63$ \\
+      & $8$ & \textbf{F5} $\mathbf{20.42}$ & TO & TO \\
+      & $9$ & TO & TO & TO \\
       \hline
-      Lotka--Volterra, $n=6$ & M4GB $0.191$ & \textbf{F5}
+      Lotka--Volterra & $6$ & M4GB $0.191$ & \textbf{F5}
       $\mathbf{0.006}$ & facstd $0.216$ \\
-      Lotka--Volterra, $n=8$ & F4 $0.809$ & Singular dp $0.701$ &
+      & $8$ & F4 $0.809$ & Singular dp $0.701$ &
       \textbf{facstd} $\mathbf{0.464}$ \\
-      Lotka--Volterra, $n=10$ & \textbf{GVW} $\mathbf{3.002}$ &
-      timeout & facstd $6.432$ \\
-      Lotka--Volterra, $n=12$ & \textbf{F5} $\mathbf{13.15}$ &
-      timeout & timeout \\
-      Lotka--Volterra, $n=14$ & timeout & timeout & timeout \\
+      & $10$ & \textbf{GVW} $\mathbf{3.002}$ &
+      TO & facstd $6.432$ \\
+      & $12$ & \textbf{F5} $\mathbf{13.15}$ &
+      TO & TO \\
+      & $14$ & TO & TO & TO \\
       \hline
-      \#systems solved & $27$ & $20$ & $13$ \\
-      \#fastest (ties counted) & $18$ & $8$ & $1$ \\
+      \multicolumn{2}{l}{\#systems solved} & $21$ & $14$ & $11$ \\
+      \multicolumn{2}{l}{\#fastest (ties counted)} & $14$ & $6$ & $1$ \\
       \hline
     \end{tabular}%
   }
   \caption{Best completed results across solver classes on the size-graded
-    families, with a 60-second limit.  For rcyclic, only selected
-    sizes are shown;
-    the summary rows count all 31 systems, rcyclic-8 to rcyclic-19
-    included.  All
-  times are in seconds.}
+    families, with a 60-second limit. All times are in seconds.}
   \label{tab:scaling-classes}
 \end{table}
 
@@ -242,7 +237,7 @@ standalone F4, and a method that times out is not run at larger sizes.
 In every family of Table~\ref{tab:scaling-classes}, the baselines win only on
 systems they finish in under $0.5$ seconds. On the larger systems of each
 family, factor branching is fastest, and its lead grows with $n$, to $372$
-times on rcyclic-18. Only factor branching completes rcyclic-19, which
+times on rcyclic-18. Only factor branching completes rcyclic-20, which
 refines into 3 terminal branches far easier than the system, and box-QP with
 $n=8$, which refines into 6534 cheap branches.
 
@@ -268,66 +263,62 @@ and every Gr\"obner basis degrevlex.
   \scriptsize
   \setlength{\tabcolsep}{4pt}
   \resizebox{\textwidth}{!}{%
-    \begin{tabular}{l l l l l l l}
+    \begin{tabular}{l r l l l l l l}
       \hline
-      & \multicolumn{2}{c}{\texttt{facstd}} &
+      & & \multicolumn{2}{c}{\texttt{facstd}} &
       \multicolumn{2}{c}{primdec} & \multicolumn{2}{c}{\texttt{minAssGTZ}} \\
-      System & FB & alone & Primary & alone & Prime & alone \\
+      System & $n$ & FB & alone & Primary & alone & Prime & alone \\
       \hline
-      rcyclic-8 & $\mathbf{0.038}$ & $0.425$ & timeout & timeout &
+      rcyclic & $8$ & $\mathbf{0.038}$ & $0.425$ & TO & TO &
       $\mathbf{0.081}$ & $10.64$ \\
-      rcyclic-10 & $\mathbf{0.040}$ & timeout & timeout & timeout &
-      $\mathbf{0.110}$ & timeout \\
-      rcyclic-12 & $\mathbf{0.043}$ & timeout & timeout & timeout &
-      $\mathbf{1.472}$ & timeout \\
-      rcyclic-14 & $\mathbf{0.053}$ & timeout & timeout & timeout &
-      $\mathbf{21.22}$ & timeout \\
-      rcyclic-16 & $\mathbf{0.079}$ & timeout & timeout & timeout &
-      timeout & timeout \\
-      rcyclic-17 & $\mathbf{0.119}$ & timeout & timeout & timeout &
-      timeout & timeout \\
-      rcyclic-18 & $\mathbf{0.162}$ & timeout & timeout & timeout &
-      timeout & timeout \\
-      rcyclic-19 & $\mathbf{0.285}$ & timeout & timeout & timeout &
-      timeout & timeout \\
+      & $10$ & $\mathbf{0.040}$ & TO & TO & TO &
+      $\mathbf{0.110}$ & TO \\
+      & $12$ & $\mathbf{0.043}$ & TO & TO & TO &
+      $\mathbf{1.472}$ & TO \\
+      & $14$ & $\mathbf{0.053}$ & TO & TO & TO &
+      $\mathbf{21.22}$ & TO \\
+      & $16$ & $\mathbf{0.079}$ & TO & TO & TO &
+      TO & TO \\
+      & $18$ & $\mathbf{0.162}$ & TO & TO & TO &
+      TO & TO \\
+      & $20$ & $\mathbf{0.458}$ & TO & TO & TO &
+      TO & TO \\
       \hline
-      Nash generic, $n=3$ & $\mathbf{0.138}$ & $0.197$ & $0.065$ &
+      Nash generic & $3$ & $\mathbf{0.138}$ & $0.197$ & $0.065$ &
       $\mathbf{0.063}$ & $\mathbf{0.063}$ & $0.073$ \\
-      Nash generic, $n=4$ & $0.449$ & $\mathbf{0.262}$ & timeout &
-      timeout & $\mathbf{0.121}$ & timeout \\
-      Nash generic, $n=5$ & $\mathbf{13.48}$ & timeout & timeout &
-      timeout & timeout & timeout \\
+      & $4$ & $0.449$ & $\mathbf{0.262}$ & TO &
+      TO & $\mathbf{0.121}$ & TO \\
+      & $5$ & $\mathbf{13.48}$ & TO & TO &
+      TO & TO & TO \\
       \hline
-      Nash degenerate, $n=3$ & $\mathbf{0.136}$ & $0.179$ & $0.087$ &
+      Nash degenerate & $3$ & $\mathbf{0.136}$ & $0.179$ & $0.087$ &
       $\mathbf{0.074}$ & $\mathbf{0.060}$ & $0.069$ \\
-      Nash degenerate, $n=4$ & $0.263$ & $\mathbf{0.203}$ & $6.117$ &
-      $\mathbf{5.004}$ & $\mathbf{0.088}$ & timeout \\
-      Nash degenerate, $n=5$ & $\mathbf{1.634}$ & timeout & timeout &
-      timeout & timeout & timeout \\
+      & $4$ & $0.263$ & $\mathbf{0.203}$ & $6.117$ &
+      $\mathbf{5.004}$ & $\mathbf{0.088}$ & TO \\
+      & $5$ & $\mathbf{1.634}$ & TO & TO &
+      TO & TO & TO \\
       \hline
-      Box-QP, $n=4$ & $0.661$ & $\mathbf{0.179}$ & $\mathbf{0.089}$ &
-      $0.128$ & $\mathbf{0.089}$ & $0.170$ \\
-      Box-QP, $n=5$ & $1.928$ & $\mathbf{0.297}$ & $\mathbf{0.715}$ &
+      Box-QP & $5$ & $1.928$ & $\mathbf{0.297}$ & $\mathbf{0.715}$ &
       $16.20$ & $\mathbf{0.166}$ & $17.00$ \\
-      Box-QP, $n=6$ & $7.528$ & $\mathbf{1.259}$ & $\mathbf{0.423}$ &
+      & $6$ & $7.528$ & $\mathbf{1.259}$ & $\mathbf{0.423}$ &
       $3.172$ & $\mathbf{0.446}$ & $1.564$ \\
-      Box-QP, $n=7$ & $22.77$ & $\mathbf{12.63}$ & timeout & timeout
-      & $\mathbf{1.564}$ & timeout \\
-      Box-QP, $n=8$ & timeout & timeout & timeout & timeout &
-      $\mathbf{5.742}$ & timeout \\
-      Box-QP, $n=9$ & timeout & timeout & timeout & timeout &
-      $\mathbf{23.05}$ & timeout \\
+      & $7$ & $22.77$ & $\mathbf{12.63}$ & TO & TO
+      & $\mathbf{1.564}$ & TO \\
+      & $8$ & TO & TO & TO & TO &
+      $\mathbf{5.742}$ & TO \\
+      & $9$ & TO & TO & TO & TO &
+      $\mathbf{23.05}$ & TO \\
       \hline
-      Lotka--Volterra, $n=6$ & $0.615$ & $\mathbf{0.216}$ &
+      Lotka--Volterra & $6$ & $0.615$ & $\mathbf{0.216}$ &
       $\mathbf{0.101}$ & $0.128$ & $\mathbf{0.096}$ & $0.161$ \\
-      Lotka--Volterra, $n=8$ & $3.012$ & $\mathbf{0.464}$ &
-      $\mathbf{1.873}$ & timeout & $\mathbf{0.254}$ & timeout \\
-      Lotka--Volterra, $n=10$ & $10.05$ & $\mathbf{6.432}$ & timeout
-      & timeout & $\mathbf{1.059}$ & timeout \\
-      Lotka--Volterra, $n=12$ & $\mathbf{41.47}$ & timeout & timeout
-      & timeout & $\mathbf{5.286}$ & timeout \\
-      Lotka--Volterra, $n=14$ & timeout & timeout & timeout & timeout
-      & $\mathbf{31.61}$ & timeout \\
+      & $8$ & $3.012$ & $\mathbf{0.464}$ &
+      $\mathbf{1.873}$ & TO & $\mathbf{0.254}$ & TO \\
+      & $10$ & $10.05$ & $\mathbf{6.432}$ & TO
+      & TO & $\mathbf{1.059}$ & TO \\
+      & $12$ & $\mathbf{41.47}$ & TO & TO
+      & TO & $\mathbf{5.286}$ & TO \\
+      & $14$ & TO & TO & TO & TO
+      & $\mathbf{31.61}$ & TO \\
       \hline
     \end{tabular}%
   }
@@ -339,15 +330,14 @@ and every Gr\"obner basis degrevlex.
     run in one Python process that drives one Singular process and exclude the
     input conversion, so their times are not comparable with the
     \texttt{facstd} columns or with Table~\ref{tab:scaling-classes}. A method
-    that timed out at a smaller size of a family is listed as a timeout. Sizes
-    at which every method times out are omitted, and for rcyclic only the sizes
-    of Table~\ref{tab:scaling-classes} are shown. All times are in seconds.}
+    that timed out at a smaller size of a family is listed as TO. Sizes
+    at which every method times out are omitted. All times are in seconds.}
   \label{tab:scaling-decomposition}
 \end{table}
 
 % [Which backend benefits: facstd on rcyclic and on the largest systems]
 Factor branching with \texttt{facstd} completes every rcyclic system in under
-$0.3$ seconds, the Nash games with $n=5$, and Lotka--Volterra with $n=12$; of
+$0.5$ seconds, the Nash games with $n=5$, and Lotka--Volterra with $n=12$; of
 these, \texttt{facstd} alone finishes only rcyclic-8. \texttt{facstd} alone wins on
 box-QP, the $n=4$ Nash games, and the smaller Lotka--Volterra systems, where
 factor branching pays for starting Singular once per branch.
@@ -420,7 +410,8 @@ then shows that $Q$ and the cofactors of $h$ have no common zero outside
 $V(\kappa_h)$, so the Nullstellensatz gives
 $\kappa_h^sh^{a_h}\in\langle Q\rangle$ for some $s\geq0$. Each round then
 keeps $\langle Q\rangle:\kappa_h^\infty$ instead of $\langle Q\rangle$, and
-the termination argument of Theorem~\ref{thm:ideal-reduce} is unchanged.
+the termination argument of Theorem~\ref{thm:ideal-reduce-termination} is
+unchanged.
 Algorithm~\ref{alg:PrimaryBranching} then decomposes
 $\langle Q\rangle:\kappa_h^\infty$, whose minimal primes are those of
 $\langle Q\rangle$ that do not contain $\kappa_h$.
@@ -462,35 +453,35 @@ Table~\ref{tab:scaling-decomposition} on them and on the physical system.
   \scriptsize
   \setlength{\tabcolsep}{4pt}
   \resizebox{\textwidth}{!}{%
-    \begin{tabular}{l l l l l l l}
+    \begin{tabular}{l r l l l l l l}
       \hline
-      & \multicolumn{2}{c}{\texttt{facstd}} &
+      & & \multicolumn{2}{c}{\texttt{facstd}} &
       \multicolumn{2}{c}{primdec} & \multicolumn{2}{c}{\texttt{minAssGTZ}} \\
-      System & FB & alone & Primary & alone & Prime & alone \\
+      System & $\alpha$ & FB & alone & Primary & alone & Prime & alone \\
       \hline
-      Physical & $\mathbf{0.954}$ & timeout & $\mathbf{271.3}$ & timeout &
-      $\mathbf{0.962}$ & timeout \\
+      Physical & & $\mathbf{0.954}$ & TO & $\mathbf{271.3}$ & TO &
+      $\mathbf{0.962}$ & TO \\
       \hline
-      Graviton only, $\alpha=1$ & timeout & timeout & timeout & timeout &
-      timeout & timeout \\
-      Graviton only, $\alpha=1/2$ & timeout & timeout & timeout & timeout &
-      timeout & timeout \\
-      Graviton only, $\alpha=1/4$ & timeout & timeout & timeout & timeout &
-      timeout & timeout \\
-      Graviton only, $\alpha=2$ & timeout & timeout & timeout & timeout &
-      timeout & timeout \\
-      Graviton only, $\alpha=4$ & timeout & timeout & timeout & timeout &
-      timeout & timeout \\
+      Graviton only & $1$ & TO & TO & TO & TO &
+      TO & TO \\
+      & $1/2$ & TO & TO & TO & TO &
+      TO & TO \\
+      & $1/4$ & TO & TO & TO & TO &
+      TO & TO \\
+      & $2$ & TO & TO & TO & TO &
+      TO & TO \\
+      & $4$ & TO & TO & TO & TO &
+      TO & TO \\
       \hline
-      Fermion only, $\alpha=1$ & $0.035$ & $\mathbf{0.001}$ & $0.059$ &
+      Fermion only & $1$ & $0.035$ & $\mathbf{0.001}$ & $0.059$ &
       $\mathbf{0.007}$ & $0.267$ & $\mathbf{0.007}$ \\
-      Fermion only, $\alpha=1/2$ & $0.028$ & $\mathbf{0.001}$ & $0.060$ &
+      & $1/2$ & $0.028$ & $\mathbf{0.001}$ & $0.060$ &
       $\mathbf{0.007}$ & $0.229$ & $\mathbf{0.007}$ \\
-      Fermion only, $\alpha=1/4$ & $0.037$ & $\mathbf{0.001}$ & $0.060$ &
+      & $1/4$ & $0.037$ & $\mathbf{0.001}$ & $0.060$ &
       $\mathbf{0.006}$ & $0.231$ & $\mathbf{0.007}$ \\
-      Fermion only, $\alpha=2$ & $0.028$ & $\mathbf{<0.001}$ & $0.060$ &
+      & $2$ & $0.028$ & $\mathbf{<0.001}$ & $0.060$ &
       $\mathbf{0.007}$ & $0.231$ & $\mathbf{0.007}$ \\
-      Fermion only, $\alpha=4$ & $0.031$ & $\mathbf{0.001}$ & $0.060$ &
+      & $4$ & $0.031$ & $\mathbf{0.001}$ & $0.060$ &
       $\mathbf{0.006}$ & $0.240$ & $\mathbf{0.007}$ \\
       \hline
     \end{tabular}%

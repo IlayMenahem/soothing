@@ -3,7 +3,7 @@
 Wall time in seconds with a 60-second limit, and what each completed run found.
 Every method runs in the same harness (`scripts/factor_variants.py`): one Python process
 driving one Singular 4.4.1 process. *Rust Alg. Branching* is the fastest recorded backend
-from `scaling_results.jsonl`. Cells, as (object, decomposition):
+from `scaling.jsonl`. Cells, as (object, decomposition):
 
 - (sqrt I, covering): Alg. Branching vs facstd
 - (I, monolithic): IdealReduce + std vs std
@@ -19,17 +19,12 @@ emb = embedded components. TO = timeout, — = not run (an earlier size failed).
 | size | Rust Alg. Branching | Alg. Branching | facstd | IdealReduce + std | std | IdealRefine | PrimeBranching | minAssGTZ | PrimaryBranching | primdecGTZ |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 8 | 0.02 | 0.06 (10 br) | 0.29 (8 br) | 0.06 (7→7 gens) | 0.05 (38 gens) | TO | 0.08 (3 primes) | 10.64 (3 primes) | TO (isolated 0.37: 3 comp, has emb) | TO |
-| 9 | 0.02 | 0.07 (14 br) | TO | 0.06 (8→8 gens) | 0.06 (55 gens) | — | 0.09 (3 primes) | TO | TO | — |
-| 10 | 0.02 | 0.07 (20 br) | — | 0.07 (9→9 gens) | 0.06 (78 gens) | — | 0.11 (4 primes) | — | — | — |
-| 11 | 0.02 | 0.07 (19 br) | — | 0.07 (10→10 gens) | 0.07 (90 gens) | — | 0.18 (3 primes) | — | — | — |
-| 12 | 0.02 | 0.07 (11 br) | — | 0.11 (11→11 gens) | 0.11 (124 gens) | — | 1.47 (3 primes) | — | — | — |
-| 13 | 0.03 | 0.08 (12 br) | — | 0.20 (12→12 gens) | 0.21 (164 gens) | — | 18.02 (4 primes) | — | — | — |
+| 10 | 0.02 | 0.07 (20 br) | TO | 0.07 (9→9 gens) | 0.06 (78 gens) | — | 0.11 (4 primes) | TO | TO (isolated 32.47: 4 comp, has emb) | — |
+| 12 | 0.02 | 0.07 (11 br) | — | 0.11 (11→11 gens) | 0.11 (124 gens) | — | 1.47 (3 primes) | — | TO | — |
 | 14 | 0.03 | 0.14 (13 br) | — | 0.55 (13→13 gens) | 0.58 (217 gens) | — | 21.22 (3 primes) | — | — | — |
-| 15 | 0.04 | 0.24 (14 br) | — | 2.00 (14→14 gens) | 2.22 (278 gens) | — | TO | — | — | — |
-| 16 | 0.06 | 0.41 (15 br) | — | 7.02 (15→15 gens) | 7.81 (351 gens) | — | — | — | — | — |
-| 17 | 0.09 | 0.90 (16 br) | — | 38.96 (16→16 gens) | 42.88 (437 gens) | — | — | — | — | — |
+| 16 | 0.06 | 0.41 (15 br) | — | 7.02 (15→15 gens) | 7.81 (351 gens) | — | TO | — | — | — |
 | 18 | 0.09 | 0.85 (17 br) | — | TO (reduced 0.00: 17→17 gens) | TO | — | — | — | — | — |
-| 19 | 0.11 | 1.69 (18 br) | — | — | — | — | — | — | — | — |
+| 20 | 0.13 | TO | — | — | — | — | — | — | — | — |
 
 ## nash_generic
 
@@ -53,7 +48,6 @@ emb = embedded components. TO = timeout, — = not run (an earlier size failed).
 
 | size | Rust Alg. Branching | Alg. Branching | facstd | IdealReduce + std | std | IdealRefine | PrimeBranching | minAssGTZ | PrimaryBranching | primdecGTZ |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 4 | 0.24 | 0.09 (81 br) | 0.06 (77 br) | 0.06 (4→4 gens) | 0.05 (13 gens) | 0.21 (81 leaves) | 0.09 (81 primes) | 0.17 (81 primes) | 0.09 (81 comp) | 0.13 (81 comp) |
 | 5 | 0.70 | 0.15 (243 br) | 0.18 (242 br) | 0.10 (5→5 gens) | 0.09 (36 gens) | 7.28 (242 leaves) | 0.17 (242 primes) | 17.00 (242 primes) | 0.72 (242 comp) | 16.20 (242 comp) |
 | 6 | 2.17 | 0.36 (729 br) | 1.14 (729 br) | 0.06 (6→6 gens) | 0.06 (24 gens) | 10.29 (729 leaves) | 0.45 (729 primes) | 1.56 (729 primes) | 0.42 (729 comp) | 3.17 (729 comp) |
 | 7 | 6.49 | 1.22 (2187 br) | 12.96 (1534 br) | TO (reduced 0.01: 7→7 gens) | TO | TO | 1.56 (2187 primes) | TO | TO | TO |
